@@ -1,0 +1,20 @@
+Status Override Priority (timeout > terminated > exit-code downgrade > parser status)
+=====================================================================================
+
+Implementation in lib/roundtable/output.ex build_result/6 normal execution clause:
+
+    status =
+      cond do
+        raw.timed_out -> "timeout"
+        raw.exit_signal != nil -> "terminated"
+        raw.exit_code != nil and raw.exit_code != 0 and parsed.status == :ok -> "error"
+        true -> to_string(parsed.status)
+      end
+
+Tests verifying each level:
+- "timeout overrides parser ok" — timed_out: true forces "timeout"
+- "terminated when exit_signal present" — exit_signal: "SIGTERM" forces "terminated"
+- "non-zero exit downgrades parser ok to error" — exit_code: 1 with parser :ok → "error"
+- "non-zero exit keeps error status from parser" — exit_code: 1 with parser :error → "error"
+
+All 11 tests pass.
