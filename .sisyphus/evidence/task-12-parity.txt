@@ -1,0 +1,5 @@
+  * test probe_cli returns alive: true for successful command [L#76]  * test probe_cli returns alive: true for successful command (2.8ms) [L#76]
+  * test captures non-zero exit code [L#60]  * test captures non-zero exit code (2.6ms) [L#60]
+
+Finished in 38.4 seconds (0.2s async, 38.2s sync)
+95 tests, 0 failures

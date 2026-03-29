@@ -1,0 +1,11 @@
+#!/bin/sh
+# Mock codex CLI - handles --version for probe, outputs fixture JSONL for actual run
+if [ "$1" = "--version" ]; then
+  echo "mock-codex 1.0.0"
+  exit 0
+fi
+cat <<'EOF'
+{"type":"thread.started","thread_id":"thread_xyz789"}
+{"type":"item.completed","item":{"type":"agent_message","text":"Here is my analysis of the code."}}
+{"type":"turn.completed","usage":{"input_tokens":150,"output_tokens":75}}
+EOF

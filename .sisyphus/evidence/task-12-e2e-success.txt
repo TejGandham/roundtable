@@ -1,0 +1,16 @@
+Running ExUnit with seed: 31892, max_cases: 1
+
+
+Roundtable.IntegrationTest [test/integration_test.exs]
+  * test recursion guard: ROUNDTABLE_ACTIVE=1 exits with error [L#67]  * test recursion guard: ROUNDTABLE_ACTIVE=1 exits with error (237.7ms) [L#67]
+  * test output is structurally valid JSON with all required keys [L#176]  * test output is structurally valid JSON with all required keys (286.8ms) [L#176]
+  * test timeout: CLI that sleeps gets timeout status [L#155]  * test timeout: CLI that sleeps gets timeout status (5334.5ms) [L#155]
+  * test per-CLI roles: gemini-role and codex-role set independently [L#122]  * test per-CLI roles: gemini-role and codex-role set independently (266.1ms) [L#122]
+  * test missing prompt: exits 1 with usage error [L#78]  * test missing prompt: exits 1 with usage error (250.3ms) [L#78]
+  * test CLI not found: status is not_found when PATH has no CLIs [L#87]  * test CLI not found: status is not_found when PATH has no CLIs (271.9ms) [L#87]
+  * test planner role: meta shows correct role [L#113]  * test planner role: meta shows correct role (276.0ms) [L#113]
+  * test files referenced: files_referenced in meta [L#140]  * test files referenced: files_referenced in meta (284.7ms) [L#140]
+  * test full success: both mock CLIs return ok [L#53]  * test full success: both mock CLIs return ok (293.0ms) [L#53]
+
+Finished in 7.5 seconds (0.00s async, 7.5s sync)
+9 tests, 0 failures

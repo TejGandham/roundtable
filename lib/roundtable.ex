@@ -58,7 +58,6 @@ defmodule Roundtable do
       %{
         name: "gemini",
         module: Roundtable.CLI.Gemini,
-        path: nil,
         model: args.gemini_model,
         role: gemini_role,
         files: args.files,
@@ -68,7 +67,6 @@ defmodule Roundtable do
       %{
         name: "codex",
         module: Roundtable.CLI.Codex,
-        path: nil,
         model: args.codex_model,
         role: codex_role,
         files: args.files,

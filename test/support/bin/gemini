@@ -1,0 +1,9 @@
+#!/bin/sh
+# Mock gemini CLI - handles --version for probe, outputs fixture JSON for actual run
+if [ "$1" = "--version" ]; then
+  echo "mock-gemini 1.0.0"
+  exit 0
+fi
+cat <<'EOF'
+{"response":"test response","stats":{"models":{"gemini-2.5-pro":{"tokens":{"input":100,"output":50}}}},"session_id":"ses_abc123"}
+EOF
