@@ -18,13 +18,15 @@ description: >-
 
 # Roundtable - Multi-Model Consensus
 
-Dispatch to BOTH Gemini AND Codex in parallel via `roundtable.mjs`, then synthesize.
+Dispatch to BOTH Gemini AND Codex in parallel via `./roundtable`, then synthesize.
 
 ## Core Rule
 
-1. Run `node ~/.claude/skills/roundtable/roundtable.mjs` with appropriate flags
+1. Run `~/.claude/skills/roundtable/roundtable` with appropriate flags
 2. Parse the JSON output
 3. Synthesize both responses into unified output
+
+Requires Erlang/OTP and Elixir: `brew install elixir`.
 
 ## Commands
 
@@ -41,7 +43,7 @@ Dispatch to BOTH Gemini AND Codex in parallel via `roundtable.mjs`, then synthes
 Run via Bash tool from the **project root directory** (Gemini restricts file access to its cwd):
 
 ```bash
-node ~/.claude/skills/roundtable/roundtable.mjs \
+~/.claude/skills/roundtable/roundtable \
   --prompt "Your question here" \
   --role planner \
   --files src/auth.ts,src/middleware.ts \
@@ -110,12 +112,12 @@ Roundtable supports continuing a previous conversation with both CLIs. Each resp
 
 **First call:**
 ```bash
-node ~/src/roundtable/roundtable.mjs --prompt "Review the auth architecture" --role planner --files src/auth.ts
+~/.claude/skills/roundtable/roundtable --prompt "Review the auth architecture" --role planner --files src/auth.ts
 ```
 
 **Follow-up call** (using session IDs from the first response):
 ```bash
-node ~/src/roundtable/roundtable.mjs \
+~/.claude/skills/roundtable/roundtable \
   --prompt "What about the token refresh edge case you mentioned?" \
   --role planner \
   --gemini-resume latest \

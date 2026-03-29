@@ -1,7 +1,7 @@
 # Elixir Port — Design Notes
 
 **Date:** 2026-03-28
-**Status:** Planned — after Node.js v6 stabilizes and roundtable moves to anvil monorepo
+**Status:** Complete — implemented as Elixir escript alongside Node.js version
 
 ## Why Elixir
 

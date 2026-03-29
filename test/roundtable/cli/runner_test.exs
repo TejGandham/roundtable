@@ -39,6 +39,7 @@ defmodule Roundtable.CLI.RunnerTest do
 
   test "no orphan processes after timeout" do
     script = Path.join(@support_dir, "fake_cli_timeout.sh")
+
     before =
       :os.cmd(String.to_charlist("pgrep -f fake_cli_timeout.sh 2>/dev/null || true"))
       |> to_string()

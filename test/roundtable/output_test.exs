@@ -10,7 +10,13 @@ defmodule Roundtable.OutputTest do
 
   defmodule MockErrorCLI do
     def parse_output(_stdout, _stderr) do
-      %{response: "error response", status: :error, parse_error: nil, metadata: %{}, session_id: nil}
+      %{
+        response: "error response",
+        status: :error,
+        parse_error: nil,
+        metadata: %{},
+        session_id: nil
+      }
     end
   end
 

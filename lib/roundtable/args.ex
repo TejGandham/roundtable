@@ -77,12 +77,15 @@ defmodule Roundtable.Args do
 
   defp default_roles_dir do
     case :escript.script_name() do
-      [] -> Path.expand("roles")
+      [] ->
+        Path.expand("roles")
+
       script ->
         script = to_string(script)
         basename = Path.basename(script)
 
-        if basename in ["mix", "elixir", "iex"] or String.starts_with?(script, "-") or not String.contains?(script, "/") do
+        if basename in ["mix", "elixir", "iex"] or String.starts_with?(script, "-") or
+             not String.contains?(script, "/") do
           Path.expand("roles")
         else
           Path.join(Path.dirname(script), "roles")

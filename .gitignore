@@ -1,0 +1,8 @@
+# Build artifacts
+/_build/
+/deps/
+/roundtable
+
+# Sisyphus evidence (noisy, not needed in git)
+.sisyphus/evidence/
+.sisyphus/boulder.json

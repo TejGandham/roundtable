@@ -11,7 +11,8 @@ defmodule Roundtable.CLI.BehaviourTest do
     def build_args(_args, _prompt), do: ["exec", "--json"]
 
     @impl true
-    def parse_output(_stdout, _stderr), do: %{response: "", status: :ok, parse_error: nil, metadata: %{}, session_id: nil}
+    def parse_output(_stdout, _stderr),
+      do: %{response: "", status: :ok, parse_error: nil, metadata: %{}, session_id: nil}
   end
 
   test "a module implementing all callbacks compiles without warnings" do

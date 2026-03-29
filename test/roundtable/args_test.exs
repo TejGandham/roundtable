@@ -47,13 +47,17 @@ defmodule Roundtable.ArgsTest do
   end
 
   test "parses --gemini-role and --codex-role separately" do
-    {:ok, args} = Args.parse(["--prompt", "test", "--gemini-role", "planner", "--codex-role", "codereviewer"])
+    {:ok, args} =
+      Args.parse(["--prompt", "test", "--gemini-role", "planner", "--codex-role", "codereviewer"])
+
     assert args.gemini_role == "planner"
     assert args.codex_role == "codereviewer"
   end
 
   test "parses all resume flags" do
-    {:ok, args} = Args.parse(["--prompt", "test", "--gemini-resume", "latest", "--codex-resume", "last"])
+    {:ok, args} =
+      Args.parse(["--prompt", "test", "--gemini-resume", "latest", "--codex-resume", "last"])
+
     assert args.gemini_resume == "latest"
     assert args.codex_resume == "last"
   end

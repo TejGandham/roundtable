@@ -5,6 +5,7 @@ defmodule Roundtable do
   alias Roundtable.Prompt.Assembler
   alias Roundtable.Prompt.Roles
 
+  @spec main([String.t()]) :: no_return()
   def main(args) do
     if System.get_env("ROUNDTABLE_ACTIVE") do
       IO.puts(

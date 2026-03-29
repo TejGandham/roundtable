@@ -178,11 +178,29 @@ defmodule Roundtable.IntegrationTest do
 
     assert exit_code == 0
 
-    for key <- ["response", "model", "status", "exit_code", "elapsed_ms", "parse_error", "truncated", "session_id"] do
+    for key <- [
+          "response",
+          "model",
+          "status",
+          "exit_code",
+          "elapsed_ms",
+          "parse_error",
+          "truncated",
+          "session_id"
+        ] do
       assert Map.has_key?(result["gemini"], key), "gemini missing key: #{key}"
     end
 
-    for key <- ["response", "model", "status", "exit_code", "elapsed_ms", "parse_error", "truncated", "session_id"] do
+    for key <- [
+          "response",
+          "model",
+          "status",
+          "exit_code",
+          "elapsed_ms",
+          "parse_error",
+          "truncated",
+          "session_id"
+        ] do
       assert Map.has_key?(result["codex"], key), "codex missing key: #{key}"
     end
 

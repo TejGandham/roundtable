@@ -13,7 +13,7 @@ defmodule Roundtable.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger]]
+    [extra_applications: []]
   end
 
   defp escript do
