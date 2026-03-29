@@ -1,0 +1,2 @@
+Verified with: Args.parse(["--prompt", "test", "--timeout", "abc"]) and Args.parse(["--prompt", "test", "--timeout", "0"]).
+Result: invalid timeout returns error; zero timeout returns "--timeout must be a positive integer".

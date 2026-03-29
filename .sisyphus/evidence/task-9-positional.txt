@@ -1,0 +1,2 @@
+Verified with: Args.parse(["hello world"]) in args_test.exs.
+Result: positional prompt is accepted when --prompt is omitted.
