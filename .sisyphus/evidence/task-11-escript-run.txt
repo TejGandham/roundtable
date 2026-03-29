@@ -1,0 +1,32 @@
+{
+  "codex": {
+    "elapsed_ms": 0,
+    "exit_code": null,
+    "exit_signal": null,
+    "model": "cli-default",
+    "parse_error": null,
+    "response": "",
+    "session_id": null,
+    "status": "not_found",
+    "stderr": "codex CLI not found in PATH",
+    "truncated": false
+  },
+  "gemini": {
+    "elapsed_ms": 0,
+    "exit_code": null,
+    "exit_signal": null,
+    "model": "cli-default",
+    "parse_error": null,
+    "response": "",
+    "session_id": null,
+    "status": "not_found",
+    "stderr": "gemini CLI not found in PATH",
+    "truncated": false
+  },
+  "meta": {
+    "codex_role": "default",
+    "files_referenced": [],
+    "gemini_role": "default",
+    "total_elapsed_ms": 0
+  }
+}

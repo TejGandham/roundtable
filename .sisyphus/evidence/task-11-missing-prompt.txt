@@ -1,0 +1,2 @@
+{"error":"Missing required --prompt argument","usage":"roundtable --prompt \"...\" [--role default|planner|codereviewer] [--files a.ts,b.ts]"}
+EXIT:1
