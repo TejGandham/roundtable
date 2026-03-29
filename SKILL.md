@@ -4,11 +4,16 @@ description: >-
   Multi-model consensus via Gemini and Codex CLIs. Dispatches to both in parallel, then synthesizes.
   Commands: hivemind (consensus), deepdive (extended reasoning), architect (implementation plan),
   challenge (devil's advocate), xray (codebase architecture + code quality).
-  Triggers: "roundtable", "second opinion", "what do others think", "consensus", "deep analysis",
-  "think through", "explore tradeoffs", "break down", "implementation plan", "how to build",
-  "stress test", "critique", "poke holes", "devil's advocate", "review architecture",
-  "analyze codebase", "what's wrong here".
-  Do NOT use for simple questions, pure code generation, or when user wants only Claude's opinion.
+  Use this skill whenever the user wants a second opinion, consensus, validation, or external
+  perspective on ANY technical decision — architecture reviews, design critiques, code quality
+  checks, approach comparisons, sanity checks, tradeoff analysis, or stress-testing ideas.
+  Triggers on: "roundtable", "second opinion", "what do others think", "consensus", "deep analysis",
+  "think through", "explore tradeoffs", "compare approaches", "review my design", "sanity check",
+  "validate this", "get feedback", "stress test", "critique", "poke holes", "devil's advocate",
+  "review architecture", "analyze codebase", "what's wrong here", "implementation plan", "how to build".
+  Also use when the user asks you to run something through multiple models or wants independent
+  verification of a technical approach. Do NOT use for simple questions, pure code generation,
+  or when user wants only Claude's opinion.
 ---
 
 # Roundtable - Multi-Model Consensus
@@ -17,14 +22,14 @@ Dispatch to BOTH Gemini AND Codex in parallel via `roundtable.mjs`, then synthes
 
 ## Core Rule
 
-1. Run `node ~/src/roundtable/roundtable.mjs` with appropriate flags
+1. Run `node ~/.claude/skills/roundtable/roundtable.mjs` with appropriate flags
 2. Parse the JSON output
 3. Synthesize both responses into unified output
 
 ## Commands
 
 | Command | Flags | Prompt Guidance |
-|---------|-------|-----------------|
+|-|-|-|
 | **hivemind** | `--role default` | Ask the question directly |
 | **deepdive** | `--role planner` | Add: "Provide conclusions, assumptions, alternatives, and confidence level." |
 | **architect** | `--role planner` | Request: phases, dependencies, risks, milestones |
@@ -33,35 +38,39 @@ Dispatch to BOTH Gemini AND Codex in parallel via `roundtable.mjs`, then synthes
 
 ## Invocation
 
-Run via Bash tool. Always use the full path to roundtable.mjs:
+Run via Bash tool from the **project root directory** (Gemini restricts file access to its cwd):
 
 ```bash
-node ~/src/roundtable/roundtable.mjs \
+node ~/.claude/skills/roundtable/roundtable.mjs \
   --prompt "Your question here" \
   --role planner \
   --files src/auth.ts,src/middleware.ts \
-  --timeout 120
+  --timeout 300
 ```
+
+For spec/design reviews where Codex reads referenced files, use `--timeout 600`.
 
 ### Parameters
 
 | Flag | Required | Description |
-|------|----------|-------------|
+|-|-|-|
 | `--prompt` | Yes | The question or task |
 | `--role` | No | Role for both CLIs: `default`, `planner`, `codereviewer` (default: `default`) |
 | `--gemini-role` | No | Override role for Gemini only (for xray command) |
 | `--codex-role` | No | Override role for Codex only (for xray command) |
-| `--files` | No | Comma-separated file paths for context (CLIs read files themselves) |
+| `--files` | No | Comma-separated **relative** file paths for context (CLIs read files themselves) |
 | `--gemini-model` | No | Override Gemini model (default: whatever the CLI is configured to use) |
 | `--codex-model` | No | Override Codex model (default: whatever the CLI is configured to use) |
 | `--codex-reasoning` | No | Codex reasoning effort: `xhigh`, `high`, `medium` (maps to `-c reasoning_effort="..."`) |
-| `--timeout` | No | Seconds per CLI (default: 900 / 15 min). Health probe (5s) catches broken CLIs fast. No stall detection — CLIs legitimately go silent during model inference. Gemini handles its own 429/529 retries internally. |
+| `--timeout` | No | Seconds per CLI (default: 900). Use 300 for code reviews, 600 for spec reviews. Health probe (5s) catches broken CLIs fast. No stall detection — CLIs go silent during inference. Gemini handles 429/529 retries internally. |
 | `--gemini-resume` | No | Gemini session ID or `latest` to continue a previous conversation |
 | `--codex-resume` | No | Codex session/thread ID or `last` to continue a previous conversation |
+| `--roles-dir` | No | Override global roles directory (default: skill's `roles/` dir) |
+| `--project-roles-dir` | No | Project-local roles directory (checked first, falls back to global) |
 
 ### Per-Project Role Overrides
 
-If a project has `.claude/roundtable/roles/<role>.txt`, those override the global defaults.
+If a project has `.claude/roundtable/roles/<role>.txt`, pass it via `--project-roles-dir .claude/roundtable/roles`.
 This lets projects customize planner/reviewer context for their domain.
 
 ## Output Format
@@ -135,10 +144,19 @@ Gemini CLI restricts file access to its current working directory. When using `-
 
 This is a Gemini CLI constraint, not a roundtable issue. Codex does not have this limitation.
 
+## Prompt Framing
+
+The quality of roundtable output depends on prompt quality. Guidelines:
+
+- **Be specific about what you want evaluated.** "Review this auth flow" is weaker than "Review the token refresh logic in auth.ts — is the race condition between concurrent refresh calls handled correctly?"
+- **For xray**, list the files and state what you want each model to focus on.
+- **For challenge**, state the proposal clearly before asking for critique — the models need something concrete to push back on.
+- **Include constraints.** If there are non-negotiable requirements (compliance, latency budgets, existing API contracts), state them so the models don't waste time proposing alternatives that violate them.
+
 ## Mistakes to Avoid
 
 | Mistake | Fix |
-|---------|-----|
+|-|-|
 | Running only one model | ALWAYS use roundtable (runs both) |
 | Dumping raw JSON responses | Summarize key points, find agreement/differences |
 | Skipping synthesis | Synthesis IS the value — always include it |
