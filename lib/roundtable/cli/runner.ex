@@ -8,28 +8,48 @@ defmodule Roundtable.CLI.Runner do
 
   @spec probe_cli(String.t(), [String.t()], non_neg_integer()) :: map()
   def probe_cli(executable, test_args, probe_timeout_ms \\ 5_000) do
-    env = [{"ROUNDTABLE_ACTIVE", "1"}]
+    env = [{String.to_charlist("ROUNDTABLE_ACTIVE"), String.to_charlist("1")}]
 
-    task =
-      Task.async(fn ->
-        System.cmd(executable, test_args, stderr_to_stdout: true, env: env)
-      end)
+    port =
+      Port.open({:spawn_executable, executable}, [
+        :binary,
+        :exit_status,
+        {:env, env},
+        args: test_args
+      ])
 
-    case Task.yield(task, probe_timeout_ms) do
-      {:ok, {stdout, exit_code}} ->
+    os_pid =
+      case Port.info(port, :os_pid) do
+        {:os_pid, pid} -> pid
+        nil -> nil
+      end
+
+    probe_receive(port, os_pid, probe_timeout_ms, "")
+  rescue
+    _ -> %{alive: false, exit_code: nil, stdout: "", reason: "probe failed to start"}
+  end
+
+  defp probe_receive(port, os_pid, timeout_ms, stdout_acc) do
+    receive do
+      {^port, {:data, chunk}} ->
+        probe_receive(port, os_pid, timeout_ms, stdout_acc <> chunk)
+
+      {^port, {:exit_status, exit_code}} ->
         %{
           alive: exit_code == 0,
           exit_code: exit_code,
-          stdout: String.trim(stdout),
+          stdout: String.trim(stdout_acc),
           reason: if(exit_code != 0, do: "exited with code #{exit_code}")
         }
+    after
+      timeout_ms ->
+        if os_pid do
+          :os.cmd(String.to_charlist("kill -KILL #{os_pid} 2>/dev/null; true"))
+        end
 
-      nil ->
-        Task.shutdown(task, :brutal_kill)
+        safe_close_port(port)
+        drain_port_messages(port)
         %{alive: false, exit_code: nil, stdout: "", reason: "probe timeout"}
-
-      {:exit, reason} ->
-        %{alive: false, exit_code: nil, stdout: "", reason: inspect(reason)}
     end
   end
 
@@ -56,13 +76,13 @@ defmodule Roundtable.CLI.Runner do
       ])
 
     try do
-      collect_output(port, timeout_ms, start_time, stderr_path, command, "", false, nil)
+      collect_output(port, timeout_ms, start_time, stderr_path, "", false, nil)
     after
       File.rm(stderr_path)
     end
   end
 
-  defp collect_output(port, timeout_ms, start_time, stderr_path, command, stdout_acc, truncated, os_pid) do
+  defp collect_output(port, timeout_ms, start_time, stderr_path, stdout_acc, truncated, os_pid) do
     os_pid = os_pid || get_os_pid(port)
     elapsed_ms = System.monotonic_time(:millisecond) - start_time
     remaining_ms = timeout_ms - elapsed_ms
@@ -70,12 +90,12 @@ defmodule Roundtable.CLI.Runner do
     receive do
       {^port, {:data, chunk}} ->
         {new_stdout, new_truncated} = append_capped(stdout_acc, chunk, truncated)
+
         collect_output(
           port,
           timeout_ms,
           start_time,
           stderr_path,
-          command,
           new_stdout,
           new_truncated,
           os_pid
@@ -93,7 +113,7 @@ defmodule Roundtable.CLI.Runner do
         }
     after
       max(0, remaining_ms) ->
-        kill_process_group(os_pid, command)
+        kill_process_group(os_pid)
         safe_close_port(port)
         drain_port_messages(port)
 
@@ -137,7 +157,7 @@ defmodule Roundtable.CLI.Runner do
     ArgumentError -> nil
   end
 
-  defp kill_process_group(os_pid, command) do
+  defp kill_process_group(os_pid) do
     if os_pid do
       child_pids =
         :os.cmd(String.to_charlist("pgrep -P #{os_pid} 2>/dev/null"))
@@ -160,10 +180,6 @@ defmodule Roundtable.CLI.Runner do
       end)
     end
 
-    escaped = shell_escape(command)
-    :os.cmd(String.to_charlist("pkill -TERM -f #{escaped} 2>/dev/null || true"))
-    Process.sleep(50)
-    :os.cmd(String.to_charlist("pkill -KILL -f #{escaped} 2>/dev/null || true"))
     :ok
   end
 
@@ -191,5 +207,4 @@ defmodule Roundtable.CLI.Runner do
   defp shell_escape(arg) do
     "'" <> String.replace(arg, "'", "'\\''") <> "'"
   end
-
 end

@@ -9,3 +9,5 @@
 - `Roundtable.CLI.Runner.run_cli/3` currently hardcodes `exit_signal: nil` in both completion paths, so `terminated` exists in `Roundtable.Output` but is unreachable from real execution.
 - Concrete deliverables/evidence still missing after implementation: `test/support/fake_cli.sh`, `.sisyphus/evidence/task-2-missing-callback.txt`, `.sisyphus/evidence/task-3-not-found.txt`, `.sisyphus/evidence/task-4-unavailable.txt`, and `.sisyphus/evidence/task-13-readme.txt`.
 - `SKILL.md` no longer invokes `node roundtable.mjs`, but some examples still point at non-project paths instead of `./roundtable`.
+- `probe_cli/3` needed a Port-based spawn path so timeout cleanup can terminate the real OS process instead of only killing the Elixir task wrapper.
+- Removing `pkill -f` fallback from `kill_process_group/2` is safe when the process tree is already tracked via `pgrep -P` and direct PID kills.
