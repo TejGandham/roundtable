@@ -1,0 +1,3 @@
+{"type":"thread.started","thread_id":"thread_xyz789"}
+{"type":"item.completed","item":{"type":"agent_message","text":"Here is my analysis of the code."}}
+{"type":"turn.completed","usage":{"input_tokens":150,"output_tokens":75}}
