@@ -24,15 +24,18 @@ defmodule Roundtable.CLI.Runner do
         nil -> nil
       end
 
-    probe_receive(port, os_pid, probe_timeout_ms, "")
+    deadline_ms = System.monotonic_time(:millisecond) + probe_timeout_ms
+    probe_receive(port, os_pid, deadline_ms, "")
   rescue
     _ -> %{alive: false, exit_code: nil, stdout: "", reason: "probe failed to start"}
   end
 
-  defp probe_receive(port, os_pid, timeout_ms, stdout_acc) do
+  defp probe_receive(port, os_pid, deadline_ms, stdout_acc) do
+    remaining = max(0, deadline_ms - System.monotonic_time(:millisecond))
+
     receive do
       {^port, {:data, chunk}} ->
-        probe_receive(port, os_pid, timeout_ms, stdout_acc <> chunk)
+        probe_receive(port, os_pid, deadline_ms, stdout_acc <> chunk)
 
       {^port, {:exit_status, exit_code}} ->
         %{
@@ -42,9 +45,9 @@ defmodule Roundtable.CLI.Runner do
           reason: if(exit_code != 0, do: "exited with code #{exit_code}")
         }
     after
-      timeout_ms ->
+      remaining ->
         if os_pid do
-          :os.cmd(String.to_charlist("kill -KILL #{os_pid} 2>/dev/null; true"))
+          :os.cmd(String.to_charlist("kill -KILL -#{os_pid} 2>/dev/null; true"))
         end
 
         safe_close_port(port)
@@ -64,7 +67,7 @@ defmodule Roundtable.CLI.Runner do
       |> Enum.reject(&(&1 == ""))
       |> Enum.join(" ")
 
-    inner = "exec #{command_line} 2>#{shell_escape(stderr_path)}"
+    inner = "ulimit -f 1024; exec #{command_line} 2>#{shell_escape(stderr_path)}"
     wrapper_cmd = "exec setsid --wait /bin/sh -c #{shell_escape(inner)}"
 
     port =
@@ -78,6 +81,8 @@ defmodule Roundtable.CLI.Runner do
     try do
       collect_output(port, timeout_ms, start_time, stderr_path, "", false, nil)
     after
+      kill_process_group(get_os_pid(port))
+      safe_close_port(port)
       File.rm(stderr_path)
     end
   end
@@ -165,14 +170,6 @@ defmodule Roundtable.CLI.Runner do
         |> String.split()
         |> Enum.reject(&(&1 == ""))
 
-      :os.cmd(String.to_charlist("kill -TERM #{os_pid} 2>/dev/null; true"))
-
-      Enum.each(child_pids, fn child_pid ->
-        :os.cmd(String.to_charlist("kill -TERM -#{child_pid} 2>/dev/null; true"))
-      end)
-
-      Process.sleep(3_000)
-
       :os.cmd(String.to_charlist("kill -KILL #{os_pid} 2>/dev/null; true"))
 
       Enum.each(child_pids, fn child_pid ->
@@ -198,9 +195,15 @@ defmodule Roundtable.CLI.Runner do
   end
 
   defp read_stderr(path) do
-    case File.read(path) do
-      {:ok, content} -> content
-      {:error, _} -> ""
+    case File.open(path, [:read, :binary]) do
+      {:ok, file} ->
+        content = IO.read(file, 524_288)
+        File.close(file)
+
+        if is_binary(content), do: content, else: ""
+
+      {:error, _} ->
+        ""
     end
   end
 
