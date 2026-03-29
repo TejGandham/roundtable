@@ -106,9 +106,10 @@ function probeCli(executable, testArgs, probeTimeoutMs = 5000) {
     let stdout = '';
     proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
 
+    let killTimer = null;
     const timer = setTimeout(() => {
       proc.kill('SIGTERM');
-      setTimeout(() => {
+      killTimer = setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch { /* already dead */ }
       }, 2000);
       resolvePromise({ alive: false, reason: 'probe timeout' });
@@ -116,6 +117,7 @@ function probeCli(executable, testArgs, probeTimeoutMs = 5000) {
 
     proc.on('close', (code) => {
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       resolvePromise({
         alive: code === 0,
         exit_code: code,
@@ -126,6 +128,7 @@ function probeCli(executable, testArgs, probeTimeoutMs = 5000) {
 
     proc.on('error', (err) => {
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       resolvePromise({ alive: false, reason: err.message });
     });
   });
@@ -357,19 +360,22 @@ function runCli(command, cliArgs, timeoutMs) {
       try { process.kill(-proc.pid, signal); } catch { /* already dead */ }
     };
 
+    let killTimer = null;
     const timeoutTimer = setTimeout(() => {
       killed = true;
       killTree('SIGTERM');
-      setTimeout(() => killTree('SIGKILL'), 3000);
+      killTimer = setTimeout(() => killTree('SIGKILL'), 3000);
     }, timeoutMs);
 
-    proc.on('close', (code) => {
+    proc.on('close', (code, signal) => {
       activeChildren.delete(proc);
       clearTimeout(timeoutTimer);
+      if (killTimer) clearTimeout(killTimer);
       resolvePromise({
         stdout,
         stderr,
         exit_code: code,
+        exit_signal: signal || null,
         elapsed_ms: Date.now() - startTime,
         timed_out: killed,
         truncated,
@@ -379,6 +385,7 @@ function runCli(command, cliArgs, timeoutMs) {
     proc.on('error', (err) => {
       activeChildren.delete(proc);
       clearTimeout(timeoutTimer);
+      if (killTimer) clearTimeout(killTimer);
       resolvePromise({
         stdout: '',
         stderr: err.message,
@@ -397,7 +404,7 @@ function buildResult(cliName, path, model, args, settledResult) {
   if (!path) {
     return {
       response: '', model, status: 'not_found',
-      exit_code: null, stderr: `${cliName} CLI not found in PATH`,
+      exit_code: null, exit_signal: null, stderr: `${cliName} CLI not found in PATH`,
       elapsed_ms: 0, parse_error: null, truncated: false, session_id: null,
     };
   }
@@ -405,7 +412,7 @@ function buildResult(cliName, path, model, args, settledResult) {
   if (settledResult.status === 'rejected') {
     return {
       response: '', model, status: 'error',
-      exit_code: null, stderr: settledResult.reason?.message || 'unknown error',
+      exit_code: null, exit_signal: null, stderr: settledResult.reason?.message || 'unknown error',
       elapsed_ms: 0, parse_error: null, truncated: false, session_id: null,
     };
   }
@@ -414,7 +421,7 @@ function buildResult(cliName, path, model, args, settledResult) {
   if (!raw) {
     return {
       response: '', model, status: 'error',
-      exit_code: null, stderr: 'probe failed',
+      exit_code: null, exit_signal: null, stderr: 'probe failed',
       elapsed_ms: 0, parse_error: null, truncated: false, session_id: null,
     };
   }
@@ -424,14 +431,17 @@ function buildResult(cliName, path, model, args, settledResult) {
 
   let status = parsed.status;
   if (raw.timed_out) status = 'timeout';
+  // Signal death (code === null, signal present) means forced termination — not a clean exit
+  else if (raw.exit_signal) status = 'terminated';
   // Non-zero exit with parsed 'ok' means CLI reported success format but failed — downgrade
-  if (raw.exit_code !== 0 && raw.exit_code !== null && status === 'ok') status = 'error';
+  else if (raw.exit_code !== 0 && raw.exit_code !== null && status === 'ok') status = 'error';
 
   return {
     response: parsed.response,
     model: parsed.metadata?.model_used || model || 'cli-default',
     status,
     exit_code: raw.exit_code,
+    exit_signal: raw.exit_signal || null,
     stderr: raw.stderr,
     elapsed_ms: raw.elapsed_ms,
     parse_error: parsed.parse_error,
@@ -494,18 +504,20 @@ async function main() {
   const [geminiSettled, codexSettled] = await Promise.allSettled([geminiTask, codexTask]);
 
   // Build results — probe failures get immediate status
-  const probeFailResult = (name, model, reason) => ({
+  const probeFailResult = (name, model, probeResult) => ({
     response: '', model, status: 'probe_failed',
-    exit_code: null, stderr: `${name} CLI probe failed: ${reason}. Run ${name.toLowerCase()} --version to diagnose.`,
+    exit_code: probeResult?.exit_code ?? null,
+    exit_signal: null,
+    stderr: `${name} CLI probe failed: ${probeResult?.reason || 'unknown'}. Run ${name.toLowerCase()} --version to diagnose.`,
     elapsed_ms: 0, parse_error: null, truncated: false, session_id: null,
   });
 
   const results = {
     gemini: (geminiPath && !geminiHealthy)
-      ? probeFailResult('Gemini', args.geminiModel, probeResults.gemini?.reason)
+      ? probeFailResult('Gemini', args.geminiModel, probeResults.gemini)
       : buildResult('gemini', geminiPath, args.geminiModel, args, geminiSettled),
     codex: (codexPath && !codexHealthy)
-      ? probeFailResult('Codex', args.codexModel, probeResults.codex?.reason)
+      ? probeFailResult('Codex', args.codexModel, probeResults.codex)
       : buildResult('codex', codexPath, args.codexModel, args, codexSettled),
     meta: {},
   };
@@ -568,6 +580,6 @@ main().catch(err => {
   const msg = err instanceof ArgError
     ? { error: err.message, usage: 'roundtable --prompt "..." [--role default|planner|codereviewer] [--files a.ts,b.ts]' }
     : { error: err.message };
-  console.error(JSON.stringify(msg));
+  console.log(JSON.stringify(msg));
   process.exit(1);
 });
