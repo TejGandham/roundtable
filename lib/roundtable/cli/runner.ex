@@ -139,9 +139,25 @@ defmodule Roundtable.CLI.Runner do
 
   defp kill_process_group(os_pid, command) do
     if os_pid do
-      :os.cmd(String.to_charlist("kill -TERM -#{os_pid}"))
+      child_pids =
+        :os.cmd(String.to_charlist("pgrep -P #{os_pid} 2>/dev/null"))
+        |> to_string()
+        |> String.split()
+        |> Enum.reject(&(&1 == ""))
+
+      :os.cmd(String.to_charlist("kill -TERM #{os_pid} 2>/dev/null; true"))
+
+      Enum.each(child_pids, fn child_pid ->
+        :os.cmd(String.to_charlist("kill -TERM -#{child_pid} 2>/dev/null; true"))
+      end)
+
       Process.sleep(3_000)
-      :os.cmd(String.to_charlist("kill -KILL -#{os_pid}"))
+
+      :os.cmd(String.to_charlist("kill -KILL #{os_pid} 2>/dev/null; true"))
+
+      Enum.each(child_pids, fn child_pid ->
+        :os.cmd(String.to_charlist("kill -KILL -#{child_pid} 2>/dev/null; true"))
+      end)
     end
 
     escaped = shell_escape(command)
