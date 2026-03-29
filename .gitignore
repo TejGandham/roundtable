@@ -3,6 +3,9 @@
 /deps/
 /roundtable
 
+# Track release binary (exception to above)
+!/release/roundtable
+
 # Sisyphus evidence (noisy, not needed in git)
 .sisyphus/evidence/
 .sisyphus/boulder.json
