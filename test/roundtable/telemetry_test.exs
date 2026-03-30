@@ -23,30 +23,41 @@ defmodule Roundtable.TelemetryTest do
     %{role: "planner", gemini_role: "planner", codex_role: "planner", files: ["a.ts", "b.ts"]}
   end
 
-  test "build_span produces valid OTEL structure" do
+  test "build_span produces valid OTEL structure with 3 spans" do
     start_ms = System.monotonic_time(:millisecond) - 5000
     span = Telemetry.build_span(sample_results(), sample_args(), start_ms)
     assert Map.has_key?(span, "resourceSpans")
     [rs] = span["resourceSpans"]
     [ss] = rs["scopeSpans"]
-    [s] = ss["spans"]
-    assert s["name"] == "roundtable.invoke"
-    assert s["traceId"] |> String.length() == 32
-    assert s["spanId"] |> String.length() == 16
-    # gemini ok -> status 1
-    assert s["status"]["code"] == 1
+    spans = ss["spans"]
+    assert length(spans) == 3
+
+    [root, gemini_child, codex_child] = spans
+    assert root["name"] == "roundtable.invoke"
+    assert root["traceId"] |> String.length() == 32
+    assert root["spanId"] |> String.length() == 16
+    refute Map.has_key?(root, "parentSpanId")
+
+    assert gemini_child["parentSpanId"] == root["spanId"]
+    assert codex_child["parentSpanId"] == root["spanId"]
+
+    assert gemini_child["traceId"] == root["traceId"]
+    assert codex_child["traceId"] == root["traceId"]
+
+    # gemini ok -> root status 1
+    assert root["status"]["code"] == 1
   end
 
-  test "span attributes include all required fields" do
+  test "root span attributes include all required fields" do
     start_ms = System.monotonic_time(:millisecond) - 1000
     span = Telemetry.build_span(sample_results(), sample_args(), start_ms)
 
-    attrs =
+    [root | _children] =
       span["resourceSpans"]
       |> hd()
-      |> get_in(["scopeSpans", Access.at(0), "spans", Access.at(0), "attributes"])
+      |> get_in(["scopeSpans", Access.at(0), "spans"])
 
-    keys = Enum.map(attrs, & &1["key"])
+    keys = Enum.map(root["attributes"], & &1["key"])
     assert "roundtable.role" in keys
     assert "roundtable.gemini.status" in keys
     assert "roundtable.codex.status" in keys
@@ -74,12 +85,61 @@ defmodule Roundtable.TelemetryTest do
         System.monotonic_time(:millisecond)
       )
 
-    s =
+    [root, gemini_child, codex_child] =
       span["resourceSpans"]
       |> hd()
-      |> get_in(["scopeSpans", Access.at(0), "spans", Access.at(0)])
+      |> get_in(["scopeSpans", Access.at(0), "spans"])
 
-    assert s["status"]["code"] == 2
+    assert root["status"]["code"] == 2
+    assert gemini_child["status"]["code"] == 2
+    assert codex_child["status"]["code"] == 2
+  end
+
+  test "child spans have correct names and parentSpanId" do
+    start_ms = System.monotonic_time(:millisecond) - 1000
+    span = Telemetry.build_span(sample_results(), sample_args(), start_ms)
+
+    [root, gemini_child, codex_child] =
+      span["resourceSpans"]
+      |> hd()
+      |> get_in(["scopeSpans", Access.at(0), "spans"])
+
+    assert gemini_child["name"] == "roundtable.gemini"
+    assert codex_child["name"] == "roundtable.codex"
+    assert gemini_child["parentSpanId"] == root["spanId"]
+    assert codex_child["parentSpanId"] == root["spanId"]
+    assert gemini_child["spanId"] |> String.length() == 16
+    assert codex_child["spanId"] |> String.length() == 16
+    assert gemini_child["kind"] == 3
+    assert codex_child["kind"] == 3
+
+    gemini_keys = Enum.map(gemini_child["attributes"], & &1["key"])
+    assert "roundtable.gemini.status" in gemini_keys
+    assert "roundtable.gemini.model" in gemini_keys
+
+    codex_keys = Enum.map(codex_child["attributes"], & &1["key"])
+    assert "roundtable.codex.status" in codex_keys
+    assert "roundtable.codex.model" in codex_keys
+  end
+
+  test "child span duration matches elapsed_ms" do
+    start_ms = System.monotonic_time(:millisecond) - 5000
+    span = Telemetry.build_span(sample_results(), sample_args(), start_ms)
+
+    [_root, gemini_child, codex_child] =
+      span["resourceSpans"]
+      |> hd()
+      |> get_in(["scopeSpans", Access.at(0), "spans"])
+
+    gemini_start = String.to_integer(gemini_child["startTimeUnixNano"])
+    gemini_end = String.to_integer(gemini_child["endTimeUnixNano"])
+    gemini_duration_ms = div(gemini_end - gemini_start, 1_000_000)
+    assert gemini_duration_ms == 5000
+
+    codex_start = String.to_integer(codex_child["startTimeUnixNano"])
+    codex_end = String.to_integer(codex_child["endTimeUnixNano"])
+    codex_duration_ms = div(codex_end - codex_start, 1_000_000)
+    assert codex_duration_ms == 30_000
   end
 
   test "emit/3 returns :ok when endpoint not set" do
