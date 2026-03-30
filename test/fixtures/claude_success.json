@@ -1,0 +1,1 @@
+{"type":"result","result":"\n\nHello","is_error":false,"session_id":"78ca29ae-5083-42e9-a705-bc55da0bf188","usage":{},"modelUsage":{"claude-opus-4-6[1m]":{"inputTokens":3,"outputTokens":5}}}
