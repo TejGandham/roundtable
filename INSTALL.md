@@ -85,40 +85,40 @@ Codex reads the same SKILL.md frontmatter format. Restart Codex to pick up the n
 
 ### Gemini CLI
 
-Gemini CLI uses `~/.gemini/settings.json` for configuration and doesn't have a file-based skill discovery system. Instead, add roundtable as a custom tool instruction in your `GEMINI.md` (project-level) or system instructions.
-
-**Step 1:** Install the binary to a shared location:
+Gemini CLI has its own skill system using the same `SKILL.md` format. It discovers skills from `~/.gemini/skills/` (user-level) or `.gemini/skills/` (workspace-level), with progressive disclosure — only name and description are loaded initially, full instructions load when the model calls `activate_skill`.
 
 ```bash
-mkdir -p ~/.local/share/roundtable/roles
+mkdir -p ~/.gemini/skills/roundtable
 curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
-  | tar xz -C ~/.local/share/roundtable
-chmod +x ~/.local/share/roundtable/roundtable
+  | tar xz -C ~/.gemini/skills/roundtable
+chmod +x ~/.gemini/skills/roundtable/roundtable
 ```
 
-**Step 2:** Add to your project's `GEMINI.md` (or global instructions):
+Restart Gemini CLI to pick up the new skill. The model will see roundtable in its available skills and can activate it via the `activate_skill` tool.
 
-```markdown
-## Roundtable (Multi-Model Consensus)
+**Note:** The SKILL.md hardcodes `~/.claude/skills/roundtable/roundtable` as the binary path. For Gemini, either:
+- Symlink: `ln -s ~/.gemini/skills/roundtable/roundtable ~/.claude/skills/roundtable/roundtable`
+- Or update the path in your copy of SKILL.md to `~/.gemini/skills/roundtable/roundtable`
 
-When the user asks for a "roundtable", "second opinion", "consensus", or "challenge",
-run the roundtable binary to get parallel responses from other models:
+**Note:** Gemini is both a *participant* in roundtable (dispatched by the binary) and potentially an *orchestrator* (activating the skill). When Gemini runs roundtable, the binary spawns a separate Gemini CLI process — this is expected and not recursive.
 
-\`\`\`bash
-~/.local/share/roundtable/roundtable \
-  --prompt "the question" \
-  --role planner \
-  --files relevant/file.ts \
-  --timeout 300
-\`\`\`
+### Multi-Agent (Shared Install)
 
-Parse the JSON output and synthesize both model responses into:
-- **Agreement**: shared conclusions
-- **Differences**: divergent views
-- **Recommendation**: unified advice
+If you use multiple agents, install once and symlink to avoid maintaining separate copies:
+
+```bash
+# Install to Claude Code (primary)
+mkdir -p ~/.claude/skills/roundtable
+curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
+  | tar xz -C ~/.claude/skills/roundtable
+chmod +x ~/.claude/skills/roundtable/roundtable
+
+# Symlink for other agents
+ln -s ~/.claude/skills/roundtable ~/.codex/skills/roundtable
+ln -s ~/.claude/skills/roundtable ~/.gemini/skills/roundtable
 ```
 
-**Note:** Gemini is both a *participant* in roundtable (dispatched by the binary) and potentially an *orchestrator* (reading these instructions). When Gemini runs roundtable, the binary spawns a separate Gemini CLI process — this is expected and not recursive.
+This way SKILL.md's hardcoded `~/.claude/skills/roundtable/roundtable` path works for all agents.
 
 ## Install from Source
 
@@ -133,7 +133,8 @@ mix deps.get
 mix escript.build
 
 # Copy to your agent's skill directory
-SKILL_DIR=~/.claude/skills/roundtable  # or ~/.codex/skills/roundtable
+# Use ~/.claude/skills, ~/.codex/skills, or ~/.gemini/skills
+SKILL_DIR=~/.claude/skills/roundtable
 mkdir -p "$SKILL_DIR/roles"
 cp roundtable "$SKILL_DIR/"
 cp SKILL.md "$SKILL_DIR/"
