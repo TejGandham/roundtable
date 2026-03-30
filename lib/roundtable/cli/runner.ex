@@ -67,7 +67,7 @@ defmodule Roundtable.CLI.Runner do
       |> Enum.reject(&(&1 == ""))
       |> Enum.join(" ")
 
-    inner = "ulimit -f 1024; exec #{command_line} 2>#{shell_escape(stderr_path)}"
+    inner = "exec #{command_line} 2>#{shell_escape(stderr_path)}"
     wrapper_cmd = "exec setsid --wait /bin/sh -c #{shell_escape(inner)}"
 
     port =
