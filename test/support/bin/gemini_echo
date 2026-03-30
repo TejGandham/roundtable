@@ -1,0 +1,21 @@
+#!/bin/sh
+# Mock gemini that records the received prompt to a temp file for test verification
+if [ "$1" = "--version" ]; then
+  echo "mock-gemini 1.0.0"
+  exit 0
+fi
+
+PROMPT=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -p) shift; PROMPT="$1" ;;
+  esac
+  shift
+done
+
+# Write prompt to temp file for test assertions
+printf '%s' "$PROMPT" > /tmp/roundtable_test_prompt.txt
+
+cat <<'EOF'
+{"response":"echo","stats":{"models":{"mock":{"tokens":{"input":1,"output":1}}}},"session_id":"ses_echo"}
+EOF
