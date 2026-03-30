@@ -20,7 +20,7 @@ defmodule Roundtable.MixProject do
   end
 
   defp escript do
-    [main_module: Roundtable, name: "roundtable-cli"]
+    [main_module: Roundtable.CLI, name: "roundtable-cli"]
   end
 
   defp deps do
