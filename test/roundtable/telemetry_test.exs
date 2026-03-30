@@ -23,6 +23,10 @@ defmodule Roundtable.TelemetryTest do
     %{role: "planner", gemini_role: "planner", codex_role: "planner", files: ["a.ts", "b.ts"]}
   end
 
+  defp span_by_name(spans, name) do
+    Enum.find(spans, fn span -> span["name"] == name end)
+  end
+
   test "build_span produces valid OTEL structure with 3 spans" do
     start_ms = System.monotonic_time(:millisecond) - 5000
     span = Telemetry.build_span(sample_results(), sample_args(), start_ms)
@@ -32,7 +36,10 @@ defmodule Roundtable.TelemetryTest do
     spans = ss["spans"]
     assert length(spans) == 3
 
-    [root, gemini_child, codex_child] = spans
+    root = span_by_name(spans, "roundtable.invoke")
+    gemini_child = span_by_name(spans, "roundtable.gemini")
+    codex_child = span_by_name(spans, "roundtable.codex")
+
     assert root["name"] == "roundtable.invoke"
     assert root["traceId"] |> String.length() == 32
     assert root["spanId"] |> String.length() == 16
@@ -85,10 +92,10 @@ defmodule Roundtable.TelemetryTest do
         System.monotonic_time(:millisecond)
       )
 
-    [root, gemini_child, codex_child] =
-      span["resourceSpans"]
-      |> hd()
-      |> get_in(["scopeSpans", Access.at(0), "spans"])
+    spans = span["resourceSpans"] |> hd() |> get_in(["scopeSpans", Access.at(0), "spans"])
+    root = span_by_name(spans, "roundtable.invoke")
+    gemini_child = span_by_name(spans, "roundtable.gemini")
+    codex_child = span_by_name(spans, "roundtable.codex")
 
     assert root["status"]["code"] == 2
     assert gemini_child["status"]["code"] == 2
@@ -99,10 +106,10 @@ defmodule Roundtable.TelemetryTest do
     start_ms = System.monotonic_time(:millisecond) - 1000
     span = Telemetry.build_span(sample_results(), sample_args(), start_ms)
 
-    [root, gemini_child, codex_child] =
-      span["resourceSpans"]
-      |> hd()
-      |> get_in(["scopeSpans", Access.at(0), "spans"])
+    spans = span["resourceSpans"] |> hd() |> get_in(["scopeSpans", Access.at(0), "spans"])
+    root = span_by_name(spans, "roundtable.invoke")
+    gemini_child = span_by_name(spans, "roundtable.gemini")
+    codex_child = span_by_name(spans, "roundtable.codex")
 
     assert gemini_child["name"] == "roundtable.gemini"
     assert codex_child["name"] == "roundtable.codex"
@@ -126,10 +133,9 @@ defmodule Roundtable.TelemetryTest do
     start_ms = System.monotonic_time(:millisecond) - 5000
     span = Telemetry.build_span(sample_results(), sample_args(), start_ms)
 
-    [_root, gemini_child, codex_child] =
-      span["resourceSpans"]
-      |> hd()
-      |> get_in(["scopeSpans", Access.at(0), "spans"])
+    spans = span["resourceSpans"] |> hd() |> get_in(["scopeSpans", Access.at(0), "spans"])
+    gemini_child = span_by_name(spans, "roundtable.gemini")
+    codex_child = span_by_name(spans, "roundtable.codex")
 
     gemini_start = String.to_integer(gemini_child["startTimeUnixNano"])
     gemini_end = String.to_integer(gemini_child["endTimeUnixNano"])
@@ -175,5 +181,26 @@ defmodule Roundtable.TelemetryTest do
     assert "session.tag" in keys
   after
     System.delete_env("OTEL_RESOURCE_ATTRIBUTES")
+  end
+
+  test "build_span with 3 agents generates 4 spans (1 root + 3 children)" do
+    results = %{
+      "gemini" => %{"status" => "ok", "elapsed_ms" => 1000, "model" => "gemini"},
+      "codex" => %{"status" => "timeout", "elapsed_ms" => 2000, "model" => "codex"},
+      "claude" => %{"status" => "ok", "elapsed_ms" => 3000, "model" => "claude"},
+      "meta" => %{"total_elapsed_ms" => 3000}
+    }
+
+    span =
+      Telemetry.build_span(
+        results,
+        %{role: "planner", files: []},
+        System.monotonic_time(:millisecond)
+      )
+
+    spans = span["resourceSpans"] |> hd() |> get_in(["scopeSpans", Access.at(0), "spans"])
+
+    assert length(spans) == 4
+    assert Enum.any?(spans, fn s -> s["name"] == "roundtable.claude" end)
   end
 end
