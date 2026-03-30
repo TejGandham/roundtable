@@ -18,7 +18,10 @@ defmodule Roundtable.Args do
           {:project_roles_dir, :string},
           {:codex_reasoning, :string},
           {:gemini_resume, :string},
-          {:codex_resume, :string}
+          {:codex_resume, :string},
+          {:claude_role, :string},
+          {:claude_model, :string},
+          {:claude_resume, :string}
         ]
       )
 
@@ -59,7 +62,10 @@ defmodule Roundtable.Args do
            project_roles_dir: Keyword.get(parsed, :project_roles_dir),
            codex_reasoning: Keyword.get(parsed, :codex_reasoning),
            gemini_resume: Keyword.get(parsed, :gemini_resume),
-           codex_resume: Keyword.get(parsed, :codex_resume)
+           codex_resume: Keyword.get(parsed, :codex_resume),
+           claude_role: Keyword.get(parsed, :claude_role),
+           claude_model: Keyword.get(parsed, :claude_model),
+           claude_resume: Keyword.get(parsed, :claude_resume)
          }}
       end
     end

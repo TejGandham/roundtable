@@ -25,6 +25,9 @@ defmodule Roundtable.ArgsTest do
     assert args.codex_reasoning == nil
     assert args.gemini_resume == nil
     assert args.codex_resume == nil
+    assert args.claude_role == nil
+    assert args.claude_model == nil
+    assert args.claude_resume == nil
   end
 
   test "missing prompt returns error" do
@@ -60,6 +63,21 @@ defmodule Roundtable.ArgsTest do
 
     assert args.gemini_resume == "latest"
     assert args.codex_resume == "last"
+  end
+
+  test "parses --claude-role" do
+    {:ok, args} = Args.parse(["--prompt", "test", "--claude-role", "planner"])
+    assert args.claude_role == "planner"
+  end
+
+  test "parses --claude-model" do
+    {:ok, args} = Args.parse(["--prompt", "test", "--claude-model", "opus"])
+    assert args.claude_model == "opus"
+  end
+
+  test "parses --claude-resume" do
+    {:ok, args} = Args.parse(["--prompt", "test", "--claude-resume", "ses_abc"])
+    assert args.claude_resume == "ses_abc"
   end
 
   test "parses --codex-reasoning" do
