@@ -83,6 +83,43 @@ Codex reads the same SKILL.md frontmatter format. Restart Codex to pick up the n
 - Symlink: `ln -s ~/.codex/skills/roundtable/roundtable ~/.claude/skills/roundtable/roundtable`
 - Or update the path in your copy of SKILL.md to `~/.codex/skills/roundtable/roundtable`
 
+### Gemini CLI
+
+Gemini CLI uses `~/.gemini/settings.json` for configuration and doesn't have a file-based skill discovery system. Instead, add roundtable as a custom tool instruction in your `GEMINI.md` (project-level) or system instructions.
+
+**Step 1:** Install the binary to a shared location:
+
+```bash
+mkdir -p ~/.local/share/roundtable/roles
+curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
+  | tar xz -C ~/.local/share/roundtable
+chmod +x ~/.local/share/roundtable/roundtable
+```
+
+**Step 2:** Add to your project's `GEMINI.md` (or global instructions):
+
+```markdown
+## Roundtable (Multi-Model Consensus)
+
+When the user asks for a "roundtable", "second opinion", "consensus", or "challenge",
+run the roundtable binary to get parallel responses from other models:
+
+\`\`\`bash
+~/.local/share/roundtable/roundtable \
+  --prompt "the question" \
+  --role planner \
+  --files relevant/file.ts \
+  --timeout 300
+\`\`\`
+
+Parse the JSON output and synthesize both model responses into:
+- **Agreement**: shared conclusions
+- **Differences**: divergent views
+- **Recommendation**: unified advice
+```
+
+**Note:** Gemini is both a *participant* in roundtable (dispatched by the binary) and potentially an *orchestrator* (reading these instructions). When Gemini runs roundtable, the binary spawns a separate Gemini CLI process — this is expected and not recursive.
+
 ## Install from Source
 
 ```bash
