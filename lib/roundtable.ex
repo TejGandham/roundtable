@@ -4,6 +4,7 @@ defmodule Roundtable do
   alias Roundtable.Output
   alias Roundtable.Prompt.Assembler
   alias Roundtable.Prompt.Roles
+  alias Roundtable.Telemetry
 
   @spec main([String.t()]) :: no_return()
   def main(args) do
@@ -36,6 +37,7 @@ defmodule Roundtable do
   end
 
   defp run(args) do
+    start_time = System.monotonic_time(:millisecond)
     gemini_role = args.gemini_role || args.role
     codex_role = args.codex_role || args.role
 
@@ -82,6 +84,7 @@ defmodule Roundtable do
         timeout_ms: timeout_ms
       })
 
+    Telemetry.emit(results, args, start_time)
     IO.puts(Output.encode(results))
     System.halt(0)
   end
