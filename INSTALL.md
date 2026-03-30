@@ -6,14 +6,15 @@
 - **Gemini CLI** installed and authenticated (`gemini --version`)
 - **Codex CLI** installed and authenticated (`codex --version`)
 
-Install Erlang via your package manager:
-
 ```bash
 # macOS
 brew install erlang
 
 # Debian/Ubuntu
 sudo apt install erlang-base
+
+# Nix
+nix-shell -p erlang
 ```
 
 ## What Gets Installed
@@ -28,9 +29,22 @@ sudo apt install erlang-base
     └── codereviewer.txt  # code review prompt
 ```
 
-## Install from Release
+## Skill Discovery by Agent
 
-Download the latest release tarball and extract to the skill directory for your agent.
+All four major coding agents support skill discovery via `SKILL.md` files, but each has its own directory convention:
+
+| Agent | User-level directory | Workspace-level directory | Format |
+|-|-|-|-|
+| Claude Code | `~/.claude/skills/<name>/` | `.claude/skills/` | `SKILL.md` in directory |
+| Codex | `~/.codex/skills/<name>/` | `.agents/skills/` | `SKILL.md` in directory |
+| Gemini CLI | `~/.gemini/skills/<name>/` | `.gemini/skills/` or `.agents/skills/` | `SKILL.md` in directory |
+| OpenCode | `~/.opencode/skills/` | — | Single `<name>.md` files |
+
+All agents use progressive disclosure: only the SKILL.md frontmatter (name + description) is loaded initially. Full instructions load when the skill is activated.
+
+`.agents/skills/` is an emerging cross-agent convention supported by Codex and Gemini CLI for workspace-level skills.
+
+## Install from Release
 
 ### Claude Code
 
@@ -41,22 +55,41 @@ curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/do
 chmod +x ~/.claude/skills/roundtable/roundtable
 ```
 
-Claude Code auto-discovers skills in `~/.claude/skills/` via SKILL.md frontmatter. No config changes needed — restart Claude Code to pick it up.
+Auto-discovered via SKILL.md frontmatter. Restart Claude Code to pick it up.
+
+### Codex
+
+```bash
+mkdir -p ~/.codex/skills/roundtable
+curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
+  | tar xz -C ~/.codex/skills/roundtable
+chmod +x ~/.codex/skills/roundtable/roundtable
+```
+
+Auto-discovered via SKILL.md frontmatter. Restart Codex to pick it up.
+
+### Gemini CLI
+
+```bash
+mkdir -p ~/.gemini/skills/roundtable
+curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
+  | tar xz -C ~/.gemini/skills/roundtable
+chmod +x ~/.gemini/skills/roundtable/roundtable
+```
+
+Gemini discovers skills from `~/.gemini/skills/` and `~/.agents/skills/` (user-level) or `.gemini/skills/` and `.agents/skills/` (workspace-level). The model activates skills via the `activate_skill` tool, which requires user consent on first use. Restart Gemini CLI to pick it up.
+
+**Note:** Gemini is both a *participant* in roundtable (dispatched by the binary) and potentially an *orchestrator* (activating the skill). When Gemini runs roundtable, the binary spawns a separate Gemini CLI process — this is expected and not recursive.
 
 ### OpenCode
 
-OpenCode reads skills from the same `~/.claude/skills/` directory. If you already installed for Claude Code, OpenCode will find it automatically.
+OpenCode uses a different skill format (single `.md` files in `~/.opencode/skills/`), not subdirectories with `SKILL.md`. Roundtable's directory-based structure doesn't match OpenCode's native convention.
 
-If OpenCode is your only agent, use the same path:
+Two options:
 
-```bash
-mkdir -p ~/.claude/skills/roundtable
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
-  | tar xz -C ~/.claude/skills/roundtable
-chmod +x ~/.claude/skills/roundtable/roundtable
-```
+**Option A — Share Claude Code's skill directory** (if both agents are installed):
 
-You may need to allow the skill directory in your OpenCode agent permissions:
+OpenCode can read from `~/.claude/skills/` if you add an `external_directory` permission in your OpenCode agent config:
 
 ```json
 {
@@ -66,41 +99,29 @@ You may need to allow the skill directory in your OpenCode agent permissions:
 }
 ```
 
-### Codex
+**Option B — Standalone install with instructions file:**
 
-Codex discovers skills from `~/.codex/skills/` (or `$CODEX_HOME/skills/`):
-
-```bash
-mkdir -p ~/.codex/skills/roundtable
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
-  | tar xz -C ~/.codex/skills/roundtable
-chmod +x ~/.codex/skills/roundtable/roundtable
-```
-
-Codex reads the same SKILL.md frontmatter format. Restart Codex to pick up the new skill.
-
-**Note:** The SKILL.md hardcodes `~/.claude/skills/roundtable/roundtable` as the binary path. For Codex, either:
-- Symlink: `ln -s ~/.codex/skills/roundtable/roundtable ~/.claude/skills/roundtable/roundtable`
-- Or update the path in your copy of SKILL.md to `~/.codex/skills/roundtable/roundtable`
-
-### Gemini CLI
-
-Gemini CLI has its own skill system using the same `SKILL.md` format. It discovers skills from `~/.gemini/skills/` (user-level) or `.gemini/skills/` (workspace-level), with progressive disclosure — only name and description are loaded initially, full instructions load when the model calls `activate_skill`.
+Install the binary and create an OpenCode-native skill that references it:
 
 ```bash
-mkdir -p ~/.gemini/skills/roundtable
+# Install binary
+mkdir -p ~/.local/share/roundtable/roles
 curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
-  | tar xz -C ~/.gemini/skills/roundtable
-chmod +x ~/.gemini/skills/roundtable/roundtable
+  | tar xz -C ~/.local/share/roundtable
+chmod +x ~/.local/share/roundtable/roundtable
+
+# Create OpenCode skill pointer
+cat > ~/.opencode/skills/roundtable.md << 'EOF'
+---
+name: roundtable
+description: Multi-model consensus via Gemini, Codex, and Claude CLIs. Run when user wants a second opinion, consensus, or validation.
+---
+
+Run `~/.local/share/roundtable/roundtable` with `--prompt`, `--role`, `--files`, and `--timeout` flags.
+Parse the JSON output and synthesize all model responses.
+See ~/.local/share/roundtable/SKILL.md for full documentation.
+EOF
 ```
-
-Restart Gemini CLI to pick up the new skill. The model will see roundtable in its available skills and can activate it via the `activate_skill` tool.
-
-**Note:** The SKILL.md hardcodes `~/.claude/skills/roundtable/roundtable` as the binary path. For Gemini, either:
-- Symlink: `ln -s ~/.gemini/skills/roundtable/roundtable ~/.claude/skills/roundtable/roundtable`
-- Or update the path in your copy of SKILL.md to `~/.gemini/skills/roundtable/roundtable`
-
-**Note:** Gemini is both a *participant* in roundtable (dispatched by the binary) and potentially an *orchestrator* (activating the skill). When Gemini runs roundtable, the binary spawns a separate Gemini CLI process — this is expected and not recursive.
 
 ### Multi-Agent (Shared Install)
 
@@ -114,11 +135,23 @@ curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/do
 chmod +x ~/.claude/skills/roundtable/roundtable
 
 # Symlink for other agents
+mkdir -p ~/.codex/skills ~/.gemini/skills
 ln -s ~/.claude/skills/roundtable ~/.codex/skills/roundtable
 ln -s ~/.claude/skills/roundtable ~/.gemini/skills/roundtable
 ```
 
-This way SKILL.md's hardcoded `~/.claude/skills/roundtable/roundtable` path works for all agents.
+### Workspace-Level Install (Per-Project)
+
+For project-scoped installs using the cross-agent `.agents/skills/` convention (supported by Codex and Gemini CLI):
+
+```bash
+mkdir -p .agents/skills/roundtable
+curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
+  | tar xz -C .agents/skills/roundtable
+chmod +x .agents/skills/roundtable/roundtable
+```
+
+For Claude Code workspace-level, use `.claude/skills/` instead.
 
 ## Install from Source
 
@@ -127,14 +160,14 @@ git clone https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable.git
 cd roundtable
 
 # Requires Elixir + Erlang
-brew install elixir  # or: sudo apt install elixir
+# macOS: brew install elixir
+# Debian/Ubuntu: sudo apt install elixir
 
 mix deps.get
 mix escript.build
 
 # Copy to your agent's skill directory
-# Use ~/.claude/skills, ~/.codex/skills, or ~/.gemini/skills
-SKILL_DIR=~/.claude/skills/roundtable
+SKILL_DIR=~/.claude/skills/roundtable  # adjust for your agent
 mkdir -p "$SKILL_DIR/roles"
 cp roundtable "$SKILL_DIR/"
 cp SKILL.md "$SKILL_DIR/"
@@ -156,6 +189,7 @@ The agent passes `--project-roles-dir .claude/roundtable/roles` and roundtable c
 ## Verify Installation
 
 ```bash
+# Adjust path to match your install location
 ~/.claude/skills/roundtable/roundtable --prompt "Hello" --timeout 30
 ```
 
