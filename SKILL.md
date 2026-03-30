@@ -1,9 +1,10 @@
 ---
 name: roundtable
 description: >-
-  Multi-model consensus via Gemini, Codex, and Claude CLIs. Dispatches to both in parallel, then synthesizes.
-  Commands: hivemind (consensus), deepdive (extended reasoning), architect (implementation plan),
-  challenge (devil's advocate), xray (codebase architecture + code quality).
+  Multi-model consensus MCP server. Call roundtable_hivemind, roundtable_deepdive, roundtable_architect,
+  roundtable_challenge, or roundtable_xray directly — no Bash tool needed. Dispatches to Gemini, Codex,
+  and Claude in parallel, then synthesizes. Commands: hivemind (consensus), deepdive (extended reasoning),
+  architect (implementation plan), challenge (devil's advocate), xray (codebase architecture + code quality).
   Use this skill whenever the user wants a second opinion, consensus, validation, or external
   perspective on ANY technical decision — architecture reviews, design critiques, code quality
   checks, approach comparisons, sanity checks, tradeoff analysis, or stress-testing ideas.
@@ -50,7 +51,6 @@ Call MCP tools directly. No Bash tool, no binary path, no shell.
 | `gemini_model` | No | Override Gemini model |
 | `codex_model` | No | Override Codex model |
 | `claude_model` | No | Override Claude model (e.g., `sonnet`, `opus`) |
-| `codex_reasoning` | No | Codex reasoning effort: `xhigh`, `high`, `medium` |
 | `gemini_resume` | No | Gemini session ID or `latest` to continue a previous conversation |
 | `codex_resume` | No | Codex session/thread ID or `last` to continue a previous conversation |
 | `claude_resume` | No | Claude session ID to continue a previous conversation |
