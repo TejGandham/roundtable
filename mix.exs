@@ -4,7 +4,7 @@ defmodule Roundtable.MixProject do
   def project do
     [
       app: :roundtable,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -13,16 +13,20 @@ defmodule Roundtable.MixProject do
   end
 
   def application do
-    [extra_applications: []]
+    [
+      mod: {Roundtable.Application, []},
+      extra_applications: [:logger]
+    ]
   end
 
   defp escript do
-    [main_module: Roundtable]
+    [main_module: Roundtable, name: "roundtable-cli"]
   end
 
   defp deps do
     [
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:hermes_mcp, "~> 0.14"}
     ]
   end
 end
