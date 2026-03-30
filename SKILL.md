@@ -64,7 +64,7 @@ For spec/design reviews where Codex reads referenced files, use `--timeout 600`.
 | `--gemini-model` | No | Override Gemini model (default: whatever the CLI is configured to use) |
 | `--codex-model` | No | Override Codex model (default: whatever the CLI is configured to use) |
 | `--codex-reasoning` | No | Codex reasoning effort: `xhigh`, `high`, `medium` (maps to `-c reasoning_effort="..."`) |
-| `--timeout` | No | Seconds per CLI (default: 900). Use 300 for code reviews, 600 for spec reviews. Health probe (5s) catches broken CLIs fast. No stall detection — CLIs go silent during inference. Gemini handles 429/529 retries internally. |
+| `--timeout` | No | Seconds per CLI (default: 900). The default is intentionally generous — LLM inference can take minutes, and Gemini retries 429s internally. **Do not set this flag unless you know the task is quick** (e.g. `--timeout 30` for a simple greeting). Lowering it risks killing legitimate work mid-inference. |
 | `--gemini-resume` | No | Gemini session ID or `latest` to continue a previous conversation |
 | `--codex-resume` | No | Codex session/thread ID or `last` to continue a previous conversation |
 | `--roles-dir` | No | Override global roles directory (default: skill's `roles/` dir) |
