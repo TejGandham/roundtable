@@ -7,6 +7,7 @@ Multi-model consensus skill for Claude Code.
 - Erlang/OTP and Elixir: `brew install elixir`
 - `gemini` CLI installed and authenticated
 - `codex` CLI installed and authenticated
+- `claude` CLI installed and authenticated
 
 ## Build
 

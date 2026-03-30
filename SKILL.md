@@ -1,7 +1,7 @@
 ---
 name: roundtable
 description: >-
-  Multi-model consensus via Gemini and Codex CLIs. Dispatches to both in parallel, then synthesizes.
+  Multi-model consensus via Gemini, Codex, and Claude CLIs. Dispatches to both in parallel, then synthesizes.
   Commands: hivemind (consensus), deepdive (extended reasoning), architect (implementation plan),
   challenge (devil's advocate), xray (codebase architecture + code quality).
   Use this skill whenever the user wants a second opinion, consensus, validation, or external
@@ -18,7 +18,7 @@ description: >-
 
 # Roundtable - Multi-Model Consensus
 
-Dispatch to BOTH Gemini AND Codex in parallel via `./roundtable`, then synthesize.
+Dispatch to Gemini, Codex, AND Claude in parallel via `./roundtable`, then synthesize.
 
 ## Core Rule
 
@@ -36,7 +36,7 @@ Requires Erlang/OTP and Elixir: `brew install elixir`.
 | **deepdive** | `--role planner` | Add: "Provide conclusions, assumptions, alternatives, and confidence level." |
 | **architect** | `--role planner` | Request: phases, dependencies, risks, milestones |
 | **challenge** | `--role codereviewer` | Prefix: "Act as critical reviewer. Find flaws, risks, weaknesses." |
-| **xray** | `--gemini-role planner --codex-role codereviewer` | Include `--files`. Gemini analyzes architecture, Codex reviews code quality. |
+| **xray** | `--gemini-role planner --codex-role codereviewer --claude-role default` | Include `--files`. Gemini analyzes architecture, Codex reviews code quality. |
 
 ## Invocation
 
@@ -67,6 +67,9 @@ For spec/design reviews where Codex reads referenced files, use `--timeout 600`.
 | `--timeout` | No | Seconds per CLI (default: 900). The default is intentionally generous — LLM inference can take minutes, and Gemini retries 429s internally. **Do not set this flag unless you know the task is quick** (e.g. `--timeout 30` for a simple greeting). Lowering it risks killing legitimate work mid-inference. |
 | `--gemini-resume` | No | Gemini session ID or `latest` to continue a previous conversation |
 | `--codex-resume` | No | Codex session/thread ID or `last` to continue a previous conversation |
+| `--claude-role` | No | Override role for Claude only |
+| `--claude-model` | No | Override Claude model (e.g., sonnet, opus) |
+| `--claude-resume` | No | Claude session ID to continue a previous conversation |
 | `--roles-dir` | No | Override global roles directory (default: skill's `roles/` dir) |
 | `--project-roles-dir` | No | Project-local roles directory (checked first, falls back to global) |
 
@@ -82,8 +85,9 @@ The script outputs JSON to stdout with this structure:
 ```json
 {
   "gemini": { "response": "...", "status": "ok|error|timeout|not_found|probe_failed", "session_id": "...", ... },
-  "codex": { "response": "...", "status": "ok|error|timeout|not_found|probe_failed", "session_id": "...", ... },
-  "meta": { "gemini_role": "...", "codex_role": "...", "files_referenced": [...] }
+  "codex": { "response": "...", "status": "...", "session_id": "...", ... },
+  "claude": { "response": "...", "status": "...", "session_id": "...", ... },
+  "meta": { "gemini_role": "...", "codex_role": "...", "claude_role": "...", "files_referenced": [...] }
 }
 ```
 
@@ -99,6 +103,10 @@ After running roundtable, synthesize the results:
 
 ### Codex
 [response summary — key points only, not raw dump]
+
+### Claude
+[response summary — key points only, not raw dump]
+*(Note: Claude is both the synthesizer and a participant. Treat this as an independent perspective from a separate session.)*
 
 ### Synthesis
 - **Agreement**: [shared conclusions]
@@ -121,7 +129,8 @@ Roundtable supports continuing a previous conversation with both CLIs. Each resp
   --prompt "What about the token refresh edge case you mentioned?" \
   --role planner \
   --gemini-resume latest \
-  --codex-resume last
+  --codex-resume last \
+  --claude-resume <session-id>
 ```
 
 - `--gemini-resume latest` resumes Gemini's most recent session
@@ -159,7 +168,7 @@ The quality of roundtable output depends on prompt quality. Guidelines:
 
 | Mistake | Fix |
 |-|-|
-| Running only one model | ALWAYS use roundtable (runs both) |
+| Running only one model | ALWAYS run roundtable (dispatches all 3 agents) |
 | Dumping raw JSON responses | Summarize key points, find agreement/differences |
 | Skipping synthesis | Synthesis IS the value — always include it |
 | Using for simple questions | Only use when multi-model perspective adds value |

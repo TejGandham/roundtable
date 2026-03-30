@@ -33,7 +33,7 @@ Roundtable is clink's architecture reimplemented as a Claude Code skill in Node.
 | MCP server + Pydantic models + asyncio | Requires running PAL server, Python runtime, pip packages | **Single Node.js script** using only built-ins (`child_process`, `readline`, `fs`) | Claude Code already has Node.js. Zero additional dependencies. |
 | Registry singleton with 3-tier config search (built-in → env → `~/.pal/cli_clients/`) | Over-engineered for 2 CLIs with known, stable configs | **Convention-based**: skill directory + project override directory | Roundtable serves one consumer (Claude Code) with two CLIs. No need for a dynamic registry. |
 | 1800s default timeout | 30 minutes is too long for a consensus query | **120s default** (configurable via `--timeout`) | Roundtable is interactive — if a CLI takes >2 min, something is wrong |
-| Claude CLI as a participant (`runner: "claude"`, `--append-system-prompt`) | Claude is the orchestrator in roundtable, not a participant | **Remove entirely** | Fundamental architectural difference |
+| Claude CLI as a participant (`runner: "claude"`, `--append-system-prompt`) | Claude is the orchestrator in roundtable, not a participant | **Added as third agent. Claude Code is both orchestrator and a participant in a separate session.** | Fundamental architectural difference — Claude participates via a separate `claude` CLI invocation, keeping its perspective independent from the orchestrating session |
 | Images parameter | Accepted but silently ignored in clink | **Don't include what you won't use** | Honest API surface |
 | Output file capture (`flag_template`, tempfile dance) | Complex mechanism for CLIs that write JSON to files instead of stdout | **Remove** — both Gemini and Codex write JSON to stdout | Neither target CLI needs this |
 | 20k char output limit + `<SUMMARY>` extraction + metadata pruning | MCP response size constraint | **No hard limit** — pass full output to Claude for synthesis | Roundtable returns to Claude Code directly, no MCP envelope constraint |
@@ -69,6 +69,7 @@ Roundtable is clink's architecture reimplemented as a Claude Code skill in Node.
 |-|-|-|-|
 | Gemini | `-o json` | `--yolo -m <model>` | `-p "<assembled prompt>"` |
 | Codex | `exec --json` | `--dangerously-bypass-approvals-and-sandbox` | `"<assembled prompt>"` (positional) |
+| Claude | `-p --output-format json --dangerously-skip-permissions` | (additive) `--model <model>` | positional arg |
 
 **Prompt assembly (matches clink's `_prepare_prompt_for_role`):**
 
@@ -111,9 +112,20 @@ Files are **referenced, not embedded** — matching clink's `_format_file_refere
     "parse_error": null,
     "truncated": false
   },
+  "claude": {
+    "response": "Model's response text",
+    "model": "claude-sonnet-4-5",
+    "status": "ok",
+    "exit_code": 0,
+    "stderr": "",
+    "elapsed_ms": 9871,
+    "parse_error": null,
+    "truncated": false
+  },
   "meta": {
     "total_elapsed_ms": 12105,
     "role": "planner",
+    "claude_role": "planner",
     "files_referenced": ["src/auth.ts", "src/middleware.ts"]
   }
 }
@@ -127,6 +139,7 @@ Status values: `ok`, `error`, `timeout`, `not_found` (CLI missing)
 |-|-|-|
 | Gemini | clink `gemini_json` parser | `JSON.parse(stdout)` → extract `response` field. Capture `stats.models.<name>.tokens` for metadata. Detect 429 rate limits from `error` field. |
 | Codex | clink `codex_jsonl` parser | Line-by-line JSONL via `readline`. Collect `item.completed` events where `item.type === "agent_message"` → extract `item.text`. Collect `turn.completed` for usage stats. Collect `error` events. Join all agent messages with `\n\n`. |
+| Claude | JSON parser | `JSON.decode(stdout)` → extract `result` field. Check `is_error` bool. Extract `modelUsage` keys for model name. |
 
 **Error handling (matches clink's error paths):**
 
@@ -241,6 +254,10 @@ This avoids embedding file contents in the prompt, which would:
 ~/.claude/skills/roundtable/
 ├── SKILL.md              # Claude Code skill instructions
 ├── roundtable            # CLI dispatcher (escript binary)
+├── lib/roundtable/cli/
+│   ├── gemini.ex         # Gemini CLI runner
+│   ├── codex.ex          # Codex CLI runner
+│   └── claude.ex         # Claude CLI runner
 └── roles/
     ├── default.txt       # Default role prompt
     ├── planner.txt       # Planner/architect role prompt
@@ -259,6 +276,7 @@ Per-project overrides (optional):
 **Roundtable depends on these CLI contracts (same as clink):**
 1. Gemini: `-p` (prompt flag), `-o json` (output format) → `{ response }` JSON shape
 2. Codex: `exec` subcommand, `--json` flag → JSONL with `item.completed` / `agent_message` events
+3. Claude: `-p` (print/non-interactive flag), `--output-format json` → `{ "result", "is_error", "session_id" }` JSON shape
 
 **Roundtable does NOT break if:**
 - Models change behavior or quality
