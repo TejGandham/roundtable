@@ -121,12 +121,7 @@ defmodule Roundtable.Dispatcher do
         |> Map.new()
 
       meta =
-        Output.build_meta(
-          results,
-          get_role(cli_configs, "gemini"),
-          get_role(cli_configs, "codex"),
-          get_files(cli_configs)
-        )
+        Output.build_meta(results, cli_configs)
 
       Map.put(results, "meta", meta)
     after
@@ -135,20 +130,6 @@ defmodule Roundtable.Dispatcher do
       else
         GenServer.stop(sup)
       end
-    end
-  end
-
-  defp get_role(cli_configs, name) do
-    case Enum.find(cli_configs, &(&1.name == name)) do
-      %{role: role} -> role
-      _ -> "default"
-    end
-  end
-
-  defp get_files(cli_configs) do
-    case List.first(cli_configs) do
-      %{files: files} -> files
-      _ -> []
     end
   end
 end

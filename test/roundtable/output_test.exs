@@ -152,14 +152,41 @@ defmodule Roundtable.OutputTest do
     end
   end
 
-  describe "build_meta/4" do
+  describe "build_meta/2" do
     test "total_elapsed_ms is max of both" do
       results = %{"gemini" => %{"elapsed_ms" => 500}, "codex" => %{"elapsed_ms" => 1200}}
-      meta = Output.build_meta(results, "planner", "codereviewer", ["src/auth.ts"])
+
+      cli_configs = [
+        %{name: "gemini", role: "planner", files: ["src/auth.ts"]},
+        %{name: "codex", role: "codereviewer", files: ["src/auth.ts"]}
+      ]
+
+      meta = Output.build_meta(results, cli_configs)
       assert meta["total_elapsed_ms"] == 1200
       assert meta["gemini_role"] == "planner"
       assert meta["codex_role"] == "codereviewer"
       assert meta["files_referenced"] == ["src/auth.ts"]
+    end
+
+    test "with 3 agents includes all agent roles" do
+      results = %{
+        "gemini" => %{"elapsed_ms" => 500},
+        "codex" => %{"elapsed_ms" => 1200},
+        "claude" => %{"elapsed_ms" => 800}
+      }
+
+      cli_configs = [
+        %{name: "gemini", role: "planner", files: ["src/auth.ts"]},
+        %{name: "codex", role: "default", files: ["src/auth.ts"]},
+        %{name: "claude", role: "reviewer", files: ["src/auth.ts"]}
+      ]
+
+      meta = Output.build_meta(results, cli_configs)
+
+      assert meta["gemini_role"] == "planner"
+      assert meta["codex_role"] == "default"
+      assert meta["claude_role"] == "reviewer"
+      assert meta["total_elapsed_ms"] == 1200
     end
   end
 

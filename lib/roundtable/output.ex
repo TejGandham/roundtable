@@ -70,22 +70,31 @@ defmodule Roundtable.Output do
     }
   end
 
-  @spec build_meta(
-          results :: map(),
-          gemini_role :: String.t(),
-          codex_role :: String.t(),
-          files :: [String.t()]
-        ) :: map()
-  def build_meta(results, gemini_role, codex_role, files) do
-    gemini_elapsed = get_in(results, ["gemini", "elapsed_ms"]) || 0
-    codex_elapsed = get_in(results, ["codex", "elapsed_ms"]) || 0
+  @spec build_meta(results :: map(), cli_configs :: [map()]) :: map()
+  def build_meta(results, cli_configs) do
+    files =
+      case List.first(cli_configs) do
+        %{files: files} -> files
+        _ -> []
+      end
+
+    roles =
+      Enum.reduce(cli_configs, %{}, fn cfg, acc ->
+        Map.put(acc, "#{cfg.name}_role", cfg.role)
+      end)
+
+    total_elapsed_ms =
+      results
+      |> Map.delete("meta")
+      |> Map.values()
+      |> Enum.map(&(Map.get(&1, "elapsed_ms") || 0))
+      |> Enum.max(fn -> 0 end)
 
     %{
-      "total_elapsed_ms" => max(gemini_elapsed, codex_elapsed),
-      "gemini_role" => gemini_role,
-      "codex_role" => codex_role,
+      "total_elapsed_ms" => total_elapsed_ms,
       "files_referenced" => files
     }
+    |> Map.merge(roles)
   end
 
   @spec encode(map()) :: String.t()
