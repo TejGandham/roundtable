@@ -41,7 +41,7 @@ Roundtable is clink's architecture reimplemented as a Claude Code skill in Node.
 
 ## Architecture
 
-### 1. `roundtable.mjs` — Node.js CLI dispatcher (~200 lines)
+### 1. Node.js CLI dispatcher
 
 **Why Node.js:**
 - Proper JSONL line-by-line parsing via `readline` (Codex emits JSONL, not single JSON)
@@ -54,7 +54,7 @@ Roundtable is clink's architecture reimplemented as a Claude Code skill in Node.
 **Invocation:**
 
 ```
-node roundtable.mjs \
+./roundtable \
   --prompt "Review this auth flow" \
   --role planner \
   --files src/auth.ts,src/middleware.ts \
@@ -240,7 +240,7 @@ This avoids embedding file contents in the prompt, which would:
 ```
 ~/.claude/skills/roundtable/
 ├── SKILL.md              # Claude Code skill instructions
-├── roundtable.mjs        # Node.js CLI dispatcher
+├── roundtable            # CLI dispatcher (escript binary)
 └── roles/
     ├── default.txt       # Default role prompt
     ├── planner.txt       # Planner/architect role prompt
