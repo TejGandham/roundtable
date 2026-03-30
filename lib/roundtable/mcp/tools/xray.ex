@@ -1,6 +1,6 @@
 defmodule Roundtable.MCP.Tools.Xray do
   use Hermes.Server.Component, type: :tool
-  @moduledoc "Run multi-model hivemind consensus (all models use default role)"
+  @moduledoc "Run architecture and quality xray with per-model role assignments."
 
   schema do
     field(:prompt, :string, required: true)
@@ -15,7 +15,12 @@ defmodule Roundtable.MCP.Tools.Xray do
   end
 
   @impl true
-  def execute(_params, _frame) do
-    {:ok, "stub - not yet implemented"}
+  def execute(params, _frame) do
+    Roundtable.MCP.Tools.Common.dispatch(params, %{
+      role: nil,
+      gemini_role: "planner",
+      codex_role: "codereviewer",
+      claude_role: "default"
+    })
   end
 end

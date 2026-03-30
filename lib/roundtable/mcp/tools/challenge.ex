@@ -1,6 +1,6 @@
 defmodule Roundtable.MCP.Tools.Challenge do
   use Hermes.Server.Component, type: :tool
-  @moduledoc "Run multi-model hivemind consensus (all models use default role)"
+  @moduledoc "Run critical review consensus using codereviewer role across models."
 
   schema do
     field(:prompt, :string, required: true)
@@ -15,7 +15,12 @@ defmodule Roundtable.MCP.Tools.Challenge do
   end
 
   @impl true
-  def execute(_params, _frame) do
-    {:ok, "stub - not yet implemented"}
+  def execute(params, _frame) do
+    enhanced_params =
+      Map.update!(params, :prompt, fn prompt ->
+        prompt <> "\n\nAct as a critical reviewer. Find flaws, risks, and weaknesses."
+      end)
+
+    Roundtable.MCP.Tools.Common.dispatch(enhanced_params, %{role: "codereviewer"})
   end
 end

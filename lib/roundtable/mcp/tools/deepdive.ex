@@ -1,6 +1,6 @@
 defmodule Roundtable.MCP.Tools.Deepdive do
   use Hermes.Server.Component, type: :tool
-  @moduledoc "Run multi-model hivemind consensus (all models use default role)"
+  @moduledoc "Run deeper analysis consensus using planner role across all models."
 
   schema do
     field(:prompt, :string, required: true)
@@ -15,7 +15,12 @@ defmodule Roundtable.MCP.Tools.Deepdive do
   end
 
   @impl true
-  def execute(_params, _frame) do
-    {:ok, "stub - not yet implemented"}
+  def execute(params, _frame) do
+    enhanced_params =
+      Map.update!(params, :prompt, fn prompt ->
+        prompt <> "\n\nProvide conclusions, assumptions, alternatives, and confidence level."
+      end)
+
+    Roundtable.MCP.Tools.Common.dispatch(enhanced_params, %{role: "planner"})
   end
 end
