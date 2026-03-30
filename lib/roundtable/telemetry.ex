@@ -13,17 +13,20 @@ defmodule Roundtable.Telemetry do
         :ok
 
       endpoint ->
-        Task.start(fn ->
-          try do
-            span = build_span(results, args, start_time_ms)
-            post_span(endpoint, span)
-          rescue
-            _ -> :ok
-          catch
-            _, _ -> :ok
-          end
-        end)
+        task =
+          Task.async(fn ->
+            try do
+              span = build_span(results, args, start_time_ms)
+              post_span(endpoint, span)
+            rescue
+              _ -> :ok
+            catch
+              _, _ -> :ok
+            end
+          end)
 
+        # Give telemetry up to 2s to transmit before System.halt kills the VM
+        Task.yield(task, 2_000) || Task.shutdown(task, :brutal_kill)
         :ok
     end
   end
