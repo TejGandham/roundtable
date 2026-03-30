@@ -22,11 +22,16 @@ Dispatch to Gemini, Codex, AND Claude in parallel via `./roundtable`, then synth
 
 ## Core Rule
 
-1. Run `~/.claude/skills/roundtable/roundtable` with appropriate flags
+1. Run the `roundtable` binary from this skill's directory with appropriate flags
 2. Parse the JSON output
-3. Synthesize both responses into unified output
+3. Synthesize all responses into unified output
 
-Requires Erlang/OTP and Elixir: `brew install elixir`.
+The binary path depends on where the skill is installed. Common locations:
+- Claude Code: `~/.claude/skills/roundtable/roundtable`
+- Codex: `~/.codex/skills/roundtable/roundtable`
+- Gemini CLI: `~/.gemini/skills/roundtable/roundtable`
+
+Requires Erlang/OTP runtime.
 
 ## Commands
 
