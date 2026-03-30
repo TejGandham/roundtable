@@ -10,7 +10,7 @@ defmodule Roundtable.IntegrationTest do
   @timeout 30_000
 
   setup do
-    for script <- ["gemini", "codex", "gemini_timeout"] do
+    for script <- ["gemini", "codex", "claude", "gemini_timeout"] do
       path = Path.join(@bin_dir, script)
       if File.exists?(path), do: File.chmod!(path, 0o755)
     end
@@ -56,12 +56,16 @@ defmodule Roundtable.IntegrationTest do
     assert exit_code == 0
     assert result["gemini"]["status"] == "ok"
     assert result["codex"]["status"] == "ok"
+    assert result["claude"]["status"] == "ok"
     assert result["gemini"]["response"] == "test response"
     assert result["codex"]["response"] == "Here is my analysis of the code."
+    assert result["claude"]["response"] == "\n\nHello from Claude"
     assert result["gemini"]["session_id"] == "ses_abc123"
     assert result["codex"]["session_id"] == "thread_xyz789"
+    assert result["claude"]["session_id"] == "sess_claude_001"
     assert result["meta"]["gemini_role"] == "default"
     assert result["meta"]["codex_role"] == "default"
+    assert result["meta"]["claude_role"] == "default"
   end
 
   test "recursion guard: ROUNDTABLE_ACTIVE=1 exits with error" do
@@ -89,7 +93,8 @@ defmodule Roundtable.IntegrationTest do
       System.get_env("PATH", "")
       |> String.split(":")
       |> Enum.reject(fn dir ->
-        File.exists?(Path.join(dir, "gemini")) or File.exists?(Path.join(dir, "codex"))
+        File.exists?(Path.join(dir, "gemini")) or File.exists?(Path.join(dir, "codex")) or
+          File.exists?(Path.join(dir, "claude"))
       end)
       |> Enum.join(":")
 
@@ -108,6 +113,7 @@ defmodule Roundtable.IntegrationTest do
     assert exit_code == 0
     assert result["gemini"]["status"] == "not_found"
     assert result["codex"]["status"] == "not_found"
+    assert result["claude"]["status"] == "not_found"
   end
 
   test "planner role: meta shows correct role" do
@@ -117,6 +123,7 @@ defmodule Roundtable.IntegrationTest do
     assert exit_code == 0
     assert result["meta"]["gemini_role"] == "planner"
     assert result["meta"]["codex_role"] == "planner"
+    assert result["meta"]["claude_role"] == "planner"
   end
 
   test "per-CLI roles: gemini-role and codex-role set independently" do
@@ -135,6 +142,7 @@ defmodule Roundtable.IntegrationTest do
     assert exit_code == 0
     assert result["meta"]["gemini_role"] == "planner"
     assert result["meta"]["codex_role"] == "codereviewer"
+    assert result["meta"]["claude_role"] == "default"
   end
 
   test "files referenced: files_referenced in meta" do
@@ -204,7 +212,26 @@ defmodule Roundtable.IntegrationTest do
       assert Map.has_key?(result["codex"], key), "codex missing key: #{key}"
     end
 
-    for key <- ["total_elapsed_ms", "gemini_role", "codex_role", "files_referenced"] do
+    for key <- [
+          "response",
+          "model",
+          "status",
+          "exit_code",
+          "elapsed_ms",
+          "parse_error",
+          "truncated",
+          "session_id"
+        ] do
+      assert Map.has_key?(result["claude"], key), "claude missing key: #{key}"
+    end
+
+    for key <- [
+          "total_elapsed_ms",
+          "gemini_role",
+          "codex_role",
+          "claude_role",
+          "files_referenced"
+        ] do
       assert Map.has_key?(result["meta"], key), "meta missing key: #{key}"
     end
   end

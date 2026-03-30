@@ -55,9 +55,11 @@ defmodule RoundtableTest do
     assert status == 0
     assert is_map(payload["gemini"])
     assert is_map(payload["codex"])
+    assert is_map(payload["claude"])
     assert is_map(payload["meta"])
     assert payload["meta"]["gemini_role"] == "default"
     assert payload["meta"]["codex_role"] == "default"
+    assert payload["meta"]["claude_role"] == "default"
   end
 
   test "missing role file returns JSON error and exits 1" do

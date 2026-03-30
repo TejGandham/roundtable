@@ -40,12 +40,14 @@ defmodule Roundtable do
     start_time = System.monotonic_time(:millisecond)
     gemini_role = args.gemini_role || args.role
     codex_role = args.codex_role || args.role
+    claude_role = args.claude_role || args.role
 
-    {gemini_role_prompt, codex_role_prompt} =
+    {gemini_role_prompt, codex_role_prompt, claude_role_prompt} =
       try do
         gp = Roles.load_role_prompt(gemini_role, args.roles_dir, args.project_roles_dir)
         cp = Roles.load_role_prompt(codex_role, args.roles_dir, args.project_roles_dir)
-        {gp, cp}
+        clp = Roles.load_role_prompt(claude_role, args.roles_dir, args.project_roles_dir)
+        {gp, cp, clp}
       rescue
         e in RuntimeError ->
           IO.puts(Jason.encode!(%{"error" => Exception.message(e)}))
@@ -54,6 +56,7 @@ defmodule Roundtable do
 
     gemini_prompt = Assembler.assemble(gemini_role_prompt, args.prompt, args.files)
     codex_prompt = Assembler.assemble(codex_role_prompt, args.prompt, args.files)
+    claude_prompt = Assembler.assemble(claude_role_prompt, args.prompt, args.files)
 
     timeout_ms = args.timeout * 1_000
 
@@ -75,6 +78,15 @@ defmodule Roundtable do
         files: args.files,
         args: args,
         prompt: codex_prompt
+      },
+      %{
+        name: "claude",
+        module: Roundtable.CLI.Claude,
+        model: args.claude_model,
+        role: claude_role,
+        files: args.files,
+        args: args,
+        prompt: claude_prompt
       }
     ]
 
