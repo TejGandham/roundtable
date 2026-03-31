@@ -4,8 +4,10 @@ defmodule Roundtable.MCP.Tools.CommonTest do
   @moduletag timeout: 60_000
 
   alias Roundtable.MCP.Tools.Common
+  alias Hermes.Server.Response
 
   @bin_dir Path.expand("../../../support/bin", __DIR__)
+  @fake_frame nil
 
   setup do
     original_path = System.get_env("PATH", "")
@@ -25,7 +27,9 @@ defmodule Roundtable.MCP.Tools.CommonTest do
   end
 
   defp dispatch_ok!(params, role_config) do
-    {:ok, json} = Common.dispatch(params, role_config)
+    {:reply, %Response{} = resp, @fake_frame} = Common.dispatch(params, role_config, @fake_frame)
+    assert resp.isError == false
+    [%{"type" => "text", "text" => json}] = resp.content
     Jason.decode!(json)
   end
 
@@ -100,25 +104,39 @@ defmodule Roundtable.MCP.Tools.CommonTest do
 
   describe "dispatch/2 model and resume params" do
     test "succeeds with model params" do
-      {:ok, _json} =
+      {:reply, %Response{isError: false}, @fake_frame} =
         Common.dispatch(
           base_params(%{gemini_model: "gemini-2.0", codex_model: "gpt-4", claude_model: "opus"}),
-          %{role: "default"}
+          %{role: "default"},
+          @fake_frame
         )
     end
 
     test "succeeds with resume params" do
-      {:ok, _json} =
+      {:reply, %Response{isError: false}, @fake_frame} =
         Common.dispatch(
           base_params(%{gemini_resume: "ses_1", codex_resume: "ses_2", claude_resume: "ses_3"}),
-          %{role: "default"}
+          %{role: "default"},
+          @fake_frame
         )
     end
   end
 
-  describe "dispatch/2 error handling" do
-    test "returns error tuple for nonexistent role" do
-      {:error, msg} = Common.dispatch(base_params(), %{role: "nonexistent_role_xyz"})
+  describe "dispatch/3 returns hermes-compatible response tuple" do
+    test "success returns {:reply, %Response{isError: false}, frame}" do
+      result = Common.dispatch(base_params(), %{role: "default"}, @fake_frame)
+      assert {:reply, %Response{isError: false} = resp, @fake_frame} = result
+      assert [%{"type" => "text", "text" => json}] = resp.content
+      assert {:ok, _} = Jason.decode(json)
+    end
+  end
+
+  describe "dispatch/3 error handling" do
+    test "returns error response for nonexistent role" do
+      {:reply, %Response{isError: true} = resp, @fake_frame} =
+        Common.dispatch(base_params(), %{role: "nonexistent_role_xyz"}, @fake_frame)
+
+      [%{"type" => "text", "text" => msg}] = resp.content
       assert msg =~ "Role prompt not found"
     end
   end

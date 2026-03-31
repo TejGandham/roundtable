@@ -4,9 +4,11 @@ defmodule Roundtable.MCP.Tools.ToolsTest do
   @moduletag timeout: 60_000
 
   alias Roundtable.MCP.Tools.{Hivemind, Deepdive, Architect, Challenge, Xray}
+  alias Hermes.Server.Response
 
   @bin_dir Path.expand("../../../support/bin", __DIR__)
   @prompt_file "/tmp/roundtable_test_prompt.txt"
+  @fake_frame nil
 
   setup do
     original_path = System.get_env("PATH", "")
@@ -28,7 +30,10 @@ defmodule Roundtable.MCP.Tools.ToolsTest do
   defp base_params, do: %{prompt: "test question", files: nil, timeout: 30}
 
   defp execute_and_parse(module) do
-    {:ok, json} = module.execute(base_params(), nil)
+    {:reply, %Response{isError: false} = resp, @fake_frame} =
+      module.execute(base_params(), @fake_frame)
+
+    [%{"type" => "text", "text" => json}] = resp.content
     Jason.decode!(json)
   end
 
@@ -116,6 +121,21 @@ defmodule Roundtable.MCP.Tools.ToolsTest do
 
       assert prompt =~ "test question"
       assert prompt =~ "critical reviewer"
+    end
+  end
+
+  describe "tool descriptions (MCP protocol compliance)" do
+    for {mod, name} <- [
+          {Hivemind, "hivemind"},
+          {Deepdive, "deepdive"},
+          {Architect, "architect"},
+          {Challenge, "challenge"},
+          {Xray, "xray"}
+        ] do
+      test "#{name} has a non-nil description" do
+        desc = unquote(mod).__description__()
+        assert is_binary(desc) and desc != ""
+      end
     end
   end
 

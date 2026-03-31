@@ -1,8 +1,18 @@
 defmodule Roundtable.MCP.Tools.Common do
   @moduledoc "Shared dispatch logic for MCP tool execute callbacks."
 
-  @spec dispatch(map(), map()) :: {:ok, String.t()} | {:error, String.t()}
-  def dispatch(params, role_config) do
+  alias Hermes.Server.Response
+
+  @doc """
+  Dispatches an MCP tool call and returns a Hermes-compatible response.
+
+  Returns `{:reply, %Response{}, frame}` on success or
+  `{:reply, %Response{isError: true}, frame}` on failure, matching
+  what `Hermes.Server.Handlers.Tools.forward_to/4` expects.
+  """
+  @spec dispatch(map(), map(), term()) ::
+          {:reply, Response.t(), term()}
+  def dispatch(params, role_config, frame) do
     files = parse_files(Map.get(params, :files))
     timeout = Map.get(params, :timeout) || 900
 
@@ -25,7 +35,15 @@ defmodule Roundtable.MCP.Tools.Common do
       claude_resume: Map.get(params, :claude_resume)
     }
 
-    Roundtable.run(args)
+    case Roundtable.run(args) do
+      {:ok, json} ->
+        response = Response.tool() |> Response.text(json)
+        {:reply, response, frame}
+
+      {:error, message} ->
+        response = Response.tool() |> Response.error(message)
+        {:reply, response, frame}
+    end
   end
 
   defp parse_files(nil), do: []

@@ -1,11 +1,10 @@
 defmodule Roundtable.MCP.Tools.Challenge do
-  use Hermes.Server.Component, type: :tool
   @moduledoc "Run critical review consensus using codereviewer role across models."
+  use Hermes.Server.Component, type: :tool
 
   schema do
     field(:prompt, :string, required: true)
     field(:files, :string)
-    field(:timeout, :integer)
     field(:gemini_model, :string)
     field(:codex_model, :string)
     field(:claude_model, :string)
@@ -15,12 +14,12 @@ defmodule Roundtable.MCP.Tools.Challenge do
   end
 
   @impl true
-  def execute(params, _frame) do
+  def execute(params, frame) do
     enhanced_params =
       Map.update!(params, :prompt, fn prompt ->
         prompt <> "\n\nAct as a critical reviewer. Find flaws, risks, and weaknesses."
       end)
 
-    Roundtable.MCP.Tools.Common.dispatch(enhanced_params, %{role: "codereviewer"})
+    Roundtable.MCP.Tools.Common.dispatch(enhanced_params, %{role: "codereviewer"}, frame)
   end
 end

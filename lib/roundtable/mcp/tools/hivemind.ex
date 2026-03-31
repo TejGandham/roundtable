@@ -1,11 +1,10 @@
 defmodule Roundtable.MCP.Tools.Hivemind do
-  use Hermes.Server.Component, type: :tool
   @moduledoc "Run multi-model consensus with default role across all models."
+  use Hermes.Server.Component, type: :tool
 
   schema do
     field(:prompt, :string, required: true)
     field(:files, :string)
-    field(:timeout, :integer)
     field(:gemini_model, :string)
     field(:codex_model, :string)
     field(:claude_model, :string)
@@ -15,7 +14,7 @@ defmodule Roundtable.MCP.Tools.Hivemind do
   end
 
   @impl true
-  def execute(params, _frame) do
-    Roundtable.MCP.Tools.Common.dispatch(params, %{role: "default"})
+  def execute(params, frame) do
+    Roundtable.MCP.Tools.Common.dispatch(params, %{role: "default"}, frame)
   end
 end

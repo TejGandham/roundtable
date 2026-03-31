@@ -53,3 +53,25 @@
 - Added "Using Bash tool to call roundtable" as a Mistakes to Avoid entry
 - Synthesis template preserved verbatim
 - YAML frontmatter unchanged
+# Learnings
+
+## Task 8: INSTALL.md MCP Registration (2026-03-30)
+
+- Positioned MCP registration as the primary section, before skill discovery and CLI install
+- Used `claude mcp add -s user roundtable -- mix run --no-halt` from project root as the canonical Claude Code registration command (matches plan's success criteria)
+- OpenCode MCP config uses `cwd` field pointing to cloned repo — no build step needed, just `mix run --no-halt`
+- Preserved all CLI install sections (release download, multi-agent symlink, workspace-level) but moved them under "CLI Installation (Alternative)" heading
+- Updated binary name from `roundtable` to `roundtable-cli` throughout CLI sections to match Task 5 rename
+- Kept Gemini participant/orchestrator note and OpenCode skill format note at the bottom
+- Removed the old OpenCode Option A/B workaround section — MCP registration makes it obsolete
+- Tool names documented as `roundtable_hivemind`, `roundtable_deepdive`, `roundtable_architect`, `roundtable_challenge`, `roundtable_xray` (matching SKILL.md from Task 7)
+
+## 2026-03-30 Stdio MCP Init Fix (Task 9)
+
+- `config/config.exs` already present with three key settings:
+  1. `config :hermes_mcp, log: false` — suppresses Hermes internal logging on stdio
+  2. `config :logger, level: :warning` — reduces OTP logger noise
+  3. `config :logger, :default_handler, config: %{type: :standard_error}` — redirects logger to stderr
+- These three lines are sufficient to prevent JSON-RPC corruption on stdio transport
+- `mix test` passes (147 tests, 0 failures) — GenServer `:eof` errors during tests are expected (stdin closed in test env)
+- `mix hermes.stdio.interactive --command mix --args=run,--no-halt` initializes cleanly, lists all 5 tools
