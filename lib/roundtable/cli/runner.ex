@@ -67,8 +67,14 @@ defmodule Roundtable.CLI.Runner do
       |> Enum.reject(&(&1 == ""))
       |> Enum.join(" ")
 
-    inner = "exec #{command_line} 2>#{shell_escape(stderr_path)}"
-    wrapper_cmd = "exec setsid --wait /bin/sh -c #{shell_escape(inner)}"
+    # Run CLI as a child (not exec'd) so the shell trap stays active.
+    # trap "kill 0" kills ALL processes in the setsid group when the
+    # Erlang port closes — prevents orphaned CLIs on parent crash.
+    child = "#{command_line} 2>#{shell_escape(stderr_path)}"
+
+    wrapper_cmd =
+      "exec setsid --wait /bin/sh -c " <>
+        shell_escape("trap 'kill 0' EXIT; #{child}; s=$?; trap - EXIT; exit $s")
 
     port =
       Port.open({:spawn_executable, "/bin/sh"}, [
@@ -78,9 +84,22 @@ defmodule Roundtable.CLI.Runner do
         args: ["-c", wrapper_cmd]
       ])
 
+    os_pid = get_os_pid(port)
+    caller = self()
+
+    cleanup_monitor =
+      spawn(fn ->
+        ref = Process.monitor(caller)
+
+        receive do
+          {:DOWN, ^ref, :process, _, _} -> kill_process_group(os_pid)
+        end
+      end)
+
     try do
       collect_output(port, timeout_ms, start_time, stderr_path, "", false, nil)
     after
+      Process.exit(cleanup_monitor, :kill)
       kill_process_group(get_os_pid(port))
       safe_close_port(port)
       File.rm(stderr_path)
