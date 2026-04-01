@@ -48,8 +48,9 @@ defmodule Roundtable.CLI.GeminiTest do
   test "parse_output/2 parses Gemini error JSON" do
     stdout = read_fixture("gemini_error.json")
     result = Gemini.parse_output(stdout, "")
-    assert result.status == :error
-    assert result.response == "Rate limit exceeded"
+    assert result.status == :rate_limited
+    assert result.response =~ "Gemini rate limited"
+    assert result.response =~ "Rate limit exceeded"
     assert result.parse_error == nil
   end
 
@@ -72,5 +73,15 @@ defmodule Roundtable.CLI.GeminiTest do
     result = Gemini.parse_output("", "some stderr")
     assert result.status == :error
     assert result.response == "some stderr"
+  end
+
+  test "parse_output/2 classifies raw 429 stderr as rate_limited" do
+    stderr = "Error: 429 RESOURCE_EXHAUSTED: Too many requests, retry later"
+    result = Gemini.parse_output("", stderr)
+
+    assert result.status == :rate_limited
+    assert result.parse_error == nil
+    assert result.response =~ "Gemini rate limited"
+    assert result.response =~ "429 RESOURCE_EXHAUSTED"
   end
 end
