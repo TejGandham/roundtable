@@ -194,4 +194,4 @@ The agent passes `--project-roles-dir .claude/roundtable/roles` and roundtable c
 
 ## Notes
 
-**Gemini as participant and orchestrator**: Gemini is both a participant in roundtable (dispatched by the server) and potentially an orchestrator (activating the skill). When roundtable dispatches to Gemini, it spawns a separate Gemini CLI process — this is expected and not recursive.
+**Agents are both participant and orchestrator**: Claude Code (or any MCP-capable agent) orchestrates roundtable by calling its MCP tools, while also being one of the three participants dispatched by the server. This is not recursive — the server spawns a separate `claude` CLI process for the participant role, independent of the orchestrating agent session. The same applies to Gemini CLI and Codex when used as orchestrators.
