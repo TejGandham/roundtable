@@ -1,0 +1,8 @@
+#!/bin/sh
+# roundtable-mcp — start the Roundtable MCP server
+# Reads JSON-RPC from stdin, writes responses to stdout.
+# Register this binary as the MCP server command in your agent config.
+set -e
+SELF="$(cd "$(dirname "$0")" && pwd)"
+export ROUNDTABLE_MCP=1
+exec "$SELF/roundtable_mcp" foreground
