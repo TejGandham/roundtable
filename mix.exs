@@ -8,7 +8,8 @@ defmodule Roundtable.MixProject do
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: escript()
+      escript: escript(),
+      releases: releases()
     ]
   end
 
@@ -21,6 +22,15 @@ defmodule Roundtable.MixProject do
 
   defp escript do
     [main_module: Roundtable.CLI, name: "roundtable-cli"]
+  end
+
+  defp releases do
+    [
+      roundtable_mcp: [
+        include_erts: false,
+        applications: [roundtable: :permanent]
+      ]
+    ]
   end
 
   defp deps do
