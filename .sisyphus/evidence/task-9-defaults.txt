@@ -1,3 +1,0 @@
-Verified with: nix-shell -p elixir --run "mix test test/roundtable/args_test.exs"
-Result: 12 tests passed, 0 failures.
-Coverage: default role, timeout, files, model, and nil defaults.
