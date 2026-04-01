@@ -9,3 +9,8 @@
 # Sisyphus evidence (noisy, not needed in git)
 .sisyphus/evidence/
 .sisyphus/boulder.json
+
+# Local workflow state
+.sisyphus/
+.letta/
+erl_crash.dump
