@@ -13,7 +13,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system deps
-        run: apt-get update && apt-get install -y libssl-dev libncurses5-dev unzip
+        run: |
+          apt-get update && apt-get install -y libncurses5-dev unzip
+          # mise's prebuilt Erlang links against OpenSSL 1.1; act image has OpenSSL 3
+          curl -sLO http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+          dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb && rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb
 
       - name: Install mise
         run: |
