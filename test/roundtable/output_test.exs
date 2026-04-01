@@ -20,6 +20,18 @@ defmodule Roundtable.OutputTest do
     end
   end
 
+  defmodule MockRateLimitedCLI do
+    def parse_output(_stdout, _stderr) do
+      %{
+        response: "Gemini rate limited (429/RESOURCE_EXHAUSTED). Retry later",
+        status: :rate_limited,
+        parse_error: nil,
+        metadata: %{},
+        session_id: nil
+      }
+    end
+  end
+
   defmodule MockModelCLI do
     def parse_output(_stdout, _stderr) do
       %{
@@ -92,6 +104,9 @@ defmodule Roundtable.OutputTest do
         )
 
       assert result["status"] == "timeout"
+      assert result["response"] =~ "Request timed out after"
+      assert result["response"] =~ "Retry with a longer timeout or resume the session"
+      assert result["parse_error"] == nil
     end
 
     test "terminated when exit_signal present" do
@@ -134,6 +149,21 @@ defmodule Roundtable.OutputTest do
         )
 
       assert result["status"] == "error"
+    end
+
+    test "custom parser statuses like rate_limited are preserved" do
+      result =
+        Output.build_result(
+          "Gemini",
+          "/bin/gemini",
+          nil,
+          %{alive: true},
+          make_raw(%{exit_code: 1}),
+          MockRateLimitedCLI
+        )
+
+      assert result["status"] == "rate_limited"
+      assert result["response"] =~ "Gemini rate limited"
     end
 
     test "uses model_used from parsed metadata when available" do

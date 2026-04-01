@@ -46,6 +46,13 @@ defmodule Roundtable.Output do
   def build_result(_cli_name, _path, model, _probe_result, raw, cli_module) do
     parsed = cli_module.parse_output(raw.stdout, raw.stderr)
 
+    timeout_message =
+      if raw.timed_out do
+        timeout_seconds = max(1, div(raw.elapsed_ms + 999, 1_000))
+
+        "Request timed out after #{timeout_seconds}s. Retry with a longer timeout or resume the session."
+      end
+
     status =
       cond do
         raw.timed_out -> "timeout"
@@ -57,14 +64,14 @@ defmodule Roundtable.Output do
     model_used = Map.get(parsed.metadata, :model_used) || model || "cli-default"
 
     %{
-      "response" => parsed.response,
+      "response" => timeout_message || parsed.response,
       "model" => model_used,
       "status" => status,
       "exit_code" => raw.exit_code,
       "exit_signal" => raw.exit_signal,
       "stderr" => raw.stderr,
       "elapsed_ms" => raw.elapsed_ms,
-      "parse_error" => parsed.parse_error,
+      "parse_error" => if(raw.timed_out, do: nil, else: parsed.parse_error),
       "truncated" => raw.truncated,
       "session_id" => parsed.session_id
     }
