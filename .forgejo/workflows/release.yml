@@ -12,10 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: erlef/setup-beam@v1
-        with:
-          elixir-version: '1.18'
-          otp-version: '27'
+      - name: Install mise
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install toolchain
+        run: mise install
 
       - uses: actions/cache@v4
         with:
@@ -24,16 +27,16 @@ jobs:
           restore-keys: ${{ runner.os }}-mix-
 
       - name: Install deps
-        run: MIX_ENV=prod mix deps.get --only prod
+        run: mise exec -- env MIX_ENV=prod mix deps.get --only prod
 
       - name: Test
-        run: mix deps.get && mix test
+        run: mise exec -- mix deps.get && mise exec -- mix test
 
       - name: Build MCP release
-        run: MIX_ENV=prod mix release roundtable_mcp
+        run: mise exec -- env MIX_ENV=prod mix release roundtable_mcp
 
       - name: Build CLI escript
-        run: MIX_ENV=prod mix escript.build
+        run: mise exec -- env MIX_ENV=prod mix escript.build
 
       - name: Package artifacts
         run: |
