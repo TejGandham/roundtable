@@ -5,7 +5,7 @@ defmodule Roundtable.MixProject do
     [
       app: :roundtable,
       version: "0.2.0",
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       escript: escript(),
