@@ -42,7 +42,7 @@ defmodule Roundtable.MCP.Tools.Common do
             {:reply, response, frame}
 
           {:error, message} ->
-            response = Response.tool() |> Response.error(message)
+            response = Response.tool() |> Response.error(to_string(message))
             {:reply, response, frame}
         end
 
@@ -50,12 +50,17 @@ defmodule Roundtable.MCP.Tools.Common do
         response = Response.tool() |> Response.error(message)
         {:reply, response, frame}
     end
+  rescue
+    e ->
+      response = Response.tool() |> Response.error(Exception.message(e))
+      {:reply, response, frame}
   end
 
   defp parse_files(nil), do: []
   defp parse_files(""), do: []
+  defp parse_files(files) when is_list(files), do: files
 
-  defp parse_files(files_str) do
+  defp parse_files(files_str) when is_binary(files_str) do
     files_str
     |> String.split(",")
     |> Enum.map(&String.trim/1)

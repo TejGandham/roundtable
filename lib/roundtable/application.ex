@@ -7,7 +7,7 @@ defmodule Roundtable.Application do
       if mcp_enabled?() do
         [
           Hermes.Server.Registry,
-          {Roundtable.MCP.Server, transport: :stdio, request_timeout: :timer.minutes(15)}
+          {Roundtable.MCP.Server, transport: :stdio, request_timeout: :timer.minutes(16)}
         ]
       else
         []
@@ -20,8 +20,8 @@ defmodule Roundtable.Application do
   end
 
   defp mcp_enabled? do
-    # Only start the MCP server when stdin is a pipe (i.e. an MCP client is connected).
-    # When running as escript or `mix test`, stdin is a terminal or closed — skip MCP.
+    # Only start the MCP server when ROUNDTABLE_MCP=1 is set.
+    # Escript and `mix test` runs omit this, avoiding stdio conflicts.
     System.get_env("ROUNDTABLE_MCP") == "1"
   end
 end
