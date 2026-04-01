@@ -4,27 +4,25 @@ Roundtable is an MCP server. Agents call its tools directly over stdio — no Ba
 
 ## Prerequisites
 
-- **Elixir + Erlang/OTP** (to run the MCP server or build the CLI)
+- **Erlang/OTP 27+** (required for both MCP server and CLI)
 - **Gemini CLI** installed and authenticated (`gemini --version`)
 - **Codex CLI** installed and authenticated (`codex --version`)
 - **Claude CLI** installed and authenticated (`claude --version`)
 
 ```bash
 # macOS
-brew install elixir
+brew install erlang
 
 # Debian/Ubuntu
-sudo apt install elixir
+sudo apt install erlang
 
 # Nix
-nix-shell -p elixir
+nix-shell -p erlang
 ```
 
-## MCP Registration (Recommended)
+---
 
-Register roundtable as an MCP server so your agent can call its tools directly.
-
-### Install the release
+## Install from Release (Recommended)
 
 Download the latest release and extract it to a stable path:
 
@@ -43,19 +41,27 @@ curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/do
   | grep roundtable-mcp | sha256sum --check
 ```
 
+The release includes the MCP server binary, role prompts, and `SKILL.md`. No Elixir, no `mix`, no source checkout required.
+
+---
+
+## MCP Registration
+
+Register roundtable as an MCP server so your agent can call its tools directly.
+
 ### Claude Code
 
 ```bash
 claude mcp add -s user roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
 ```
 
-Verify it's registered:
+Verify:
 
 ```bash
 claude mcp list | grep roundtable
 ```
 
-Restart Claude Code. The following tools will be available:
+Restart Claude Code. These tools will be available:
 
 | Tool | Purpose |
 |-|-|
@@ -67,42 +73,54 @@ Restart Claude Code. The following tools will be available:
 
 ### OpenCode
 
-Add to your OpenCode config (`~/.config/opencode/config.json` or workspace `.opencode/config.json`):
+Add to `~/.config/opencode/config.json` (or workspace `.opencode/config.json`):
 
 ```json
 {
   "mcp": {
     "roundtable": {
-      "command": "/home/user/.local/share/roundtable/bin/roundtable-mcp"
+      "command": "~/.local/share/roundtable/bin/roundtable-mcp"
     }
   }
 }
 ```
 
-Replace `/home/user` with your actual home directory. Restart OpenCode to pick it up.
+Restart OpenCode to pick it up.
+
+### Other MCP Clients
+
+Point any MCP-compatible client at the server binary:
+
+```
+command: ~/.local/share/roundtable/bin/roundtable-mcp
+```
+
+The server communicates over stdio using JSON-RPC (MCP protocol 2025-03-26).
 
 ---
 
-## Skill Discovery
+## Skill Discovery (Optional)
 
-All four major coding agents support skill discovery via `SKILL.md` files. The roundtable skill file documents the MCP tools and how to use them.
+Agents that support skill files can discover roundtable's documentation automatically. The release tarball includes `SKILL.md`; copy it to your agent's skill directory if you want skill-triggered invocation alongside MCP tool access.
 
-| Agent | User-level directory | Workspace-level directory | Format |
-|-|-|-|-|
-| Claude Code | `~/.claude/skills/<name>/` | `.claude/skills/` | `SKILL.md` in directory |
-| Codex | `~/.codex/skills/<name>/` | `.agents/skills/` | `SKILL.md` in directory |
-| Gemini CLI | `~/.gemini/skills/<name>/` | `.gemini/skills/` or `.agents/skills/` | `SKILL.md` in directory |
-| OpenCode | `~/.opencode/skills/` | — | Single `<name>.md` files |
+| Agent | Skill directory |
+|-|-|
+| Claude Code | `~/.claude/skills/roundtable/` |
+| Codex | `~/.codex/skills/roundtable/` or `.agents/skills/roundtable/` |
+| Gemini CLI | `~/.gemini/skills/roundtable/` or `.agents/skills/roundtable/` |
+| OpenCode | `~/.opencode/skills/roundtable.md` (single file, not directory) |
 
-Copy `SKILL.md` to your agent's skill directory so it knows when and how to invoke roundtable tools.
+```bash
+# Example: Claude Code skill discovery
+mkdir -p ~/.claude/skills/roundtable
+cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
+```
 
 ---
 
 ## CLI Installation (Alternative)
 
-The `roundtable-cli` escript provides the same functionality as the MCP tools via command-line flags. Use it for scripting, CI pipelines, or any context where MCP registration is not available.
-
-**Requires Erlang/OTP 25+** on the target machine.
+The `roundtable-cli` escript provides the same functionality via command-line flags. Use it for scripting, CI, or contexts where MCP registration is not available.
 
 ```bash
 VERSION=0.2.0
@@ -111,13 +129,52 @@ curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/do
 chmod +x ~/.local/bin/roundtable-cli
 ```
 
-### Verify CLI Installation
+Verify:
 
 ```bash
 roundtable-cli --prompt "Hello" --timeout 30
 ```
 
-Expected: JSON output with `gemini`, `codex`, and `claude` fields, each with `status: "ok"`.
+Expected: JSON with `gemini`, `codex`, and `claude` fields, each with `status: "ok"`.
+
+---
+
+## Install from Source (Development)
+
+For contributing or running the latest unreleased code:
+
+```bash
+git clone https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable.git
+cd roundtable
+mix deps.get
+```
+
+**Run the MCP server from source:**
+
+```bash
+ROUNDTABLE_MCP=1 mix run --no-halt
+```
+
+Then register it with your agent using the full command. For Claude Code:
+
+```bash
+claude mcp add -s user roundtable -- bash -c "cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt"
+```
+
+**Build a release locally:**
+
+```bash
+MIX_ENV=prod mix release roundtable_mcp
+```
+
+**Build the CLI escript locally:**
+
+```bash
+mix escript.build
+# Produces: ./roundtable-cli
+```
+
+Requires **Elixir 1.18+** and **Erlang/OTP 27+**.
 
 ---
 
@@ -127,16 +184,14 @@ Any project can customize role prompts by creating:
 
 ```
 <project>/.claude/roundtable/roles/
-├── planner.txt           # project-specific planner context
-└── codereviewer.txt      # project-specific reviewer context
+├── planner.txt
+└── codereviewer.txt
 ```
 
-The agent passes `--project-roles-dir .claude/roundtable/roles` and roundtable checks project roles first, falling back to the global roles directory.
+The agent passes `--project-roles-dir .claude/roundtable/roles` and roundtable checks project roles first, falling back to the bundled defaults.
 
 ---
 
 ## Notes
 
-**Gemini as participant and orchestrator**: Gemini is both a *participant* in roundtable (dispatched by the server) and potentially an *orchestrator* (activating the skill). When roundtable dispatches to Gemini, it spawns a separate Gemini CLI process — this is expected and not recursive.
-
-**OpenCode skill format**: OpenCode uses single `.md` files in `~/.opencode/skills/`, not subdirectories. If you want OpenCode to discover roundtable via skill files rather than MCP, create `~/.opencode/skills/roundtable.md` pointing to the installed binary or MCP server.
+**Gemini as participant and orchestrator**: Gemini is both a participant in roundtable (dispatched by the server) and potentially an orchestrator (activating the skill). When roundtable dispatches to Gemini, it spawns a separate Gemini CLI process — this is expected and not recursive.
