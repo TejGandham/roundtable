@@ -1,6 +1,7 @@
 defmodule Roundtable.MCP.Tools.Common do
   @moduledoc "Shared dispatch logic for MCP tool execute callbacks."
 
+  require Logger
   alias Hermes.Server.Response
 
   @doc """
@@ -47,18 +48,24 @@ defmodule Roundtable.MCP.Tools.Common do
         end
 
       {:error, message} ->
-        response = Response.tool() |> Response.error(message)
+        response = Response.tool() |> Response.error(to_string(message))
         {:reply, response, frame}
     end
   rescue
     e ->
+      Logger.error(Exception.format(:error, e, __STACKTRACE__))
       response = Response.tool() |> Response.error(Exception.message(e))
+      {:reply, response, frame}
+  catch
+    kind, reason ->
+      Logger.error(Exception.format(kind, reason, __STACKTRACE__))
+      response = Response.tool() |> Response.error("#{kind}: #{inspect(reason)}")
       {:reply, response, frame}
   end
 
   defp parse_files(nil), do: []
   defp parse_files(""), do: []
-  defp parse_files(files) when is_list(files), do: files
+  defp parse_files(files) when is_list(files), do: Enum.filter(files, &is_binary/1)
 
   defp parse_files(files_str) when is_binary(files_str) do
     files_str

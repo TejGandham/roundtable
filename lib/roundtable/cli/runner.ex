@@ -70,7 +70,7 @@ defmodule Roundtable.CLI.Runner do
     # Run CLI as a child (not exec'd) so the shell trap stays active.
     # trap "kill 0" kills ALL processes in the setsid group when the
     # Erlang port closes — prevents orphaned CLIs on parent crash.
-    child = "#{command_line} 2>#{shell_escape(stderr_path)}"
+    child = "#{command_line} </dev/null 2>#{shell_escape(stderr_path)}"
 
     wrapper_cmd =
       "exec setsid --wait /bin/sh -c " <>
