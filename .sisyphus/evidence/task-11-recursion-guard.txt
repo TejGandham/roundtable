@@ -1,2 +1,0 @@
-{"error":"Recursive invocation detected. Roundtable is already running in a parent process."}
-EXIT:1
