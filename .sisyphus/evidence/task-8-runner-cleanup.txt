@@ -1,8 +1,0 @@
-nix-shell -p elixir --run "mix test test/roundtable/cli/runner_test.exs:96"
-Running ExUnit with seed: 237530, max_cases: 8
-Excluding tags: [:test]
-Including tags: [location: {"test/roundtable/cli/runner_test.exs", 96}]
-
-.
-Finished in 0.04 seconds (0.00s async, 0.04s sync)
-9 tests, 0 failures, 8 excluded
