@@ -24,15 +24,32 @@ nix-shell -p elixir
 
 Register roundtable as an MCP server so your agent can call its tools directly.
 
-### Claude Code
+### Install the release
 
-From the roundtable project root:
+Download the latest release and extract it to a stable path:
 
 ```bash
-claude mcp add -s user roundtable -- mix run --no-halt
+VERSION=0.2.0
+mkdir -p ~/.local/share/roundtable
+curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
+  | tar xz -C ~/.local/share/roundtable --strip-components=1
+chmod +x ~/.local/share/roundtable/bin/roundtable-mcp
 ```
 
-This registers the server at user scope. Verify it's registered:
+Verify the checksum:
+
+```bash
+curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v${VERSION}/SHA256SUMS \
+  | grep roundtable-mcp | sha256sum --check
+```
+
+### Claude Code
+
+```bash
+claude mcp add -s user roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
+```
+
+Verify it's registered:
 
 ```bash
 claude mcp list | grep roundtable
@@ -56,25 +73,13 @@ Add to your OpenCode config (`~/.config/opencode/config.json` or workspace `.ope
 {
   "mcp": {
     "roundtable": {
-      "command": "mix",
-      "args": ["run", "--no-halt"],
-      "cwd": "/path/to/roundtable"
+      "command": "/home/user/.local/share/roundtable/bin/roundtable-mcp"
     }
   }
 }
 ```
 
-Replace `/path/to/roundtable` with the absolute path to your cloned roundtable repo. Restart OpenCode to pick it up.
-
-### Install from Source (required for MCP)
-
-```bash
-git clone https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable.git
-cd roundtable
-mix deps.get
-```
-
-The MCP server starts with `mix run --no-halt` from the project root. No build step needed.
+Replace `/home/user` with your actual home directory. Restart OpenCode to pick it up.
 
 ---
 
@@ -95,72 +100,21 @@ Copy `SKILL.md` to your agent's skill directory so it knows when and how to invo
 
 ## CLI Installation (Alternative)
 
-The `roundtable-cli` escript is available for standalone use, scripting, and CI pipelines where MCP registration isn't practical.
+The `roundtable-cli` escript provides the same functionality as the MCP tools via command-line flags. Use it for scripting, CI pipelines, or any context where MCP registration is not available.
 
-### Build from Source
-
-```bash
-git clone https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable.git
-cd roundtable
-mix deps.get
-mix escript.build
-# Produces: ./roundtable-cli
-```
-
-### Install from Release
+**Requires Erlang/OTP 25+** on the target machine.
 
 ```bash
-# Claude Code
-mkdir -p ~/.claude/skills/roundtable
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
-  | tar xz -C ~/.claude/skills/roundtable
-chmod +x ~/.claude/skills/roundtable/roundtable-cli
-
-# Codex
-mkdir -p ~/.codex/skills/roundtable
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
-  | tar xz -C ~/.codex/skills/roundtable
-chmod +x ~/.codex/skills/roundtable/roundtable-cli
-
-# Gemini CLI
-mkdir -p ~/.gemini/skills/roundtable
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
-  | tar xz -C ~/.gemini/skills/roundtable
-chmod +x ~/.gemini/skills/roundtable/roundtable-cli
+VERSION=0.2.0
+curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-cli \
+  -o ~/.local/bin/roundtable-cli
+chmod +x ~/.local/bin/roundtable-cli
 ```
-
-### Multi-Agent (Shared Install)
-
-```bash
-# Install to Claude Code (primary)
-mkdir -p ~/.claude/skills/roundtable
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
-  | tar xz -C ~/.claude/skills/roundtable
-chmod +x ~/.claude/skills/roundtable/roundtable-cli
-
-# Symlink for other agents
-mkdir -p ~/.codex/skills ~/.gemini/skills
-ln -s ~/.claude/skills/roundtable ~/.codex/skills/roundtable
-ln -s ~/.claude/skills/roundtable ~/.gemini/skills/roundtable
-```
-
-### Workspace-Level Install
-
-For project-scoped installs using the cross-agent `.agents/skills/` convention (supported by Codex and Gemini CLI):
-
-```bash
-mkdir -p .agents/skills/roundtable
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v1.0.0/roundtable-v1.0.0.tar.gz \
-  | tar xz -C .agents/skills/roundtable
-chmod +x .agents/skills/roundtable/roundtable-cli
-```
-
-For Claude Code workspace-level, use `.claude/skills/` instead.
 
 ### Verify CLI Installation
 
 ```bash
-~/.claude/skills/roundtable/roundtable-cli --prompt "Hello" --timeout 30
+roundtable-cli --prompt "Hello" --timeout 30
 ```
 
 Expected: JSON output with `gemini`, `codex`, and `claude` fields, each with `status: "ok"`.
