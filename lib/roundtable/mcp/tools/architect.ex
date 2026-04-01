@@ -5,6 +5,7 @@ defmodule Roundtable.MCP.Tools.Architect do
   schema do
     field(:prompt, :string, required: true)
     field(:files, :string)
+    field(:timeout, :integer)
     field(:gemini_model, :string)
     field(:codex_model, :string)
     field(:claude_model, :string)

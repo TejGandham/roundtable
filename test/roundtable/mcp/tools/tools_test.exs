@@ -139,6 +139,15 @@ defmodule Roundtable.MCP.Tools.ToolsTest do
     end
   end
 
+  describe "tool schemas (MCP protocol compliance)" do
+    for mod <- [Hivemind, Deepdive, Architect, Challenge, Xray] do
+      test "#{inspect(mod)} exposes timeout as an integer input" do
+        schema = unquote(mod).input_schema()
+        assert get_in(schema, ["properties", "timeout", "type"]) == "integer"
+      end
+    end
+  end
+
   describe "Xray.execute/2" do
     test "assigns per-model roles: planner, codereviewer, default" do
       result = execute_and_parse(Xray)
