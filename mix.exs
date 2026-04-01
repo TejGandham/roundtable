@@ -9,7 +9,8 @@ defmodule Roundtable.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       escript: escript(),
-      releases: releases()
+      releases: releases(),
+      aliases: aliases()
     ]
   end
 
@@ -30,6 +31,12 @@ defmodule Roundtable.MixProject do
         include_erts: false,
         applications: [roundtable: :permanent]
       ]
+    ]
+  end
+
+  defp aliases do
+    [
+      "deps.get": ["deps.get", "deps.patch"]
     ]
   end
 
