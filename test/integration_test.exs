@@ -4,20 +4,21 @@ defmodule Roundtable.IntegrationTest do
 
   @moduletag timeout: 120_000
 
-  @escript_path Path.expand("../roundtable", __DIR__)
+  @escript_path Path.expand("../roundtable-cli", __DIR__)
   @bin_dir Path.expand("support/bin", __DIR__)
   @roles_dir Path.expand("../roles", __DIR__)
   @timeout 30_000
 
+  setup_all do
+    project_dir = Path.expand("..", __DIR__)
+    {_, 0} = System.cmd("mix", ["escript.build"], cd: project_dir)
+    :ok
+  end
+
   setup do
-    for script <- ["gemini", "codex", "claude", "gemini_timeout"] do
+    for script <- ["gemini", "codex", "claude", "gemini_timeout", "gemini_rate_limited"] do
       path = Path.join(@bin_dir, script)
       if File.exists?(path), do: File.chmod!(path, 0o755)
-    end
-
-    unless File.exists?(@escript_path) do
-      project_dir = Path.expand("..", __DIR__)
-      {_, 0} = System.cmd("mix", ["escript.build"], cd: project_dir)
     end
 
     :ok
@@ -26,9 +27,10 @@ defmodule Roundtable.IntegrationTest do
   defp run_roundtable(extra_args, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @timeout)
     env_extra = Keyword.get(opts, :env, [])
+    bin_dir = Keyword.get(opts, :bin_dir, @bin_dir)
 
     current_path = System.get_env("PATH", "")
-    env = [{"PATH", "#{@bin_dir}:#{current_path}"}] ++ env_extra
+    env = [{"PATH", "#{bin_dir}:#{@bin_dir}:#{current_path}"}] ++ env_extra
 
     args = ["--roles-dir", @roles_dir] ++ extra_args
 
@@ -47,6 +49,24 @@ defmodule Roundtable.IntegrationTest do
       nil ->
         Task.shutdown(task, :brutal_kill)
         {:timeout}
+    end
+  end
+
+  defp with_script_replacement(target_name, replacement_name, fun) do
+    temp_dir =
+      Path.join(System.tmp_dir!(), "roundtable_bin_#{System.unique_integer([:positive])}")
+
+    replacement_path = Path.join(@bin_dir, replacement_name)
+    target_path = Path.join(temp_dir, target_name)
+
+    File.mkdir_p!(temp_dir)
+    File.cp!(replacement_path, target_path)
+    File.chmod!(target_path, 0o755)
+
+    try do
+      fun.(temp_dir)
+    after
+      File.rm_rf!(temp_dir)
     end
   end
 
@@ -161,24 +181,34 @@ defmodule Roundtable.IntegrationTest do
   end
 
   test "timeout: CLI that sleeps gets timeout status" do
-    gemini_path = Path.join(@bin_dir, "gemini")
-    timeout_path = Path.join(@bin_dir, "gemini_timeout")
-
-    {:ok, original_content} = File.read(gemini_path)
-    File.write!(gemini_path, File.read!(timeout_path))
-    File.chmod!(gemini_path, 0o755)
-
-    try do
+    with_script_replacement("gemini", "gemini_timeout", fn temp_dir ->
       {:ok, result, exit_code} =
-        run_roundtable(["--prompt", "test", "--timeout", "2"], timeout: 30_000)
+        run_roundtable(["--prompt", "test", "--timeout", "2"], timeout: 30_000, bin_dir: temp_dir)
 
       assert exit_code == 0
       assert result["gemini"]["status"] == "timeout"
+      assert result["gemini"]["response"] =~ "Request timed out after"
+      assert result["gemini"]["response"] =~ "Retry with a longer timeout or resume the session"
+      assert result["gemini"]["parse_error"] == nil
       assert result["codex"]["status"] == "ok"
-    after
-      File.write!(gemini_path, original_content)
-      File.chmod!(gemini_path, 0o755)
-    end
+    end)
+  end
+
+  test "gemini 429 is reported as rate_limited with actionable feedback" do
+    with_script_replacement("gemini", "gemini_rate_limited", fn temp_dir ->
+      {:ok, result, exit_code} =
+        run_roundtable(["--prompt", "test", "--timeout", "30"],
+          timeout: 30_000,
+          bin_dir: temp_dir
+        )
+
+      assert exit_code == 0
+      assert result["gemini"]["status"] == "rate_limited"
+      assert result["gemini"]["response"] =~ "Gemini rate limited"
+      assert result["gemini"]["response"] =~ "Retry later or resume the session"
+      assert result["codex"]["status"] == "ok"
+      assert result["claude"]["status"] == "ok"
+    end)
   end
 
   test "output is structurally valid JSON with all required keys" do
