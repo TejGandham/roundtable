@@ -19,16 +19,21 @@ Download the latest release and extract it:
 
 ```bash
 VERSION=1.2.0
+HOST=https://brahma.myth-gecko.ts.net:3000
 mkdir -p ~/.local/share/roundtable
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
+curl -sL -H "Authorization: token YOUR_TOKEN" \
+  $HOST/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
   | tar xz -C ~/.local/share/roundtable --strip-components=1
 chmod +x ~/.local/share/roundtable/bin/roundtable-mcp
 ```
 
+> **Note**: The repository is private. Replace `YOUR_TOKEN` with a Forgejo API token, or use `tea` CLI credentials.
+
 Verify the checksum:
 
 ```bash
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v${VERSION}/SHA256SUMS \
+curl -sL -H "Authorization: token YOUR_TOKEN" \
+  $HOST/stackhouse/roundtable/releases/download/v${VERSION}/SHA256SUMS \
   | grep roundtable-mcp | sha256sum --check
 ```
 
@@ -137,7 +142,9 @@ The `roundtable-cli` escript provides the same functionality via command-line fl
 
 ```bash
 VERSION=1.2.0
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-cli \
+HOST=https://brahma.myth-gecko.ts.net:3000
+curl -sL -H "Authorization: token YOUR_TOKEN" \
+  $HOST/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-cli \
   -o ~/.local/bin/roundtable-cli
 chmod +x ~/.local/bin/roundtable-cli
 ```
@@ -231,8 +238,8 @@ mix escript.build
 Push a version tag to trigger the CI release workflow:
 
 ```bash
-git tag v1.2.0
-git push origin v1.2.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 The Forgejo Actions workflow (`.forgejo/workflows/release.yml`) will:
@@ -241,6 +248,21 @@ The Forgejo Actions workflow (`.forgejo/workflows/release.yml`) will:
 3. Build the CLI escript (`roundtable-cli`)
 4. Generate `SHA256SUMS`
 5. Publish all artifacts to the Forgejo release page
+
+**Manual release** (if CI is unavailable):
+
+```bash
+eval "$(mise activate bash)"
+MIX_ENV=prod mix deps.get --only prod
+MIX_ENV=prod mix release roundtable_mcp
+MIX_ENV=prod mix escript.build
+cp SKILL.md INSTALL.md _build/prod/rel/roundtable_mcp/
+chmod +x _build/prod/rel/roundtable_mcp/bin/roundtable-mcp
+tar czf roundtable-mcp-X.Y.Z.tar.gz -C _build/prod/rel roundtable_mcp
+sha256sum roundtable-mcp-X.Y.Z.tar.gz roundtable-cli > SHA256SUMS
+```
+
+Then upload via Forgejo UI or API.
 
 ---
 
