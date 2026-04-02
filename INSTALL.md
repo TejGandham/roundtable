@@ -134,28 +134,6 @@ mkdir -p ~/.claude/skills/roundtable
 cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
 ```
 
----
-
-## CLI Installation (Alternative)
-
-The `roundtable-cli` escript provides the same functionality via command-line flags. Use it for scripting, CI, or contexts where MCP registration is not available.
-
-```bash
-VERSION=1.2.0
-HOST=https://brahma.myth-gecko.ts.net:3000
-curl -sL -H "Authorization: token YOUR_TOKEN" \
-  $HOST/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-cli \
-  -o ~/.local/bin/roundtable-cli
-chmod +x ~/.local/bin/roundtable-cli
-```
-
-```bash
-roundtable-cli --prompt "Hello" --timeout 30
-```
-
-Expected: JSON with `gemini`, `codex`, and `claude` fields, each with `status: "ok"`.
-
-Note: the escript requires Erlang on `PATH` and may not inherit your shell's `PATH` — the MCP server is the recommended integration path.
 
 ---
 
@@ -224,13 +202,6 @@ Replace `/path/to/roundtable` with the actual clone path.
 MIX_ENV=prod mix release roundtable_mcp
 ```
 
-**Build the CLI escript locally:**
-
-```bash
-mix escript.build
-# Produces: ./roundtable-cli
-```
-
 ---
 
 ## Cutting a Release
@@ -245,9 +216,8 @@ git push origin vX.Y.Z
 The Forgejo Actions workflow (`.forgejo/workflows/release.yml`) will:
 1. Run the full test suite
 2. Build the MCP release tarball (`roundtable-mcp-VERSION.tar.gz`)
-3. Build the CLI escript (`roundtable-cli`)
-4. Generate `SHA256SUMS`
-5. Publish all artifacts to the Forgejo release page
+3. Generate `SHA256SUMS`
+4. Publish to the Forgejo release page
 
 **Manual release** (if CI is unavailable):
 
@@ -255,11 +225,10 @@ The Forgejo Actions workflow (`.forgejo/workflows/release.yml`) will:
 eval "$(mise activate bash)"
 MIX_ENV=prod mix deps.get --only prod
 MIX_ENV=prod mix release roundtable_mcp
-MIX_ENV=prod mix escript.build
 cp SKILL.md INSTALL.md _build/prod/rel/roundtable_mcp/
 chmod +x _build/prod/rel/roundtable_mcp/bin/roundtable-mcp
 tar czf roundtable-mcp-X.Y.Z.tar.gz -C _build/prod/rel roundtable_mcp
-sha256sum roundtable-mcp-X.Y.Z.tar.gz roundtable-cli > SHA256SUMS
+sha256sum roundtable-mcp-X.Y.Z.tar.gz > SHA256SUMS
 ```
 
 Then upload via Forgejo UI or API.

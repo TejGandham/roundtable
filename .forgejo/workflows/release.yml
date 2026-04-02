@@ -42,9 +42,6 @@ jobs:
       - name: Build MCP release
         run: mise exec -- env MIX_ENV=prod mix release roundtable_mcp
 
-      - name: Build CLI escript
-        run: mise exec -- env MIX_ENV=prod mix escript.build
-
       - name: Package artifacts
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -60,8 +57,7 @@ jobs:
           MCP_TARBALL="roundtable-mcp-${VERSION}.tar.gz"
           tar czf "$MCP_TARBALL" -C _build/prod/rel roundtable_mcp
 
-          # Checksums for both artifacts
-          sha256sum "$MCP_TARBALL" roundtable-cli > SHA256SUMS
+          sha256sum "$MCP_TARBALL" > SHA256SUMS
 
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           echo "MCP_TARBALL=${MCP_TARBALL}" >> "$GITHUB_ENV"
@@ -90,14 +86,6 @@ jobs:
             -H "Content-Type: application/gzip" \
             "${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${MCP_TARBALL}" \
             --data-binary "@${MCP_TARBALL}"
-
-          # Upload CLI escript
-          curl -sf \
-            -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Content-Type: application/octet-stream" \
-            "${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=roundtable-cli" \
-            --data-binary "@roundtable-cli"
 
           # Upload checksums
           curl -sf \

@@ -8,7 +8,6 @@ defmodule Roundtable.MixProject do
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: escript(),
       releases: releases(),
       aliases: aliases()
     ]
@@ -19,10 +18,6 @@ defmodule Roundtable.MixProject do
       mod: {Roundtable.Application, []},
       extra_applications: [:logger]
     ]
-  end
-
-  defp escript do
-    [main_module: Roundtable.CLI, name: "roundtable-cli"]
   end
 
   defp releases do
