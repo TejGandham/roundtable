@@ -4,7 +4,7 @@ Roundtable is an MCP server. Agents call its tools directly over stdio — no Ba
 
 ## Prerequisites
 
-- **Erlang/OTP 28+** and **Elixir 1.19+** (source install only — release install bundles everything)
+- **[mise](https://mise.jdx.dev)** — manages Erlang 28 + Elixir 1.19 automatically
 - **Gemini CLI** installed and authenticated (`gemini --version`)
 - **Codex CLI** installed and authenticated (`codex --version`)
 - **Claude CLI** installed and authenticated (`claude --version`)
@@ -13,38 +13,51 @@ The CLI tools must be on `PATH` for the roundtable server to dispatch to them.
 
 ---
 
-## Install from Release (Recommended)
-
-Download the latest release and extract it to a stable path:
+## Install from Source
 
 ```bash
-VERSION=0.2.0
-mkdir -p ~/.local/share/roundtable
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
-  | tar xz -C ~/.local/share/roundtable --strip-components=1
-chmod +x ~/.local/share/roundtable/bin/roundtable-mcp
+git clone https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable.git
+cd roundtable
 ```
 
-Verify the checksum:
+**Install the toolchain:**
 
 ```bash
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v${VERSION}/SHA256SUMS \
-  | grep roundtable-mcp | sha256sum --check
+curl https://mise.run | sh
+mise install          # reads .mise.toml → installs Erlang 28 + Elixir 1.19
 ```
 
-The release includes the MCP server binary, role prompts, and `SKILL.md`. No Elixir, no `mix`, no source checkout required.
+**Fetch deps** (automatically patches hermes_mcp for stdio transport fix):
+
+```bash
+eval "$(mise activate bash)"   # or add to ~/.bashrc
+mix deps.get
+```
+
+**Verify:**
+
+```bash
+mix test
+```
+
+Expected: 167 tests, 0 failures.
 
 ---
 
 ## MCP Registration
 
-Register roundtable as an MCP server so your agent can call its tools directly.
+Register roundtable as an MCP server so your agent can call its tools directly. The server spawns `claude`, `codex`, and `gemini` as child processes, so the registration command must ensure these CLIs are on `PATH`.
 
 ### Claude Code
 
 ```bash
-claude mcp add -s user roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
+claude mcp add -s user roundtable -- bash -c \
+  'export PATH="$HOME/.local/bin:$(dirname $(readlink -f $(which node))):$PATH" && \
+   eval "$(mise activate bash)" && \
+   cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt'
 ```
+
+Replace `/path/to/roundtable` with the actual clone path.
 
 Verify:
 
@@ -68,10 +81,10 @@ Add to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.roundtable]
-command = ["~/.local/share/roundtable/bin/roundtable-mcp"]
+command = ["bash", "-c", "export PATH=\"$HOME/.local/bin:$(dirname $(readlink -f $(which node))):$PATH\" && eval \"$(mise activate bash)\" && cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt"]
 ```
 
-Or register via the Codex MCP API if available. Restart Codex to pick it up.
+Replace `/path/to/roundtable` with the actual clone path. Restart Codex to pick it up.
 
 ### OpenCode
 
@@ -81,29 +94,28 @@ Add to `~/.config/opencode/config.json` (or workspace `.opencode/config.json`):
 {
   "mcp": {
     "roundtable": {
-      "command": "~/.local/share/roundtable/bin/roundtable-mcp"
+      "command": "bash",
+      "args": ["-c", "export PATH=\"$HOME/.local/bin:$(dirname $(readlink -f $(which node))):$PATH\" && eval \"$(mise activate bash)\" && cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt"]
     }
   }
 }
 ```
 
-Restart OpenCode to pick it up.
-
 ### Other MCP Clients
 
-Point any MCP-compatible client at the server binary:
+Launch the server with:
 
-```
-command: ~/.local/share/roundtable/bin/roundtable-mcp
+```bash
+cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt
 ```
 
-The server communicates over stdio using JSON-RPC (MCP protocol 2025-03-26).
+The server communicates over stdio using JSON-RPC (MCP protocol 2025-03-26). Ensure `claude`, `codex`, and `gemini` are on `PATH` in the server's environment.
 
 ---
 
 ## Skill Discovery (Optional)
 
-Agents that support skill files can discover roundtable's documentation automatically. The release tarball includes `SKILL.md`; copy it to your agent's skill directory if you want skill-triggered invocation alongside MCP tool access.
+Agents that support skill files can discover roundtable's documentation automatically. Copy `SKILL.md` to your agent's skill directory for skill-triggered invocation alongside MCP tool access.
 
 | Agent | Skill directory |
 |-|-|
@@ -115,97 +127,27 @@ Agents that support skill files can discover roundtable's documentation automati
 ```bash
 # Example: Claude Code skill discovery
 mkdir -p ~/.claude/skills/roundtable
-cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
+cp /path/to/roundtable/SKILL.md ~/.claude/skills/roundtable/
 ```
 
 ---
 
-## CLI Installation (Alternative)
+## CLI Usage (Alternative)
 
 The `roundtable-cli` escript provides the same functionality via command-line flags. Use it for scripting, CI, or contexts where MCP registration is not available.
-
-```bash
-VERSION=0.2.0
-curl -sL https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-cli \
-  -o ~/.local/bin/roundtable-cli
-chmod +x ~/.local/bin/roundtable-cli
-```
-
-Verify:
-
-```bash
-roundtable-cli --prompt "Hello" --timeout 30
-```
-
-Expected: JSON with `gemini`, `codex`, and `claude` fields, each with `status: "ok"`.
-
----
-
-## Install from Source (Development)
-
-For contributing or running the latest unreleased code:
-
-```bash
-git clone https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable.git
-cd roundtable
-```
-
-**Install the toolchain with [mise](https://mise.jdx.dev):**
-
-```bash
-curl https://mise.run | sh
-mise install          # reads .mise.toml → installs Erlang 28 + Elixir 1.19
-```
-
-**Fetch deps** (automatically patches hermes_mcp for stdio transport fix):
-
-```bash
-eval "$(mise activate bash)"   # or add to ~/.bashrc
-mix deps.get
-```
-
-**Run the MCP server from source:**
-
-```bash
-ROUNDTABLE_MCP=1 mix run --no-halt
-```
-
-### Registering the source MCP server
-
-The server spawns `claude`, `codex`, and `gemini` as child processes. The registration command must ensure these CLIs are on `PATH`.
-
-**Claude Code:**
-
-```bash
-claude mcp add -s user roundtable -- bash -c \
-  'export PATH="$HOME/.local/bin:$HOME/.nvm/versions/node/$(node -v)/bin:$PATH" && \
-   eval "$(mise activate bash)" && \
-   cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt'
-```
-
-**Codex** (add to `~/.codex/config.toml`):
-
-```toml
-[mcp_servers.roundtable]
-command = ["bash", "-c", "export PATH=\"$HOME/.local/bin:$HOME/.nvm/versions/node/$(node -v)/bin:$PATH\" && eval \"$(mise activate bash)\" && cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt"]
-```
-
-Replace `/path/to/roundtable` with the actual clone path.
-
-**Build a release locally:**
-
-```bash
-MIX_ENV=prod mix release roundtable_mcp
-```
-
-**Build the CLI escript locally:**
 
 ```bash
 mix escript.build
 # Produces: ./roundtable-cli
 ```
 
-Requires **Elixir 1.19+** and **Erlang/OTP 28+** (managed by `.mise.toml`).
+```bash
+./roundtable-cli --prompt "Hello" --timeout 30
+```
+
+Expected: JSON with `gemini`, `codex`, and `claude` fields, each with `status: "ok"`.
+
+Note: the escript requires Erlang on `PATH` and may not inherit the same `PATH` as your shell — the MCP server is the recommended integration path.
 
 ---
 

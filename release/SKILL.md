@@ -1,9 +1,10 @@
 ---
 name: roundtable
 description: >-
-  Multi-model consensus via Gemini, Codex, and Claude CLIs. Dispatches to both in parallel, then synthesizes.
-  Commands: hivemind (consensus), deepdive (extended reasoning), architect (implementation plan),
-  challenge (devil's advocate), xray (codebase architecture + code quality).
+  Multi-model consensus MCP server. Call roundtable_hivemind, roundtable_deepdive, roundtable_architect,
+  roundtable_challenge, or roundtable_xray directly — no Bash tool needed. Dispatches to Gemini, Codex,
+  and Claude in parallel, then synthesizes. Commands: hivemind (consensus), deepdive (extended reasoning),
+  architect (implementation plan), challenge (devil's advocate), xray (codebase architecture + code quality).
   Use this skill whenever the user wants a second opinion, consensus, validation, or external
   perspective on ANY technical decision — architecture reviews, design critiques, code quality
   checks, approach comparisons, sanity checks, tradeoff analysis, or stress-testing ideas.
@@ -18,74 +19,84 @@ description: >-
 
 # Roundtable - Multi-Model Consensus
 
-Dispatch to Gemini, Codex, AND Claude in parallel via `./roundtable`, then synthesize.
+Roundtable is an **MCP server**. Call its tools directly — no Bash tool needed.
 
 ## Core Rule
 
-1. Run the `roundtable` binary from this skill's directory with appropriate flags
-2. Parse the JSON output
-3. Synthesize all responses into unified output
-
-The binary path depends on where the skill is installed. Common locations:
-- Claude Code: `~/.claude/skills/roundtable/roundtable`
-- Codex: `~/.codex/skills/roundtable/roundtable`
-- Gemini CLI: `~/.gemini/skills/roundtable/roundtable`
-
-Requires Erlang/OTP runtime.
+1. Call the appropriate MCP tool (`roundtable_hivemind`, `roundtable_deepdive`, etc.)
+2. Parse the JSON response
+3. Synthesize all model responses into unified output
 
 ## Commands
 
-| Command | Flags | Prompt Guidance |
+| Command | MCP Tool | Role Guidance |
 |-|-|-|
-| **hivemind** | `--role default` | Ask the question directly |
-| **deepdive** | `--role planner` | Add: "Provide conclusions, assumptions, alternatives, and confidence level." |
-| **architect** | `--role planner` | Request: phases, dependencies, risks, milestones |
-| **challenge** | `--role codereviewer` | Prefix: "Act as critical reviewer. Find flaws, risks, weaknesses." |
-| **xray** | `--gemini-role planner --codex-role codereviewer --claude-role default` | Include `--files`. Gemini analyzes architecture, Codex reviews code quality. |
+| **hivemind** | `roundtable_hivemind` | Ask the question directly |
+| **deepdive** | `roundtable_deepdive` | Add: "Provide conclusions, assumptions, alternatives, and confidence level." |
+| **architect** | `roundtable_architect` | Request: phases, dependencies, risks, milestones |
+| **challenge** | `roundtable_challenge` | Prefix: "Act as critical reviewer. Find flaws, risks, weaknesses." |
+| **xray** | `roundtable_xray` | Include `files`. Gemini analyzes architecture, Codex reviews code quality. |
 
-## Invocation
+## MCP Invocation (Primary)
 
-Run via Bash tool from the **project root directory** (Gemini restricts file access to its cwd):
+Call MCP tools directly. No Bash tool, no binary path, no shell.
+
+### Tool Parameters
+
+| Parameter | Required | Description |
+|-|-|-|
+| `prompt` | Yes | The question or task |
+| `files` | No | Comma-separated **relative** file paths for context |
+| `timeout` | No | Seconds per CLI (default: 900). Don't lower unless the task is quick. |
+| `gemini_model` | No | Override Gemini model |
+| `codex_model` | No | Override Codex model |
+| `claude_model` | No | Override Claude model (e.g., `sonnet`, `opus`) |
+| `gemini_resume` | No | Gemini session ID or `latest` to continue a previous conversation |
+| `codex_resume` | No | Codex session/thread ID or `last` to continue a previous conversation |
+| `claude_resume` | No | Claude session ID to continue a previous conversation |
+
+### Per-Project Role Overrides
+
+If a project has `.claude/roundtable/roles/<role>.txt`, pass the directory path via the `project_roles_dir` parameter. This lets projects customize planner/reviewer context for their domain.
+
+## CLI Invocation (Secondary — scripting and standalone use)
+
+For scripting, CI, or use outside an MCP-capable agent, the `roundtable-cli` escript provides the same functionality via flags.
 
 ```bash
-~/.claude/skills/roundtable/roundtable \
+~/.claude/skills/roundtable/roundtable-cli \
   --prompt "Your question here" \
   --role planner \
   --files src/auth.ts,src/middleware.ts \
   --timeout 300
 ```
 
-For spec/design reviews where Codex reads referenced files, use `--timeout 600`.
+Run from the **project root directory** (Gemini restricts file access to its cwd).
 
-### Parameters
+### CLI Parameters
 
 | Flag | Required | Description |
 |-|-|-|
 | `--prompt` | Yes | The question or task |
-| `--role` | No | Role for both CLIs: `default`, `planner`, `codereviewer` (default: `default`) |
+| `--role` | No | Role for all CLIs: `default`, `planner`, `codereviewer` (default: `default`) |
 | `--gemini-role` | No | Override role for Gemini only (for xray command) |
 | `--codex-role` | No | Override role for Codex only (for xray command) |
-| `--files` | No | Comma-separated **relative** file paths for context (CLIs read files themselves) |
-| `--gemini-model` | No | Override Gemini model (default: whatever the CLI is configured to use) |
-| `--codex-model` | No | Override Codex model (default: whatever the CLI is configured to use) |
-| `--codex-reasoning` | No | Codex reasoning effort: `xhigh`, `high`, `medium` (maps to `-c reasoning_effort="..."`) |
-| `--timeout` | No | Seconds per CLI (default: 900). The default is intentionally generous — LLM inference can take minutes, and Gemini retries 429s internally. **Do not set this flag unless you know the task is quick** (e.g. `--timeout 30` for a simple greeting). Lowering it risks killing legitimate work mid-inference. |
+| `--claude-role` | No | Override role for Claude only |
+| `--files` | No | Comma-separated **relative** file paths for context |
+| `--gemini-model` | No | Override Gemini model |
+| `--codex-model` | No | Override Codex model |
+| `--claude-model` | No | Override Claude model |
+| `--codex-reasoning` | No | Codex reasoning effort: `xhigh`, `high`, `medium` |
+| `--timeout` | No | Seconds per CLI (default: 900). The default is intentionally generous — LLM inference can take minutes, and Gemini retries 429s internally. **Do not set this flag unless you know the task is quick.** |
 | `--gemini-resume` | No | Gemini session ID or `latest` to continue a previous conversation |
 | `--codex-resume` | No | Codex session/thread ID or `last` to continue a previous conversation |
-| `--claude-role` | No | Override role for Claude only |
-| `--claude-model` | No | Override Claude model (e.g., sonnet, opus) |
 | `--claude-resume` | No | Claude session ID to continue a previous conversation |
 | `--roles-dir` | No | Override global roles directory (default: skill's `roles/` dir) |
 | `--project-roles-dir` | No | Project-local roles directory (checked first, falls back to global) |
 
-### Per-Project Role Overrides
-
-If a project has `.claude/roundtable/roles/<role>.txt`, pass it via `--project-roles-dir .claude/roundtable/roles`.
-This lets projects customize planner/reviewer context for their domain.
-
 ## Output Format
 
-The script outputs JSON to stdout with this structure:
+Both MCP tools and the CLI return JSON with this structure:
 
 ```json
 {
@@ -98,7 +109,7 @@ The script outputs JSON to stdout with this structure:
 
 ## Synthesis Template
 
-After running roundtable, synthesize the results:
+After calling a roundtable tool, synthesize the results:
 
 ```
 ## [Command Name]
@@ -121,25 +132,16 @@ After running roundtable, synthesize the results:
 
 ## Follow-up Conversations
 
-Roundtable supports continuing a previous conversation with both CLIs. Each response includes `session_id` fields — use these for follow-up rounds.
+Each response includes `session_id` fields — use these for follow-up rounds.
 
-**First call:**
-```bash
-~/.claude/skills/roundtable/roundtable --prompt "Review the auth architecture" --role planner --files src/auth.ts
-```
+**First call** (MCP):
+Call `roundtable_hivemind` with `prompt: "Review the auth architecture"` and `files: "src/auth.ts"`.
 
-**Follow-up call** (using session IDs from the first response):
-```bash
-~/.claude/skills/roundtable/roundtable \
-  --prompt "What about the token refresh edge case you mentioned?" \
-  --role planner \
-  --gemini-resume latest \
-  --codex-resume last \
-  --claude-resume <session-id>
-```
+**Follow-up call** (MCP):
+Call `roundtable_hivemind` with `prompt: "What about the token refresh edge case you mentioned?"`, `gemini_resume: "latest"`, `codex_resume: "last"`, and `claude_resume: "<session-id from previous response>"`.
 
-- `--gemini-resume latest` resumes Gemini's most recent session
-- `--codex-resume last` resumes Codex's most recent session
+- `gemini_resume: "latest"` resumes Gemini's most recent session
+- `codex_resume: "last"` resumes Codex's most recent session
 - You can also pass specific session IDs from the previous response's `session_id` fields
 - Follow-up prompts still go through role prompt assembly
 
@@ -153,10 +155,10 @@ Roundtable supports continuing a previous conversation with both CLIs. Each resp
 
 ## Important: Gemini Workspace Constraint
 
-Gemini CLI restricts file access to its current working directory. When using `--files` (especially with `xray`), either:
+Gemini CLI restricts file access to its current working directory. When using `files` (especially with `xray`):
 
-1. Run roundtable **from the project root** so Gemini can access the referenced files
-2. Use **relative paths** in `--files` (not absolute paths)
+1. Use **relative paths** in `files` (not absolute paths)
+2. When using the CLI directly, run from the project root
 
 This is a Gemini CLI constraint, not a roundtable issue. Codex does not have this limitation.
 
@@ -173,7 +175,8 @@ The quality of roundtable output depends on prompt quality. Guidelines:
 
 | Mistake | Fix |
 |-|-|
-| Running only one model | ALWAYS run roundtable (dispatches all 3 agents) |
+| Using Bash tool to call roundtable | Call MCP tools directly — no Bash needed |
+| Running only one model | ALWAYS use roundtable (dispatches all 3 agents) |
 | Dumping raw JSON responses | Summarize key points, find agreement/differences |
 | Skipping synthesis | Synthesis IS the value — always include it |
 | Using for simple questions | Only use when multi-model perspective adds value |
