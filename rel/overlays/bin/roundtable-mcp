@@ -5,4 +5,4 @@
 set -e
 SELF="$(cd "$(dirname "$0")" && pwd)"
 export ROUNDTABLE_MCP=1
-exec "$SELF/roundtable_mcp" foreground
+exec "$SELF/roundtable_mcp" start
