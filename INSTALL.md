@@ -20,21 +20,16 @@ Download the latest release and extract it:
 
 ```bash
 VERSION=1.2.0
-HOST=https://brahma.myth-gecko.ts.net:3000
 mkdir -p ~/.local/share/roundtable
-curl -sL -H "Authorization: token YOUR_TOKEN" \
-  $HOST/stackhouse/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
+curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
   | tar xz -C ~/.local/share/roundtable --strip-components=1
 chmod +x ~/.local/share/roundtable/bin/roundtable-mcp
 ```
 
-> **Note**: The repository is private. Replace `YOUR_TOKEN` with a Forgejo API token, or use `tea` CLI credentials.
-
 Verify the checksum:
 
 ```bash
-curl -sL -H "Authorization: token YOUR_TOKEN" \
-  $HOST/stackhouse/roundtable/releases/download/v${VERSION}/SHA256SUMS \
+curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/SHA256SUMS \
   | grep roundtable-mcp | sha256sum --check
 ```
 
@@ -143,7 +138,7 @@ cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
 For contributing or running the latest unreleased code:
 
 ```bash
-git clone https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable.git
+git clone https://github.com/TejGandham/roundtable.git
 cd roundtable
 ```
 
