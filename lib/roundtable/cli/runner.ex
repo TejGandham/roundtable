@@ -10,12 +10,17 @@ defmodule Roundtable.CLI.Runner do
   def probe_cli(executable, test_args, probe_timeout_ms \\ 5_000) do
     env = [{String.to_charlist("ROUNDTABLE_ACTIVE"), String.to_charlist("1")}]
 
+    # Wrap in shell to redirect stdin from /dev/null — prevents probes
+    # from consuming MCP stdio bytes when running under the MCP transport.
+    args_str = Enum.map_join(test_args, " ", &shell_escape/1)
+    cmd = "#{shell_escape(executable)} #{args_str} </dev/null"
+
     port =
-      Port.open({:spawn_executable, executable}, [
+      Port.open({:spawn_executable, "/bin/sh"}, [
         :binary,
         :exit_status,
         {:env, env},
-        args: test_args
+        args: ["-c", cmd]
       ])
 
     os_pid =
@@ -47,7 +52,7 @@ defmodule Roundtable.CLI.Runner do
     after
       remaining ->
         if os_pid do
-          :os.cmd(String.to_charlist("kill -KILL -#{os_pid} 2>/dev/null; true"))
+          :os.cmd(String.to_charlist("kill -KILL #{os_pid} 2>/dev/null; true"))
         end
 
         safe_close_port(port)
@@ -74,7 +79,8 @@ defmodule Roundtable.CLI.Runner do
 
     wrapper_cmd =
       "exec setsid --wait /bin/sh -c " <>
-        shell_escape("trap 'kill 0' EXIT; #{child}; s=$?; trap - EXIT; exit $s")
+        shell_escape("trap 'kill 0' EXIT; #{child}; s=$?; trap - EXIT; exit $s") <>
+        " </dev/null"
 
     port =
       Port.open({:spawn_executable, "/bin/sh"}, [
