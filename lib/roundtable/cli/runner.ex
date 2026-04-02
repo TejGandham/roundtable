@@ -6,9 +6,60 @@ defmodule Roundtable.CLI.Runner do
   @spec find_executable(String.t()) :: String.t() | nil
   def find_executable(name), do: System.find_executable(name)
 
+  @doc """
+  Resolves the absolute path for a CLI executable.
+
+  Resolution order:
+  1. `ROUNDTABLE_<NAME>_PATH` env var (e.g. `ROUNDTABLE_CLAUDE_PATH=/usr/local/bin/claude`)
+  2. Directories in `ROUNDTABLE_EXTRA_PATH` (colon-separated, searched before system PATH)
+  3. `System.find_executable/1` (uses system PATH)
+  """
+  @spec resolve_executable(String.t()) :: String.t() | nil
+  def resolve_executable(name) do
+    env_key = "ROUNDTABLE_#{String.upcase(name)}_PATH"
+
+    case System.get_env(env_key) do
+      path when is_binary(path) and path != "" ->
+        if File.exists?(path), do: path, else: nil
+
+      _ ->
+        find_in_extra_path(name) || System.find_executable(name)
+    end
+  end
+
+  defp find_in_extra_path(name) do
+    case System.get_env("ROUNDTABLE_EXTRA_PATH") do
+      extra when is_binary(extra) and extra != "" ->
+        extra
+        |> String.split(":")
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.find_value(fn dir ->
+          candidate = Path.join(dir, name)
+          if File.exists?(candidate) and not File.dir?(candidate), do: candidate
+        end)
+
+      _ ->
+        nil
+    end
+  end
+
+  @doc false
+  def port_env do
+    base = [{~c"ROUNDTABLE_ACTIVE", ~c"1"}]
+
+    case System.get_env("ROUNDTABLE_EXTRA_PATH") do
+      extra when is_binary(extra) and extra != "" ->
+        sys_path = System.get_env("PATH") || ""
+        [{~c"PATH", String.to_charlist(extra <> ":" <> sys_path)} | base]
+
+      _ ->
+        base
+    end
+  end
+
   @spec probe_cli(String.t(), [String.t()], non_neg_integer()) :: map()
   def probe_cli(executable, test_args, probe_timeout_ms \\ 5_000) do
-    env = [{String.to_charlist("ROUNDTABLE_ACTIVE"), String.to_charlist("1")}]
+    env = port_env()
 
     # Wrap in shell to redirect stdin from /dev/null — prevents probes
     # from consuming MCP stdio bytes when running under the MCP transport.
@@ -86,7 +137,7 @@ defmodule Roundtable.CLI.Runner do
       Port.open({:spawn_executable, "/bin/sh"}, [
         :binary,
         :exit_status,
-        {:env, [{String.to_charlist("ROUNDTABLE_ACTIVE"), String.to_charlist("1")}]},
+        {:env, port_env()},
         args: ["-c", wrapper_cmd]
       ])
 

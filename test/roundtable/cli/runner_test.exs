@@ -94,6 +94,45 @@ defmodule Roundtable.CLI.RunnerTest do
     assert result.reason =~ "timeout"
   end
 
+  describe "resolve_executable/1" do
+    test "finds executable on system PATH" do
+      assert Runner.resolve_executable("sh") != nil
+    end
+
+    test "returns nil for nonexistent executable" do
+      assert Runner.resolve_executable("definitely_not_a_real_binary_xyz") == nil
+    end
+
+    test "respects ROUNDTABLE_<NAME>_PATH env var" do
+      sh_path = System.find_executable("sh")
+      System.put_env("ROUNDTABLE_SH_PATH", sh_path)
+      assert Runner.resolve_executable("sh") == sh_path
+    after
+      System.delete_env("ROUNDTABLE_SH_PATH")
+    end
+
+    test "ROUNDTABLE_<NAME>_PATH returns nil if file does not exist" do
+      System.put_env("ROUNDTABLE_FAKE_PATH", "/no/such/binary")
+      assert Runner.resolve_executable("fake") == nil
+    after
+      System.delete_env("ROUNDTABLE_FAKE_PATH")
+    end
+
+    test "finds executable via ROUNDTABLE_EXTRA_PATH" do
+      # Create a temp dir with a fake executable
+      tmp = Path.join(System.tmp_dir!(), "rt_test_extra_path_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(tmp)
+      fake_bin = Path.join(tmp, "roundtable_test_bin")
+      File.write!(fake_bin, "#!/bin/sh\nexit 0")
+      File.chmod!(fake_bin, 0o755)
+
+      System.put_env("ROUNDTABLE_EXTRA_PATH", tmp)
+      assert Runner.resolve_executable("roundtable_test_bin") == fake_bin
+    after
+      System.delete_env("ROUNDTABLE_EXTRA_PATH")
+    end
+  end
+
   test "no temp stderr files left behind" do
     tmp = System.tmp_dir!()
 

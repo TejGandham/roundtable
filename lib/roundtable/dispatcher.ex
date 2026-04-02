@@ -26,7 +26,7 @@ defmodule Roundtable.Dispatcher do
             if Map.has_key?(cli_config, :path) do
               Map.get(cli_config, :path)
             else
-              Runner.find_executable(cli_config.name)
+              Runner.resolve_executable(cli_config.name)
             end
 
           Map.put(cli_config, :path, path)

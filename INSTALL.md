@@ -95,6 +95,36 @@ cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
 
 ---
 
+## CLI Path Configuration
+
+MCP servers inherit a minimal `PATH` from the host agent, which often excludes directories managed by nvm, Homebrew, Volta, or pyenv. If roundtable can't find CLI executables, configure their paths via environment variables.
+
+### Per-CLI absolute path
+
+Set `ROUNDTABLE_<NAME>_PATH` to the full path of each CLI binary:
+
+```bash
+# Claude Code registration with env vars
+claude mcp add -s user -e ROUNDTABLE_CLAUDE_PATH=/usr/local/bin/claude \
+  -e ROUNDTABLE_GEMINI_PATH=/opt/homebrew/bin/gemini \
+  -e ROUNDTABLE_CODEX_PATH=/Users/you/.nvm/versions/node/v22.0.0/bin/codex \
+  roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
+```
+
+### Extra search PATH
+
+Set `ROUNDTABLE_EXTRA_PATH` with colon-separated directories to search before the system PATH:
+
+```bash
+claude mcp add -s user \
+  -e ROUNDTABLE_EXTRA_PATH=/opt/homebrew/bin:/Users/you/.nvm/versions/node/v22.0.0/bin \
+  roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
+```
+
+Resolution order: `ROUNDTABLE_<NAME>_PATH` > `ROUNDTABLE_EXTRA_PATH` > system `PATH`.
+
+---
+
 ## Per-Project Role Overrides
 
 Projects can customize role prompts:
