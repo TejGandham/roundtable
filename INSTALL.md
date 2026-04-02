@@ -5,11 +5,12 @@ Roundtable is an MCP server. Agents call its tools directly over stdio — no Ba
 ## Prerequisites
 
 - **Erlang/OTP 28+** (release install) or **[mise](https://mise.jdx.dev)** (source install — manages Erlang + Elixir automatically)
-- **Gemini CLI** installed and authenticated (`gemini --version`)
-- **Codex CLI** installed and authenticated (`codex --version`)
-- **Claude CLI** installed and authenticated (`claude --version`)
+- **At least one** of the following CLI tools installed and authenticated:
+  - **Gemini CLI** (`gemini --version`)
+  - **Codex CLI** (`codex --version`)
+  - **Claude CLI** (`claude --version`)
 
-The CLI tools must be on `PATH` for the roundtable server to dispatch to them.
+All three are recommended for full consensus. Missing CLIs are skipped gracefully (status: `not_found`). The CLI tools must be on `PATH` for the roundtable server to dispatch to them.
 
 ---
 
