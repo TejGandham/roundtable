@@ -4,21 +4,12 @@ Roundtable is an MCP server. Agents call its tools directly over stdio — no Ba
 
 ## Prerequisites
 
-- **Erlang/OTP 27+** (required for both MCP server and CLI)
+- **Erlang/OTP 28+** and **Elixir 1.19+** (source install only — release install bundles everything)
 - **Gemini CLI** installed and authenticated (`gemini --version`)
 - **Codex CLI** installed and authenticated (`codex --version`)
 - **Claude CLI** installed and authenticated (`claude --version`)
 
-```bash
-# macOS
-brew install erlang
-
-# Debian/Ubuntu
-sudo apt install erlang
-
-# Nix
-nix-shell -p erlang
-```
+The CLI tools must be on `PATH` for the roundtable server to dispatch to them.
 
 ---
 
@@ -70,6 +61,17 @@ Restart Claude Code. These tools will be available:
 | `roundtable_architect` | Implementation planning |
 | `roundtable_challenge` | Devil's advocate / stress-test ideas |
 | `roundtable_xray` | Codebase architecture + code quality |
+
+### Codex
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.roundtable]
+command = ["~/.local/share/roundtable/bin/roundtable-mcp"]
+```
+
+Or register via the Codex MCP API if available. Restart Codex to pick it up.
 
 ### OpenCode
 
@@ -146,6 +148,19 @@ For contributing or running the latest unreleased code:
 ```bash
 git clone https://brahma.myth-gecko.ts.net:3000/stackhouse/roundtable.git
 cd roundtable
+```
+
+**Install the toolchain with [mise](https://mise.jdx.dev):**
+
+```bash
+curl https://mise.run | sh
+mise install          # reads .mise.toml → installs Erlang 28 + Elixir 1.19
+```
+
+**Fetch deps** (automatically patches hermes_mcp for stdio transport fix):
+
+```bash
+eval "$(mise activate bash)"   # or add to ~/.bashrc
 mix deps.get
 ```
 
@@ -155,11 +170,27 @@ mix deps.get
 ROUNDTABLE_MCP=1 mix run --no-halt
 ```
 
-Then register it with your agent using the full command. For Claude Code:
+### Registering the source MCP server
+
+The server spawns `claude`, `codex`, and `gemini` as child processes. The registration command must ensure these CLIs are on `PATH`.
+
+**Claude Code:**
 
 ```bash
-claude mcp add -s user roundtable -- bash -c "cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt"
+claude mcp add -s user roundtable -- bash -c \
+  'export PATH="$HOME/.local/bin:$HOME/.nvm/versions/node/$(node -v)/bin:$PATH" && \
+   eval "$(mise activate bash)" && \
+   cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt'
 ```
+
+**Codex** (add to `~/.codex/config.toml`):
+
+```toml
+[mcp_servers.roundtable]
+command = ["bash", "-c", "export PATH=\"$HOME/.local/bin:$HOME/.nvm/versions/node/$(node -v)/bin:$PATH\" && eval \"$(mise activate bash)\" && cd /path/to/roundtable && ROUNDTABLE_MCP=1 mix run --no-halt"]
+```
+
+Replace `/path/to/roundtable` with the actual clone path.
 
 **Build a release locally:**
 
@@ -174,7 +205,7 @@ mix escript.build
 # Produces: ./roundtable-cli
 ```
 
-Requires **Elixir 1.18+** and **Erlang/OTP 27+**.
+Requires **Elixir 1.19+** and **Erlang/OTP 28+** (managed by `.mise.toml`).
 
 ---
 
