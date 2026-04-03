@@ -28,6 +28,7 @@ defmodule Roundtable do
 
           %{
             name: spec.name,
+            cli: spec.cli,
             module: Map.fetch!(@cli_modules, spec.cli),
             model: spec.model || resolve_default_model(spec.cli, args),
             role: role,
@@ -78,6 +79,7 @@ defmodule Roundtable do
       "gemini" -> args.gemini_role || args.role
       "codex" -> args.codex_role || args.role
       "claude" -> args.claude_role || args.role
+      _ -> args.role
     end
   end
 
@@ -86,15 +88,29 @@ defmodule Roundtable do
       "gemini" -> args.gemini_model
       "codex" -> args.codex_model
       "claude" -> args.claude_model
+      _ -> nil
     end
   end
 
+  @cli_resume_keys %{
+    "gemini" => :gemini_resume,
+    "codex" => :codex_resume,
+    "claude" => :claude_resume
+  }
+
+  @cli_model_keys %{
+    "gemini" => :gemini_model,
+    "codex" => :codex_model,
+    "claude" => :claude_model
+  }
+
   defp build_agent_args(spec, args) do
-    resume_key = String.to_atom("#{spec.cli}_resume")
+    resume_key = Map.fetch!(@cli_resume_keys, spec.cli)
+    model_key = Map.fetch!(@cli_model_keys, spec.cli)
     default_resume = Map.get(args, resume_key)
 
     args
-    |> Map.put(:"#{spec.cli}_model", spec.model || resolve_default_model(spec.cli, args))
+    |> Map.put(model_key, spec.model || resolve_default_model(spec.cli, args))
     |> Map.put(resume_key, spec.resume || default_resume)
   end
 end

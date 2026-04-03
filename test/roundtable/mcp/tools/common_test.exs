@@ -218,6 +218,55 @@ defmodule Roundtable.MCP.Tools.CommonTest do
     end
   end
 
+  describe "dispatch/3 agents bug fixes" do
+    # P0: Custom-named agents must resolve executable by CLI type, not name
+    test "custom-named agent resolves executable and runs successfully" do
+      agents = Jason.encode!([%{"name" => "fast", "cli" => "gemini"}])
+      result = dispatch_ok!(base_params(%{agents: agents}), %{role: "default"})
+      assert result["fast"]["status"] == "ok",
+        "Expected status 'ok' but got '#{result["fast"]["status"]}' — executable resolution likely used name instead of CLI type"
+    end
+
+    # P1: Agent name "meta" must be rejected
+    test "agent name 'meta' returns error (reserved key)" do
+      agents = Jason.encode!([%{"name" => "meta", "cli" => "gemini"}])
+
+      {:reply, %Response{isError: true} = resp, @fake_frame} =
+        Common.dispatch(base_params(%{agents: agents}), %{role: "default"}, @fake_frame)
+
+      [%{"type" => "text", "text" => msg}] = resp.content
+      assert msg =~ "reserved"
+    end
+
+    # P2: Non-string field values must be rejected
+    test "non-string name returns error" do
+      agents = Jason.encode!([%{"name" => 123, "cli" => "gemini"}])
+
+      {:reply, %Response{isError: true} = resp, @fake_frame} =
+        Common.dispatch(base_params(%{agents: agents}), %{role: "default"}, @fake_frame)
+
+      [%{"type" => "text", "text" => msg}] = resp.content
+      assert msg =~ "must be a string"
+    end
+
+    test "non-string model returns error" do
+      agents = Jason.encode!([%{"cli" => "gemini", "model" => true}])
+
+      {:reply, %Response{isError: true} = resp, @fake_frame} =
+        Common.dispatch(base_params(%{agents: agents}), %{role: "default"}, @fake_frame)
+
+      [%{"type" => "text", "text" => msg}] = resp.content
+      assert msg =~ "must be a string"
+    end
+
+    # P5: Custom model must propagate to CLI config
+    test "custom model in agents param propagates to result" do
+      agents = Jason.encode!([%{"cli" => "gemini", "model" => "gemini-2.5-pro"}])
+      result = dispatch_ok!(base_params(%{agents: agents}), %{role: "default"})
+      assert result["gemini"]["model"] == "gemini-2.5-pro"
+    end
+  end
+
   describe "dispatch/3 error handling" do
     test "returns error response for nonexistent role" do
       {:reply, %Response{isError: true} = resp, @fake_frame} =

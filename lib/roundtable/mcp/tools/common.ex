@@ -82,9 +82,12 @@ defmodule Roundtable.MCP.Tools.Common do
 
   defp validate_agents([]), do: {:error, "agents list cannot be empty"}
 
+  @reserved_names ~w(meta)
+
   defp validate_agents(agents) do
     with :ok <- validate_agent_entries(agents),
-         :ok <- validate_unique_names(agents) do
+         :ok <- validate_unique_names(agents),
+         :ok <- validate_reserved_names(agents) do
       normalized =
         Enum.map(agents, fn agent ->
           cli = agent["cli"]
@@ -117,11 +120,27 @@ defmodule Roundtable.MCP.Tools.Common do
         cli not in @valid_clis ->
           {:halt, {:error, "unknown CLI type: #{cli}. Valid types: #{Enum.join(@valid_clis, ", ")}"}}
 
+        not optional_string?(agent["name"]) ->
+          {:halt, {:error, "agent \"name\" must be a string or null"}}
+
+        not optional_string?(agent["model"]) ->
+          {:halt, {:error, "agent \"model\" must be a string or null"}}
+
+        not optional_string?(agent["role"]) ->
+          {:halt, {:error, "agent \"role\" must be a string or null"}}
+
+        not optional_string?(agent["resume"]) ->
+          {:halt, {:error, "agent \"resume\" must be a string or null"}}
+
         true ->
           {:cont, :ok}
       end
     end)
   end
+
+  defp optional_string?(nil), do: true
+  defp optional_string?(v) when is_binary(v), do: true
+  defp optional_string?(_), do: false
 
   defp validate_unique_names(agents) do
     names = Enum.map(agents, fn a -> a["name"] || a["cli"] end)
@@ -131,6 +150,17 @@ defmodule Roundtable.MCP.Tools.Common do
       :ok
     else
       {:error, "duplicate agent names: #{Enum.join(Enum.uniq(dupes), ", ")}"}
+    end
+  end
+
+  defp validate_reserved_names(agents) do
+    names = Enum.map(agents, fn a -> a["name"] || a["cli"] end)
+    reserved = Enum.filter(names, &(&1 in @reserved_names))
+
+    if reserved == [] do
+      :ok
+    else
+      {:error, "agent name #{inspect(hd(reserved))} is reserved"}
     end
   end
 
