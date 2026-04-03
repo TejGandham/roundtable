@@ -131,6 +131,93 @@ defmodule Roundtable.MCP.Tools.CommonTest do
     end
   end
 
+  describe "dispatch/3 with agents param" do
+    test "agents nil dispatches all 3 default agents" do
+      result = dispatch_ok!(base_params(%{agents: nil}), %{role: "default"})
+      assert Map.has_key?(result, "gemini")
+      assert Map.has_key?(result, "codex")
+      assert Map.has_key?(result, "claude")
+    end
+
+    test "agents selects subset of agents" do
+      agents = Jason.encode!([%{"cli" => "gemini"}, %{"cli" => "codex"}])
+      result = dispatch_ok!(base_params(%{agents: agents}), %{role: "default"})
+      assert Map.has_key?(result, "gemini")
+      assert Map.has_key?(result, "codex")
+      refute Map.has_key?(result, "claude")
+    end
+
+    test "agents with custom names as result keys" do
+      agents =
+        Jason.encode!([
+          %{"name" => "fast", "cli" => "codex"},
+          %{"name" => "deep", "cli" => "codex"}
+        ])
+
+      result = dispatch_ok!(base_params(%{agents: agents}), %{role: "default"})
+      assert Map.has_key?(result, "fast")
+      assert Map.has_key?(result, "deep")
+      refute Map.has_key?(result, "codex")
+    end
+
+    test "agents with single agent" do
+      agents = Jason.encode!([%{"cli" => "gemini"}])
+      result = dispatch_ok!(base_params(%{agents: agents}), %{role: "default"})
+      assert Map.has_key?(result, "gemini")
+      assert Map.has_key?(result, "meta")
+      refute Map.has_key?(result, "codex")
+      refute Map.has_key?(result, "claude")
+    end
+
+    test "duplicate agent names returns error" do
+      agents = Jason.encode!([%{"cli" => "gemini"}, %{"cli" => "gemini"}])
+
+      {:reply, %Response{isError: true} = resp, @fake_frame} =
+        Common.dispatch(base_params(%{agents: agents}), %{role: "default"}, @fake_frame)
+
+      [%{"type" => "text", "text" => msg}] = resp.content
+      assert msg =~ "duplicate agent names"
+    end
+
+    test "invalid CLI type returns error" do
+      agents = Jason.encode!([%{"cli" => "bard"}])
+
+      {:reply, %Response{isError: true} = resp, @fake_frame} =
+        Common.dispatch(base_params(%{agents: agents}), %{role: "default"}, @fake_frame)
+
+      [%{"type" => "text", "text" => msg}] = resp.content
+      assert msg =~ "unknown CLI type: bard"
+    end
+
+    test "empty agents list returns error" do
+      agents = Jason.encode!([])
+
+      {:reply, %Response{isError: true} = resp, @fake_frame} =
+        Common.dispatch(base_params(%{agents: agents}), %{role: "default"}, @fake_frame)
+
+      [%{"type" => "text", "text" => msg}] = resp.content
+      assert msg =~ "agents list cannot be empty"
+    end
+
+    test "invalid JSON returns error" do
+      {:reply, %Response{isError: true} = resp, @fake_frame} =
+        Common.dispatch(base_params(%{agents: "not json"}), %{role: "default"}, @fake_frame)
+
+      [%{"type" => "text", "text" => msg}] = resp.content
+      assert msg =~ "not valid JSON"
+    end
+
+    test "missing cli field returns error" do
+      agents = Jason.encode!([%{"name" => "oops"}])
+
+      {:reply, %Response{isError: true} = resp, @fake_frame} =
+        Common.dispatch(base_params(%{agents: agents}), %{role: "default"}, @fake_frame)
+
+      [%{"type" => "text", "text" => msg}] = resp.content
+      assert msg =~ "must specify a \"cli\" field"
+    end
+  end
+
   describe "dispatch/3 error handling" do
     test "returns error response for nonexistent role" do
       {:reply, %Response{isError: true} = resp, @fake_frame} =

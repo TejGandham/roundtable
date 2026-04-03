@@ -148,6 +148,45 @@ defmodule Roundtable.MCP.Tools.ToolsTest do
     end
   end
 
+  describe "Hivemind.execute/2 with agents" do
+    test "agents param selects subset of agents" do
+      agents = Jason.encode!([%{"cli" => "gemini"}, %{"cli" => "codex"}])
+      params = Map.put(base_params(), :agents, agents)
+
+      {:reply, %Response{isError: false} = resp, @fake_frame} =
+        Hivemind.execute(params, @fake_frame)
+
+      [%{"type" => "text", "text" => json}] = resp.content
+      result = Jason.decode!(json)
+
+      assert Map.has_key?(result, "gemini")
+      assert Map.has_key?(result, "codex")
+      refute Map.has_key?(result, "claude")
+      assert Map.has_key?(result, "meta")
+    end
+
+    test "agents param with custom names" do
+      agents =
+        Jason.encode!([
+          %{"name" => "alpha", "cli" => "gemini"},
+          %{"name" => "beta", "cli" => "codex"}
+        ])
+
+      params = Map.put(base_params(), :agents, agents)
+
+      {:reply, %Response{isError: false} = resp, @fake_frame} =
+        Hivemind.execute(params, @fake_frame)
+
+      [%{"type" => "text", "text" => json}] = resp.content
+      result = Jason.decode!(json)
+
+      assert Map.has_key?(result, "alpha")
+      assert Map.has_key?(result, "beta")
+      assert result["meta"]["alpha_role"] == "default"
+      assert result["meta"]["beta_role"] == "default"
+    end
+  end
+
   describe "Xray.execute/2" do
     test "assigns per-model roles: planner, codereviewer, default" do
       result = execute_and_parse(Xray)

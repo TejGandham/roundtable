@@ -21,7 +21,8 @@ defmodule Roundtable.Args do
           {:codex_resume, :string},
           {:claude_role, :string},
           {:claude_model, :string},
-          {:claude_resume, :string}
+          {:claude_resume, :string},
+          {:agents, :string}
         ]
       )
 
@@ -48,25 +49,41 @@ defmodule Roundtable.Args do
         roles_dir = Keyword.get(parsed, :roles_dir) || default_roles_dir()
         files = parse_files(Keyword.get(parsed, :files, ""))
 
-        {:ok,
-         %{
-           prompt: prompt,
-           role: Keyword.get(parsed, :role, "default"),
-           gemini_role: Keyword.get(parsed, :gemini_role),
-           codex_role: Keyword.get(parsed, :codex_role),
-           files: files,
-           gemini_model: Keyword.get(parsed, :gemini_model),
-           codex_model: Keyword.get(parsed, :codex_model),
-           timeout: timeout,
-           roles_dir: roles_dir,
-           project_roles_dir: Keyword.get(parsed, :project_roles_dir),
-           codex_reasoning: Keyword.get(parsed, :codex_reasoning),
-           gemini_resume: Keyword.get(parsed, :gemini_resume),
-           codex_resume: Keyword.get(parsed, :codex_resume),
-           claude_role: Keyword.get(parsed, :claude_role),
-           claude_model: Keyword.get(parsed, :claude_model),
-           claude_resume: Keyword.get(parsed, :claude_resume)
-         }}
+        agents_result =
+          case Keyword.get(parsed, :agents) do
+            nil ->
+              {:ok, nil}
+
+            agents_str ->
+              Roundtable.MCP.Tools.Common.parse_agents(agents_str)
+          end
+
+        case agents_result do
+          {:error, msg} ->
+            {:error, "Invalid --agents: #{msg}"}
+
+          {:ok, agents} ->
+            {:ok,
+             %{
+               prompt: prompt,
+               role: Keyword.get(parsed, :role, "default"),
+               gemini_role: Keyword.get(parsed, :gemini_role),
+               codex_role: Keyword.get(parsed, :codex_role),
+               files: files,
+               gemini_model: Keyword.get(parsed, :gemini_model),
+               codex_model: Keyword.get(parsed, :codex_model),
+               timeout: timeout,
+               roles_dir: roles_dir,
+               project_roles_dir: Keyword.get(parsed, :project_roles_dir),
+               codex_reasoning: Keyword.get(parsed, :codex_reasoning),
+               gemini_resume: Keyword.get(parsed, :gemini_resume),
+               codex_resume: Keyword.get(parsed, :codex_resume),
+               claude_role: Keyword.get(parsed, :claude_role),
+               claude_model: Keyword.get(parsed, :claude_model),
+               claude_resume: Keyword.get(parsed, :claude_resume),
+               agents: agents
+             }}
+        end
       end
     end
   end
