@@ -68,6 +68,35 @@ defmodule Roundtable.CLI.PlatformTest do
     assert Platform.kill_tree(nil) == :ok
   end
 
+  @tag :unix
+  test "Port.open spawns children with their own PGID (not BEAM's)" do
+    port =
+      Port.open({:spawn_executable, "/bin/sh"}, [
+        :binary,
+        :exit_status,
+        args: ["-c", "sleep 5"]
+      ])
+
+    {:os_pid, child_pid} = Port.info(port, :os_pid)
+    beam_pid = :os.getpid() |> to_string() |> String.to_integer()
+
+    beam_pgid =
+      :os.cmd(String.to_charlist("ps -o pgid= -p #{beam_pid}"))
+      |> to_string()
+      |> String.trim()
+
+    child_pgid =
+      :os.cmd(String.to_charlist("ps -o pgid= -p #{child_pid}"))
+      |> to_string()
+      |> String.trim()
+
+    Port.close(port)
+    Process.sleep(100)
+
+    assert beam_pgid != child_pgid,
+           "Child PGID #{child_pgid} matches BEAM PGID #{beam_pgid} — kill 0 would be unsafe"
+  end
+
   test "kill_tree/1 does not crash for nonexistent pid" do
     # Use a very high PID that's unlikely to exist
     assert Platform.kill_tree(999_999_999) == :ok

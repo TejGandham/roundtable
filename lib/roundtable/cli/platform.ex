@@ -73,29 +73,16 @@ defmodule Roundtable.CLI.Platform do
         :os.cmd(String.to_charlist("taskkill /PID #{os_pid} /F /T 2>nul & exit /b 0"))
 
       _ ->
-        # Collect all descendants before killing (depth-first)
-        all_pids = collect_descendants(os_pid)
-
-        # Kill leaf processes first, then parent
-        Enum.reverse(all_pids)
-        |> Enum.each(fn pid ->
-          :os.cmd(String.to_charlist("kill -KILL #{pid} 2>/dev/null; true"))
-        end)
-
+        # Kill the process group atomically via negative PID.
+        # Port.open gives spawned children their own PGID (verified on macOS
+        # and Linux), so -os_pid targets only the CLI's group, not the BEAM.
+        # This avoids the TOCTOU race of enumerate-then-kill with pgrep.
+        :os.cmd(String.to_charlist("kill -KILL -#{os_pid} 2>/dev/null; true"))
+        # Fallback: kill the PID directly in case it wasn't a group leader
         :os.cmd(String.to_charlist("kill -KILL #{os_pid} 2>/dev/null; true"))
     end
 
     :ok
-  end
-
-  defp collect_descendants(pid) do
-    children =
-      :os.cmd(String.to_charlist("pgrep -P #{pid} 2>/dev/null"))
-      |> to_string()
-      |> String.split()
-      |> Enum.reject(&(&1 == ""))
-
-    children ++ Enum.flat_map(children, &collect_descendants/1)
   end
 
   @doc "Escapes a string for safe inclusion in a shell command."
