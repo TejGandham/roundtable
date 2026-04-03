@@ -53,7 +53,8 @@ defmodule Roundtable.OutputTest do
         exit_signal: nil,
         elapsed_ms: 100,
         timed_out: false,
-        truncated: false
+        truncated: false,
+        stderr_truncated: false
       },
       overrides
     )

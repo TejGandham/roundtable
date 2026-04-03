@@ -187,29 +187,34 @@ defmodule Roundtable.CLI.Runner do
         )
 
       {^port, {:exit_status, exit_code}} ->
+        {stderr_content, stderr_truncated} = read_stderr(stderr_path)
+
         %{
           stdout: stdout_acc,
-          stderr: read_stderr(stderr_path),
+          stderr: stderr_content,
           exit_code: exit_code,
           exit_signal: nil,
           elapsed_ms: System.monotonic_time(:millisecond) - start_time,
           timed_out: false,
-          truncated: truncated
+          truncated: truncated,
+          stderr_truncated: stderr_truncated
         }
     after
       max(0, remaining_ms) ->
         kill_process_group(os_pid)
         safe_close_port(port)
         drain_port_messages(port)
+        {stderr_content, stderr_truncated} = read_stderr(stderr_path)
 
         %{
           stdout: stdout_acc,
-          stderr: read_stderr(stderr_path),
+          stderr: stderr_content,
           exit_code: nil,
           exit_signal: nil,
           elapsed_ms: System.monotonic_time(:millisecond) - start_time,
           timed_out: true,
-          truncated: truncated
+          truncated: truncated,
+          stderr_truncated: stderr_truncated
         }
     end
   end
@@ -258,16 +263,22 @@ defmodule Roundtable.CLI.Runner do
     end
   end
 
+  @max_stderr 524_288
+
   defp read_stderr(path) do
     case File.open(path, [:read, :binary]) do
       {:ok, file} ->
-        content = IO.read(file, 524_288)
+        content = IO.read(file, @max_stderr + 1)
         File.close(file)
 
-        if is_binary(content), do: content, else: ""
+        cond do
+          not is_binary(content) -> {"", false}
+          byte_size(content) > @max_stderr -> {binary_part(content, 0, @max_stderr), true}
+          true -> {content, false}
+        end
 
       {:error, _} ->
-        ""
+        {"", false}
     end
   end
 

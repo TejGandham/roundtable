@@ -224,6 +224,7 @@ defmodule Roundtable.IntegrationTest do
           "elapsed_ms",
           "parse_error",
           "truncated",
+          "stderr_truncated",
           "session_id"
         ] do
       assert Map.has_key?(result["gemini"], key), "gemini missing key: #{key}"
@@ -237,6 +238,7 @@ defmodule Roundtable.IntegrationTest do
           "elapsed_ms",
           "parse_error",
           "truncated",
+          "stderr_truncated",
           "session_id"
         ] do
       assert Map.has_key?(result["codex"], key), "codex missing key: #{key}"
@@ -250,6 +252,7 @@ defmodule Roundtable.IntegrationTest do
           "elapsed_ms",
           "parse_error",
           "truncated",
+          "stderr_truncated",
           "session_id"
         ] do
       assert Map.has_key?(result["claude"], key), "claude missing key: #{key}"

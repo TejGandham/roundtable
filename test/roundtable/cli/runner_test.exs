@@ -7,7 +7,7 @@ defmodule Roundtable.CLI.RunnerTest do
 
   setup do
     Enum.each(
-      ["fake_cli_success.sh", "fake_cli_timeout.sh", "fake_cli_error.sh", "fake_cli_large.sh"],
+      ["fake_cli_success.sh", "fake_cli_timeout.sh", "fake_cli_error.sh", "fake_cli_large.sh", "fake_cli_large_stderr.sh"],
       fn script ->
         path = Path.join(@support_dir, script)
         if File.exists?(path), do: File.chmod!(path, 0o755)
@@ -74,6 +74,22 @@ defmodule Roundtable.CLI.RunnerTest do
 
     assert result.truncated == true
     assert byte_size(result.stdout) <= 1_048_576
+  end
+
+  test "truncates stderr over 512KB and sets stderr_truncated" do
+    script = Path.join(@support_dir, "fake_cli_large_stderr.sh")
+    result = Runner.run_cli(script, [], 30_000)
+
+    assert result.stderr_truncated == true
+    assert byte_size(result.stderr) <= 524_288
+    assert result.stdout =~ "OK"
+  end
+
+  test "stderr_truncated is false for normal output" do
+    script = Path.join(@support_dir, "fake_cli_success.sh")
+    result = Runner.run_cli(script, [], 5_000)
+
+    assert result.stderr_truncated == false
   end
 
   test "probe_cli returns alive: true for successful command" do

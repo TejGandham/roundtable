@@ -20,6 +20,7 @@ defmodule Roundtable.Output do
       "elapsed_ms" => 0,
       "parse_error" => nil,
       "truncated" => false,
+      "stderr_truncated" => false,
       "session_id" => nil
     }
   end
@@ -39,6 +40,7 @@ defmodule Roundtable.Output do
       "elapsed_ms" => 0,
       "parse_error" => nil,
       "truncated" => false,
+      "stderr_truncated" => false,
       "session_id" => nil
     }
   end
@@ -73,6 +75,7 @@ defmodule Roundtable.Output do
       "elapsed_ms" => raw.elapsed_ms,
       "parse_error" => if(raw.timed_out, do: nil, else: parsed.parse_error),
       "truncated" => raw.truncated,
+      "stderr_truncated" => raw.stderr_truncated,
       "session_id" => parsed.session_id
     }
   end
