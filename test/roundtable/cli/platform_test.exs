@@ -55,6 +55,15 @@ defmodule Roundtable.CLI.PlatformTest do
     end
   end
 
+  test "null_device/0 returns /dev/null on unix or NUL on windows" do
+    dev = Platform.null_device()
+
+    case :os.type() do
+      {:win32, _} -> assert dev == "NUL"
+      _ -> assert dev == "/dev/null"
+    end
+  end
+
   test "kill_tree/1 is a no-op for nil" do
     assert Platform.kill_tree(nil) == :ok
   end

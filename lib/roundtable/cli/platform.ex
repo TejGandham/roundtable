@@ -19,6 +19,15 @@ defmodule Roundtable.CLI.Platform do
     end
   end
 
+  @doc "Returns the null device path for the current OS."
+  @spec null_device() :: String.t()
+  def null_device do
+    case :os.type() do
+      {:win32, _} -> "NUL"
+      _ -> "/dev/null"
+    end
+  end
+
   @doc "Returns the PATH separator for the current OS."
   @spec path_separator() :: String.t()
   def path_separator do
@@ -41,7 +50,7 @@ defmodule Roundtable.CLI.Platform do
         # setsid creates a new process group; trap kills the group on exit
         "exec setsid --wait /bin/sh -c " <>
           shell_escape("trap 'kill 0' EXIT; #{child}; s=$?; trap - EXIT; exit $s") <>
-          " </dev/null"
+          " <" <> null_device()
 
       {:unix, _} ->
         # macOS/BSD: no setsid, but trap still kills the shell's process group
@@ -94,17 +103,19 @@ defmodule Roundtable.CLI.Platform do
   def shell_escape(arg) do
     case :os.type() do
       {:win32, _} ->
-        # cmd.exe: escape metacharacters with ^, then wrap in double quotes
+        # cmd.exe: escape metacharacters with ^, use "" for literal quotes
         escaped =
           arg
           |> String.replace("^", "^^")
-          |> String.replace("\"", "\\\"")
+          |> String.replace("\"", "\"\"")
           |> String.replace("%", "^%")
           |> String.replace("!", "^!")
           |> String.replace("&", "^&")
           |> String.replace("|", "^|")
           |> String.replace("<", "^<")
           |> String.replace(">", "^>")
+          |> String.replace("(", "^(")
+          |> String.replace(")", "^)")
 
         "\"" <> escaped <> "\""
 

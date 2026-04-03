@@ -66,7 +66,7 @@ defmodule Roundtable.CLI.Runner do
     # Wrap in shell to redirect stdin from /dev/null — prevents probes
     # from consuming MCP stdio bytes when running under the MCP transport.
     args_str = Enum.map_join(test_args, " ", &shell_escape/1)
-    cmd = "#{shell_escape(executable)} #{args_str} </dev/null"
+    cmd = "#{shell_escape(executable)} #{args_str} <#{Platform.null_device()}"
 
     port =
       Port.open({:spawn_executable, Platform.shell()}, [
@@ -122,7 +122,7 @@ defmodule Roundtable.CLI.Runner do
       |> Enum.reject(&(&1 == ""))
       |> Enum.join(" ")
 
-    child = "#{command_line} </dev/null 2>#{shell_escape(stderr_path)}"
+    child = "#{command_line} <#{Platform.null_device()} 2>#{shell_escape(stderr_path)}"
     wrapper_cmd = Platform.wrap_run_command(child)
 
     port =
