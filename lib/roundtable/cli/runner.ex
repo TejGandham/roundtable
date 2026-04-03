@@ -121,7 +121,10 @@ defmodule Roundtable.CLI.Runner do
 
   @spec run_cli(String.t(), [String.t()], non_neg_integer()) :: map()
   def run_cli(command, cli_args, timeout_ms) do
-    stderr_path = Path.join(System.tmp_dir!(), "rt_stderr_#{System.unique_integer([:positive])}")
+    stderr_dir = Path.join(System.tmp_dir!(), "rt_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(stderr_dir)
+    File.chmod!(stderr_dir, 0o700)
+    stderr_path = Path.join(stderr_dir, "stderr")
     start_time = System.monotonic_time(:millisecond)
     args_joined = Enum.map_join(cli_args, " ", &shell_escape/1)
 
@@ -160,6 +163,7 @@ defmodule Roundtable.CLI.Runner do
       kill_process_group(get_os_pid(port))
       safe_close_port(port)
       File.rm(stderr_path)
+      File.rmdir(stderr_dir)
     end
   end
 
