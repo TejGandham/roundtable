@@ -12,6 +12,7 @@ defmodule Roundtable.MCP.Tools.Xray do
     field(:gemini_resume, :string)
     field(:codex_resume, :string)
     field(:claude_resume, :string)
+    field(:agents, :string)
   end
 
   @impl true
