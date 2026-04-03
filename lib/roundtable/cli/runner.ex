@@ -88,12 +88,20 @@ defmodule Roundtable.CLI.Runner do
     _ -> %{alive: false, exit_code: nil, stdout: "", reason: "probe failed to start"}
   end
 
+  # Cap probe output at 64KB — probes are health checks, not data collectors
+  @max_probe_output 65_536
+
   defp probe_receive(port, os_pid, deadline_ms, stdout_acc) do
     remaining = max(0, deadline_ms - System.monotonic_time(:millisecond))
 
     receive do
       {^port, {:data, chunk}} ->
-        probe_receive(port, os_pid, deadline_ms, stdout_acc <> chunk)
+        capped =
+          if byte_size(stdout_acc) >= @max_probe_output,
+            do: stdout_acc,
+            else: binary_part(stdout_acc <> chunk, 0, min(byte_size(stdout_acc <> chunk), @max_probe_output))
+
+        probe_receive(port, os_pid, deadline_ms, capped)
 
       {^port, {:exit_status, exit_code}} ->
         %{

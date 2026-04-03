@@ -37,14 +37,10 @@ defmodule Roundtable.CLI.PlatformTest do
     end
   end
 
-  test "wrap_run_command/1 does not include setsid on non-linux" do
+  test "wrap_run_command/1 uses trap on unix, passthrough on windows" do
     wrapped = Platform.wrap_run_command("echo hi")
 
     case :os.type() do
-      {:unix, :linux} ->
-        assert wrapped =~ "setsid"
-        assert wrapped =~ "trap"
-
       {:unix, _} ->
         refute wrapped =~ "setsid"
         assert wrapped =~ "trap"

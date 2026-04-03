@@ -46,14 +46,10 @@ defmodule Roundtable.CLI.Platform do
   @spec wrap_run_command(String.t()) :: String.t()
   def wrap_run_command(child) do
     case :os.type() do
-      {:unix, :linux} ->
-        # setsid creates a new process group; trap kills the group on exit
-        "exec setsid --wait /bin/sh -c " <>
-          shell_escape("trap 'kill 0' EXIT; #{child}; s=$?; trap - EXIT; exit $s") <>
-          " <" <> null_device()
-
       {:unix, _} ->
-        # macOS/BSD: no setsid, but trap still kills the shell's process group
+        # Port.open gives children their own PGID (verified on macOS and Linux),
+        # so trap 'kill 0' only kills the CLI's group, not the BEAM.
+        # No setsid needed — it would fork a new PGID that kill_tree can't reach.
         "trap 'kill 0' EXIT; #{child}; s=$?; trap - EXIT; exit $s"
 
       {:win32, _} ->
@@ -90,12 +86,13 @@ defmodule Roundtable.CLI.Platform do
   def shell_escape(arg) do
     case :os.type() do
       {:win32, _} ->
-        # cmd.exe: escape metacharacters with ^, use "" for literal quotes
+        # cmd.exe: strip dangerous control chars, escape metacharacters
         escaped =
           arg
+          |> String.replace(~r/[\r\n]/, "")
           |> String.replace("^", "^^")
           |> String.replace("\"", "\"\"")
-          |> String.replace("%", "^%")
+          |> String.replace("%", "%%")
           |> String.replace("!", "^!")
           |> String.replace("&", "^&")
           |> String.replace("|", "^|")
