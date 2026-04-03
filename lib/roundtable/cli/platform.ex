@@ -94,8 +94,19 @@ defmodule Roundtable.CLI.Platform do
   def shell_escape(arg) do
     case :os.type() do
       {:win32, _} ->
-        # cmd.exe: wrap in double quotes, escape internal double quotes
-        "\"" <> String.replace(arg, "\"", "\\\"") <> "\""
+        # cmd.exe: escape metacharacters with ^, then wrap in double quotes
+        escaped =
+          arg
+          |> String.replace("^", "^^")
+          |> String.replace("\"", "\\\"")
+          |> String.replace("%", "^%")
+          |> String.replace("!", "^!")
+          |> String.replace("&", "^&")
+          |> String.replace("|", "^|")
+          |> String.replace("<", "^<")
+          |> String.replace(">", "^>")
+
+        "\"" <> escaped <> "\""
 
       _ ->
         "'" <> String.replace(arg, "'", "'\\''") <> "'"
