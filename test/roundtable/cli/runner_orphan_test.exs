@@ -1,6 +1,7 @@
 defmodule Roundtable.CLI.RunnerOrphanTest do
   use ExUnit.Case, async: false
   @moduletag timeout: 30_000
+  @moduletag :unix
 
   @bin_dir Path.expand("../../support/bin", __DIR__)
 
@@ -22,6 +23,7 @@ defmodule Roundtable.CLI.RunnerOrphanTest do
     :ok
   end
 
+  @tag :linux
   test "no orphan processes after brutal task kill" do
     {:ok, sup} = Task.Supervisor.start_link()
 

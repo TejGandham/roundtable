@@ -1,7 +1,7 @@
 defmodule Roundtable.MCP.Server do
   use Hermes.Server,
     name: "roundtable",
-    version: "0.2.1",
+    version: "0.3.0",
     capabilities: [:tools]
 
   component(Roundtable.MCP.Tools.Hivemind)

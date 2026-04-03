@@ -1,6 +1,7 @@
 defmodule Roundtable.CLI.RunnerTest do
   use ExUnit.Case
   alias Roundtable.CLI.Runner
+  alias Roundtable.CLI.Platform
 
   @support_dir Path.expand("../../support", __DIR__)
 
@@ -37,6 +38,7 @@ defmodule Roundtable.CLI.RunnerTest do
     assert result.elapsed_ms < 8_000
   end
 
+  @tag :unix
   test "no orphan processes after timeout" do
     script = Path.join(@support_dir, "fake_cli_timeout.sh")
 
@@ -75,20 +77,20 @@ defmodule Roundtable.CLI.RunnerTest do
   end
 
   test "probe_cli returns alive: true for successful command" do
-    sh = System.find_executable("sh") || "/bin/sh"
+    sh = Platform.shell()
     result = Runner.probe_cli(sh, ["-c", "exit 0"], 5_000)
     assert result.alive == true
   end
 
   test "probe_cli returns alive: false for failing command" do
-    sh = System.find_executable("sh") || "/bin/sh"
+    sh = Platform.shell()
     result = Runner.probe_cli(sh, ["-c", "exit 1"], 5_000)
     assert result.alive == false
     assert result.exit_code == 1
   end
 
   test "probe_cli times out" do
-    sh = System.find_executable("sh") || "/bin/sh"
+    sh = Platform.shell()
     result = Runner.probe_cli(sh, ["-c", "sleep 999"], 300)
     assert result.alive == false
     assert result.reason =~ "timeout"

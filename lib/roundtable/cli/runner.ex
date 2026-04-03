@@ -1,6 +1,8 @@
 defmodule Roundtable.CLI.Runner do
   @moduledoc "Runs external CLI processes with stdout/stderr capture, timeout, and cleanup."
 
+  alias Roundtable.CLI.Platform
+
   @max_output 1_048_576
 
   @spec find_executable(String.t()) :: String.t() | nil
@@ -31,7 +33,7 @@ defmodule Roundtable.CLI.Runner do
     case System.get_env("ROUNDTABLE_EXTRA_PATH") do
       extra when is_binary(extra) and extra != "" ->
         extra
-        |> String.split(":")
+        |> String.split(Platform.path_separator())
         |> Enum.reject(&(&1 == ""))
         |> Enum.find_value(fn dir ->
           candidate = Path.join(dir, name)
@@ -50,7 +52,7 @@ defmodule Roundtable.CLI.Runner do
     case System.get_env("ROUNDTABLE_EXTRA_PATH") do
       extra when is_binary(extra) and extra != "" ->
         sys_path = System.get_env("PATH") || ""
-        [{~c"PATH", String.to_charlist(extra <> ":" <> sys_path)} | base]
+        [{~c"PATH", String.to_charlist(extra <> Platform.path_separator() <> sys_path)} | base]
 
       _ ->
         base
@@ -67,11 +69,11 @@ defmodule Roundtable.CLI.Runner do
     cmd = "#{shell_escape(executable)} #{args_str} </dev/null"
 
     port =
-      Port.open({:spawn_executable, "/bin/sh"}, [
+      Port.open({:spawn_executable, Platform.shell()}, [
         :binary,
         :exit_status,
         {:env, env},
-        args: ["-c", cmd]
+        args: [Platform.shell_flag(), cmd]
       ])
 
     os_pid =
@@ -102,10 +104,7 @@ defmodule Roundtable.CLI.Runner do
         }
     after
       remaining ->
-        if os_pid do
-          :os.cmd(String.to_charlist("kill -KILL #{os_pid} 2>/dev/null; true"))
-        end
-
+        Platform.kill_tree(os_pid)
         safe_close_port(port)
         drain_port_messages(port)
         %{alive: false, exit_code: nil, stdout: "", reason: "probe timeout"}
@@ -123,22 +122,15 @@ defmodule Roundtable.CLI.Runner do
       |> Enum.reject(&(&1 == ""))
       |> Enum.join(" ")
 
-    # Run CLI as a child (not exec'd) so the shell trap stays active.
-    # trap "kill 0" kills ALL processes in the setsid group when the
-    # Erlang port closes — prevents orphaned CLIs on parent crash.
     child = "#{command_line} </dev/null 2>#{shell_escape(stderr_path)}"
-
-    wrapper_cmd =
-      "exec setsid --wait /bin/sh -c " <>
-        shell_escape("trap 'kill 0' EXIT; #{child}; s=$?; trap - EXIT; exit $s") <>
-        " </dev/null"
+    wrapper_cmd = Platform.wrap_run_command(child)
 
     port =
-      Port.open({:spawn_executable, "/bin/sh"}, [
+      Port.open({:spawn_executable, Platform.shell()}, [
         :binary,
         :exit_status,
         {:env, port_env()},
-        args: ["-c", wrapper_cmd]
+        args: [Platform.shell_flag(), wrapper_cmd]
       ])
 
     os_pid = get_os_pid(port)
@@ -238,23 +230,7 @@ defmodule Roundtable.CLI.Runner do
     ArgumentError -> nil
   end
 
-  defp kill_process_group(os_pid) do
-    if os_pid do
-      child_pids =
-        :os.cmd(String.to_charlist("pgrep -P #{os_pid} 2>/dev/null"))
-        |> to_string()
-        |> String.split()
-        |> Enum.reject(&(&1 == ""))
-
-      :os.cmd(String.to_charlist("kill -KILL #{os_pid} 2>/dev/null; true"))
-
-      Enum.each(child_pids, fn child_pid ->
-        :os.cmd(String.to_charlist("kill -KILL -#{child_pid} 2>/dev/null; true"))
-      end)
-    end
-
-    :ok
-  end
+  defp kill_process_group(os_pid), do: Platform.kill_tree(os_pid)
 
   defp safe_close_port(port) do
     Port.close(port)
@@ -283,7 +259,5 @@ defmodule Roundtable.CLI.Runner do
     end
   end
 
-  defp shell_escape(arg) do
-    "'" <> String.replace(arg, "'", "'\\''") <> "'"
-  end
+  defp shell_escape(arg), do: Platform.shell_escape(arg)
 end
