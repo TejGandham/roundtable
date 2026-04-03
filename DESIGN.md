@@ -1,9 +1,14 @@
 # Roundtable Skill Design
 
 **Date:** 2026-03-28
-**Status:** Draft — awaiting user review
+**Status:** Historical — implementation diverged from this design (Node.js -> Elixir/OTP MCP server)
 **Replaces:** zen skill (PAL/clink MCP dependency)
 **Baseline:** PAL clink (full source analysis of TejGandham/pal-mcp-server)
+
+> **Note:** This document captures the original design intent. The actual implementation uses
+> Elixir/OTP with Hermes MCP (not Node.js), ships as a BEAM release (not an escript),
+> and includes a Platform module for cross-platform process management. See README.md
+> for current architecture.
 
 ## Problem
 

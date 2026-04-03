@@ -10,14 +10,14 @@ Roundtable is an MCP server. Agents call its tools directly over stdio — no Ba
   - **Codex CLI** (`codex --version`)
   - **Claude CLI** (`claude --version`)
 
-All three are recommended for full consensus. Missing CLIs are skipped gracefully (status: `not_found`). The CLI tools must be on `PATH`.
+All three are recommended for full consensus. Missing CLIs are skipped gracefully (status: `not_found`). See **CLI Path Configuration** below if CLIs aren't on the MCP server's PATH.
 
 ---
 
 ## Install
 
 ```bash
-VERSION=1.2.0
+VERSION=0.3.0
 mkdir -p ~/.local/share/roundtable
 curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
   | tar xz -C ~/.local/share/roundtable --strip-components=1
