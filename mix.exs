@@ -31,15 +31,13 @@ defmodule Roundtable.MixProject do
   end
 
   defp aliases do
-    [
-      "deps.get": ["deps.get", "deps.patch"]
-    ]
+    []
   end
 
   defp deps do
     [
       {:jason, "~> 1.4"},
-      {:hermes_mcp, "~> 0.14"}
+      {:hermes_mcp, github: "TejGandham/hermes-mcp", branch: "main"}
     ]
   end
 end
