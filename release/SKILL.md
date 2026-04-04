@@ -99,6 +99,45 @@ Mix models and roles for targeted review:
 - Agent names must be unique; `"meta"` is reserved
 - The tool's default role applies unless overridden per-agent
 
+### Default Agent Configuration
+
+Set `ROUNDTABLE_DEFAULT_AGENTS` at MCP registration time to configure which agents run by default — so you don't specify them on every call. Uses the same JSON schema as the `agents` parameter above.
+
+**Precedence** (highest to lowest):
+1. Per-call `agents` parameter — **always wins**
+2. `ROUNDTABLE_DEFAULT_AGENTS` env var — session default
+3. Built-in default — all 3 CLIs (gemini, codex, claude)
+
+> **You can always override defaults per-call.** Even if your defaults only include codex and claude, you can pass `agents: [{"cli": "gemini"}]` to get a gemini-only review.
+
+**Examples:**
+
+Only Codex and Claude by default:
+```json
+[{"cli": "codex"}, {"cli": "claude"}]
+```
+
+With model and role:
+```json
+[
+  {"cli": "codex", "model": "o4-mini", "role": "codereviewer"},
+  {"cli": "claude", "model": "sonnet"}
+]
+```
+
+Role-based dispatch:
+```json
+[
+  {"cli": "gemini", "role": "planner"},
+  {"cli": "codex", "role": "codereviewer"}
+]
+```
+
+**Notes:**
+- Invalid env var JSON → warning logged, falls back to all 3 CLIs
+- The `resume` field is ignored in defaults — session IDs are per-call only
+- See [INSTALL.md](INSTALL.md) for registration examples (Claude Code, Codex, OpenCode).
+
 ### Per-Project Role Overrides
 
 If a project has `.claude/roundtable/roles/<role>.txt`, pass the directory path via the `project_roles_dir` parameter. This lets projects customize planner/reviewer context for their domain.
