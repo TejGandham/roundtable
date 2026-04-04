@@ -20,7 +20,7 @@ You cross-check sometimes. Just not often enough to catch the subtle ones — be
 
 ## What it does
 
-Roundtable is an MCP server that sends your prompt to every CLI you have — in parallel — and returns structured JSON with all their responses. One tool call from inside your existing agent. It uses the CLIs already in your PATH, already authenticated. Runs locally. Nothing stored, nothing forwarded — prompts go directly to your CLIs.
+Roundtable is an MCP server that sends your prompt to Claude, Gemini, and Codex CLIs — in parallel — and returns structured JSON with all their responses. One tool call from inside your existing agent. It uses the CLIs already in your PATH, already authenticated. Runs locally. Nothing stored or proxied — Roundtable itself never sees your prompts; it passes them directly to your CLIs, which talk to their providers as usual.
 
 You can run the same CLI with different models in a single dispatch. Claude with Opus for the architecture review, Claude with Sonnet for the quick sanity check. Gemini for the edge cases. Codex for an independent take. Compose your own panel.
 
@@ -44,44 +44,32 @@ Two models agree on the queue. One says it's overengineered. That disagreement i
 
 ## How it's built
 
-Each dispatch gets its own supervision tree — if one CLI hangs, the others still return. Process groups are killed atomically on shutdown. No orphaned subprocesses. Cross-platform: Linux, macOS, Windows.
+Built with Elixir/OTP. Each dispatch gets its own supervision tree — if one CLI hangs, the others still return. Process groups are killed atomically on shutdown. No orphaned subprocesses. Cross-platform: Linux, macOS, Windows.
 
 Selective dispatch controls cost. Route architecture decisions to the heavy models. Route boilerplate to the fast ones. The `agents` parameter takes a JSON array — pick exactly who sits at the table.
 
-`ROUNDTABLE_DEFAULT_AGENTS` — configure which agents run by default (JSON array, same schema as the `agents` parameter). Per-call `agents` parameter always overrides.
+`ROUNDTABLE_DEFAULT_AGENTS` — configure which agents run by default. Per-call `agents` parameter always overrides.
+
+```bash
+# Only use Claude and Gemini by default
+ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"claude"},{"cli":"gemini"}]'
+```
 
 ## Quick start
 
-### Prerequisites
-
-- **Erlang/OTP 28+** on PATH
-- **At least one** CLI installed and authenticated: `claude`, `gemini`, or `codex`
-
-### Install
-
-```bash
-VERSION=0.4.0
-mkdir -p ~/.local/share/roundtable
-curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
-  | tar xz -C ~/.local/share/roundtable --strip-components=1
-chmod +x ~/.local/share/roundtable/bin/roundtable-mcp
-```
-
-### Register
-
-Have your favorite agent read [INSTALL.md](INSTALL.md) for registration with Claude Code, Codex, OpenCode, or any MCP client.
-
-Then ask all of them the question you were about to ask just one. See where they disagree. That's where you should look twice.
+Have your favorite agent read [INSTALL.md](INSTALL.md). Then ask all of them the question you were about to ask just one. See where they disagree. That's where you should look twice.
 
 ## MCP Tools
 
+Each tool assigns a role to each agent, shaping its system prompt.
+
 | Tool | Role | Use Case |
 |-|-|-|
-| `hivemind` | default | General multi-model consensus |
-| `deepdive` | planner | Extended reasoning / deep analysis |
-| `architect` | planner | Implementation planning |
-| `challenge` | codereviewer | Devil's advocate / stress-test |
-| `xray` | gemini=planner, codex=codereviewer | Architecture + code quality review |
+| `roundtable_hivemind` | default | General multi-model consensus |
+| `roundtable_deepdive` | planner | Extended reasoning / deep analysis |
+| `roundtable_architect` | planner | Implementation planning |
+| `roundtable_challenge` | codereviewer | Devil's advocate / stress-test |
+| `roundtable_xray` | gemini=planner, codex=codereviewer | Architecture + code quality review |
 
 All tools support an `agents` parameter for selective dispatch. See [SKILL.md](SKILL.md) for full parameter docs.
 
