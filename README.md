@@ -1,58 +1,75 @@
 # Roundtable
 
-Multi-model consensus MCP server. Dispatches prompts to Claude, Gemini, and Codex CLIs in parallel, returns structured JSON with all responses and metadata. Supports selective agent dispatch — invoke any subset of CLIs, run the same CLI with different models, and assign per-agent roles.
+How many times this week did you ask a second model?
 
-## Architecture
+You have access to Claude, Gemini, Codex — you may even be paying for more than one. But the tab switch and the copy-paste never happen. So every answer you ship comes from one model's opinion.
 
-Elixir/OTP release running as an MCP server over stdio. Spawns CLI subprocesses via `Port.open` with platform-specific shell wrappers and process group isolation.
+One of them has already been wrong in a way you haven't caught yet.
 
+The second opinion exists. The workflow to get it doesn't.
+
+**Roundtable is that workflow.**
+
+## The problem
+
+Not the obvious hallucination. The dangerous one: correct pattern, correct library, wrong detail. A parameter name that changed two versions ago. A concurrency fix that looks elegant and quietly reintroduces a race condition. An infrastructure block that reads like real documentation but doesn't exist.
+
+It compiles. It passes your smell test. It ships. You find out at 2am.
+
+You cross-check sometimes. Just not often enough to catch the subtle ones — because cross-checking means re-establishing context in another terminal, copy-pasting a prompt, waiting, and mentally diffing two walls of prose. So you only do it for decisions you *already* think are risky. The ones that burn you are the ones you didn't think were risky.
+
+## What it does
+
+Roundtable is an MCP server that sends your prompt to every CLI you have — in parallel — and returns structured JSON with all their responses. One tool call from inside your existing agent. It uses the CLIs already in your PATH, already authenticated. Runs locally. Nothing stored, nothing forwarded — prompts go directly to your CLIs.
+
+You can run the same CLI with different models in a single dispatch. Claude with Opus for the architecture review, Claude with Sonnet for the quick sanity check. Gemini for the edge cases. Codex for an independent take. Compose your own panel.
+
+## Why disagreement matters
+
+When models agree, that's useful triage — not proof, but a strong signal you're on the right track.
+
+When they disagree, that's the real value. Disagreement surfaces tradeoffs you would have missed, edge cases one model sees and another doesn't, or a hallucination the others don't share. You don't need three models to be right. You need them to be *different enough* to catch each other.
+
+```json
+{
+  "claude": { "status": "ok", "response": "Use a message queue — decouples the producer..." },
+  "gemini": { "status": "ok", "response": "Use a message queue with dead-letter handling..." },
+  "codex":  { "status": "ok", "response": "A cron job is simpler here — the volume doesn't justify a queue..." }
+}
 ```
-Claude Code ──stdio──> Roundtable MCP ──parallel──> claude CLI
-                                                   gemini CLI
-                                                   codex CLI
-```
 
-### Cross-Platform Support
+Two models agree on the queue. One says it's overengineered. That disagreement is worth more than any single answer.
 
-| Platform | Shell | Process Cleanup | Orphan Strategy |
-|-|-|-|-|
-| Linux | `/bin/sh` | `trap 'kill 0' EXIT` + PGID kill | Atomic `kill -KILL -$PGID` |
-| macOS | `/bin/sh` | `trap 'kill 0' EXIT` + PGID kill | Atomic `kill -KILL -$PGID` |
-| Windows | `cmd.exe` | `taskkill /F /T` | Tree kill via PID |
+## How it's built
 
-### CLI Path Resolution
+Each dispatch gets its own supervision tree — if one CLI hangs, the others still return. Process groups are killed atomically on shutdown. No orphaned subprocesses. Cross-platform: Linux, macOS, Windows.
 
-MCP servers inherit a minimal PATH. Resolution order:
-1. `ROUNDTABLE_<NAME>_PATH` env var (e.g. `ROUNDTABLE_CLAUDE_PATH=/usr/local/bin/claude`)
-2. `ROUNDTABLE_EXTRA_PATH` directories (colon-separated, searched before system PATH)
-3. `System.find_executable/1` (system PATH)
+Selective dispatch controls cost. Route architecture decisions to the heavy models. Route boilerplate to the fast ones. The `agents` parameter takes a JSON array — pick exactly who sits at the table.
 
-`ROUNDTABLE_DEFAULT_AGENTS` — configure which agents run by default (JSON array, same schema as the `agents` parameter). Per-call `agents` parameter always overrides. See [INSTALL.md](INSTALL.md) for registration examples.
+`ROUNDTABLE_DEFAULT_AGENTS` — configure which agents run by default (JSON array, same schema as the `agents` parameter). Per-call `agents` parameter always overrides.
 
-## Install
+## Quick start
 
-See [INSTALL.md](INSTALL.md) for release installation and MCP registration.
+### Prerequisites
 
-## Development
+- **Erlang/OTP 28+** on PATH
+- **At least one** CLI installed and authenticated: `claude`, `gemini`, or `codex`
+
+### Install
 
 ```bash
-mix deps.get
-mix test
+VERSION=0.4.0
+mkdir -p ~/.local/share/roundtable
+curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
+  | tar xz -C ~/.local/share/roundtable --strip-components=1
+chmod +x ~/.local/share/roundtable/bin/roundtable-mcp
 ```
 
-### Build Release
+### Register
 
-```bash
-MIX_ENV=prod mix release roundtable_mcp
-```
+Have your favorite agent read [INSTALL.md](INSTALL.md) for registration with Claude Code, Codex, OpenCode, or any MCP client.
 
-Release output: `_build/prod/rel/roundtable_mcp/`
-
-### Run in Dev
-
-```bash
-ROUNDTABLE_MCP=1 mix run --no-halt
-```
+Then ask all of them the question you were about to ask just one. See where they disagree. That's where you should look twice.
 
 ## MCP Tools
 
@@ -64,8 +81,13 @@ ROUNDTABLE_MCP=1 mix run --no-halt
 | `challenge` | codereviewer | Devil's advocate / stress-test |
 | `xray` | gemini=planner, codex=codereviewer | Architecture + code quality review |
 
-All tools accept an optional `agents` parameter (JSON array) for selective dispatch — choose which CLIs to invoke, run the same CLI with different models, and assign per-agent roles. When omitted, all 3 CLIs dispatch as default. See [SKILL.md](SKILL.md) for full parameter docs.
+All tools support an `agents` parameter for selective dispatch. See [SKILL.md](SKILL.md) for full parameter docs.
 
-## Design
+## Docs
 
-See [DESIGN.md](DESIGN.md) for original design document (historical).
+| Doc | Contents |
+|-|-|
+| [INSTALL.md](INSTALL.md) | Full install guide, MCP registration for all clients, CLI path config |
+| [SKILL.md](SKILL.md) | Tool parameters, selective dispatch, output format, synthesis guide |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture details, cross-platform support, development setup |
+| [DESIGN.md](DESIGN.md) | Original design document (historical) |

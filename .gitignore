@@ -17,3 +17,4 @@ erl_crash.dump
 
 # Built escript binary
 /roundtable-cli
+.depwire/
