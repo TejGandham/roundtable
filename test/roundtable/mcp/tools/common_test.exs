@@ -276,4 +276,95 @@ defmodule Roundtable.MCP.Tools.CommonTest do
       assert msg =~ "Role prompt not found"
     end
   end
+
+  describe "dispatch/3 with ROUNDTABLE_DEFAULT_AGENTS" do
+    setup do
+      original = System.get_env("ROUNDTABLE_DEFAULT_AGENTS")
+
+      on_exit(fn ->
+        case original do
+          nil -> System.delete_env("ROUNDTABLE_DEFAULT_AGENTS")
+          val -> System.put_env("ROUNDTABLE_DEFAULT_AGENTS", val)
+        end
+      end)
+
+      :ok
+    end
+
+    test "env var set, agents nil dispatches only env var agents" do
+      System.put_env(
+        "ROUNDTABLE_DEFAULT_AGENTS",
+        Jason.encode!([%{"cli" => "codex"}, %{"cli" => "claude"}])
+      )
+
+      result = dispatch_ok!(base_params(%{agents: nil}), %{role: "default"})
+      assert Map.has_key?(result, "codex")
+      assert Map.has_key?(result, "claude")
+      refute Map.has_key?(result, "gemini")
+    end
+
+    test "per-call agents param overrides env var" do
+      System.put_env("ROUNDTABLE_DEFAULT_AGENTS", Jason.encode!([%{"cli" => "codex"}]))
+      agents = Jason.encode!([%{"cli" => "gemini"}])
+      result = dispatch_ok!(base_params(%{agents: agents}), %{role: "default"})
+      assert Map.has_key?(result, "gemini")
+      refute Map.has_key?(result, "codex")
+    end
+
+    test "per-call agents can include CLIs not in env var defaults" do
+      System.put_env(
+        "ROUNDTABLE_DEFAULT_AGENTS",
+        Jason.encode!([%{"cli" => "codex"}, %{"cli" => "claude"}])
+      )
+
+      agents = Jason.encode!([%{"cli" => "gemini"}])
+      result = dispatch_ok!(base_params(%{agents: agents}), %{role: "default"})
+      assert Map.has_key?(result, "gemini")
+      refute Map.has_key?(result, "codex")
+      refute Map.has_key?(result, "claude")
+    end
+
+    test "invalid JSON env var falls back to all 3 agents" do
+      System.put_env("ROUNDTABLE_DEFAULT_AGENTS", "not valid json!")
+      result = dispatch_ok!(base_params(%{agents: nil}), %{role: "default"})
+      assert Map.has_key?(result, "gemini")
+      assert Map.has_key?(result, "codex")
+      assert Map.has_key?(result, "claude")
+    end
+
+    test "schema-invalid env var falls back to all 3 agents" do
+      System.put_env("ROUNDTABLE_DEFAULT_AGENTS", Jason.encode!([%{"bad" => "field"}]))
+      result = dispatch_ok!(base_params(%{agents: nil}), %{role: "default"})
+      assert Map.has_key?(result, "gemini")
+      assert Map.has_key?(result, "codex")
+      assert Map.has_key?(result, "claude")
+    end
+
+    test "empty string env var falls back to all 3 agents" do
+      System.put_env("ROUNDTABLE_DEFAULT_AGENTS", "")
+      result = dispatch_ok!(base_params(%{agents: nil}), %{role: "default"})
+      assert Map.has_key?(result, "gemini")
+      assert Map.has_key?(result, "codex")
+      assert Map.has_key?(result, "claude")
+    end
+
+    test "env var model propagates to agent result" do
+      System.put_env(
+        "ROUNDTABLE_DEFAULT_AGENTS",
+        Jason.encode!([%{"cli" => "codex", "model" => "o4-mini"}])
+      )
+
+      result = dispatch_ok!(base_params(%{agents: nil}), %{role: "default"})
+      assert result["codex"]["model"] == "o4-mini"
+    end
+
+    test "per-tool model param used when env var agent omits model" do
+      System.put_env("ROUNDTABLE_DEFAULT_AGENTS", Jason.encode!([%{"cli" => "codex"}]))
+
+      result =
+        dispatch_ok!(base_params(%{agents: nil, codex_model: "o4-mini"}), %{role: "default"})
+
+      assert result["codex"]["model"] == "o4-mini"
+    end
+  end
 end
