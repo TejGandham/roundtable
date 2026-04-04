@@ -32,7 +32,7 @@ _Critical rules and patterns for implementing code in Roundtable — an Elixir/O
 
 - **Conditional boot:** MCP server only starts when `ROUNDTABLE_MCP=1` is set — no long-lived app children otherwise. Dynamic `Task.Supervisor` per dispatch still works in all modes.
 - **Timeout budget:** MCP `request_timeout` is 16 min; tool timeout caps at 900s; `Task.await` adds 10s margin; probe `Task.yield` adds 1s margin. These form a deliberate budget chain — do not change any timeout independently.
-- **Supervisor restart policy:** `max_restarts: 1, max_seconds: 5` prevents restart storms on stdio EOF. Do not raise to standard defaults.
+- **Supervisor restart policy:** Outer supervisor uses `max_restarts: 3, max_seconds: 30` to allow recovery from transient failures. The inner Hermes supervisor uses `:one_for_all` with its own `max_restarts: 3, max_seconds: 5` — a single transient failure exhausts the inner limit, so the outer needs headroom. A `TransportWatchdog` monitors the transport and halts the BEAM if it stays dead for 15s. `Application.stop/1` calls `System.halt(1)` in MCP mode to prevent stale BEAM processes under `--no-halt`.
 - **Stdio purity:** Logger routes to stderr only (`config :default_handler, config: %{type: :standard_error}`), Hermes logging disabled (`config :hermes_mcp, log: false`), log level `:warning`. Never log to stdout or re-enable Hermes logging — it corrupts JSON-RPC.
 - **Re-entrance guard (CLI-only):** `ROUNDTABLE_ACTIVE=1` is injected into subprocess env and checked in `CLI.main/1`. Does NOT block direct `Roundtable.run/1` calls within the same VM.
 - **Process cleanup (3 layers, Unix):** (1) Shell wrapper: `trap 'kill 0' EXIT` kills the CLI's process group on shell exit. (2) Orphan monitor: `run_cli` spawns a process that watches the caller and kills the group if the caller dies. (3) `after` block: `Platform.kill_tree/1` sends `kill -KILL -<os_pid>` (group kill) then `kill -KILL <os_pid>` (direct fallback). On Windows: `taskkill /F /T` instead. Always use `Platform` helpers, never hardcode Unix commands.
@@ -44,6 +44,7 @@ _Critical rules and patterns for implementing code in Roundtable — an Elixir/O
 - **Ephemeral Task.Supervisor:** Dispatcher creates a fresh supervisor per dispatch, torn down in `after`. Scoped cleanup is intentional — do not refactor into a named persistent supervisor.
 - **MCP tool error boundary:** `Common.dispatch/3` wraps in `rescue` + `catch`. All MCP tools MUST route through it, never call `Roundtable.run/1` directly.
 - **ERL_CRASH_DUMP_SECONDS=0 (CLI-only):** Set in escript entrypoint to prevent crash dump stalls on `System.halt/1`.
+- **ERL_CRASH_DUMP redirect (MCP release):** Set to `${RELEASE_ROOT}/erl_crash.dump` in `rel/env.sh.eex` so crash dumps land in the release directory, not the user's working directory.
 - **Telemetry bounded flush:** OTEL gets up to 2s to transmit (`Task.yield` then `Task.shutdown(:brutal_kill)`). This intentionally blocks the caller briefly — it is not fire-and-forget.
 
 ### CLI Backend Contract

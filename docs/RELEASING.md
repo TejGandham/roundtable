@@ -26,7 +26,7 @@ Decide the bump:
 Set for the rest of this guide:
 
 ```bash
-NEW_VERSION="0.5.0"  # Change this
+NEW_VERSION="0.5.1"  # Change this
 ```
 
 ## 2. Bump Version
