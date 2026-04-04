@@ -16,20 +16,23 @@ All three are recommended for full consensus. Missing CLIs are skipped gracefull
 
 ## Uninstall
 
-Remove an existing installation before upgrading or if no longer needed:
+Always uninstall before installing a new version. There is no in-place upgrade.
 
 ```bash
-# Remove MCP registration (Claude Code)
-claude mcp remove roundtable
+# Kill any running roundtable BEAM processes
+pkill -f 'roundtable_mcp' 2>/dev/null || true
 
 # Remove installed files
 rm -rf ~/.local/share/roundtable
 
 # Remove skill file (if installed)
 rm -rf ~/.claude/skills/roundtable
+
+# Remove MCP registration (Claude Code)
+claude mcp remove roundtable 2>/dev/null || true
 ```
 
-For other clients, remove the `roundtable` entry from the relevant config file (`~/.codex/config.toml`, `~/.config/opencode/config.json`, etc.).
+For other clients, also remove the `roundtable` entry from the relevant config file (`~/.codex/config.toml`, `~/.config/opencode/config.json`, etc.).
 
 ---
 
@@ -37,6 +40,7 @@ For other clients, remove the `roundtable` entry from the relevant config file (
 
 ```bash
 VERSION=0.5.1
+rm -rf ~/.local/share/roundtable
 mkdir -p ~/.local/share/roundtable
 curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
   | tar xz -C ~/.local/share/roundtable --strip-components=1
