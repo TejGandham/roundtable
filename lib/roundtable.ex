@@ -3,7 +3,9 @@ defmodule Roundtable do
   alias Roundtable.Output
   alias Roundtable.Prompt.Assembler
   alias Roundtable.Prompt.Roles
+  alias Roundtable.MCP.Tools.Common
   alias Roundtable.Telemetry
+  require Logger
 
   @spec main([String.t()]) :: no_return()
   def main(args), do: Roundtable.CLI.main(args)
@@ -63,15 +65,34 @@ defmodule Roundtable do
   defp agents_or_default(args) do
     case Map.get(args, :agents) do
       nil ->
-        [
-          %{name: "gemini", cli: "gemini", model: nil, role: nil, resume: nil},
-          %{name: "codex", cli: "codex", model: nil, role: nil, resume: nil},
-          %{name: "claude", cli: "claude", model: nil, role: nil, resume: nil}
-        ]
+        env_value = System.get_env("ROUNDTABLE_DEFAULT_AGENTS")
+
+        case Common.parse_agents(env_value) do
+          {:ok, nil} ->
+            default_agents()
+
+          {:ok, agents} ->
+            agents
+
+          {:error, msg} ->
+            Logger.warning(
+              "Invalid ROUNDTABLE_DEFAULT_AGENTS: #{msg} (value: #{inspect(env_value)})"
+            )
+
+            default_agents()
+        end
 
       agents ->
         agents
     end
+  end
+
+  defp default_agents do
+    [
+      %{name: "gemini", cli: "gemini", model: nil, role: nil, resume: nil},
+      %{name: "codex", cli: "codex", model: nil, role: nil, resume: nil},
+      %{name: "claude", cli: "claude", model: nil, role: nil, resume: nil}
+    ]
   end
 
   defp resolve_default_role(cli, args) do
