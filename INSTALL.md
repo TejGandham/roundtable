@@ -14,6 +14,25 @@ All three are recommended for full consensus. Missing CLIs are skipped gracefull
 
 ---
 
+## Uninstall
+
+Remove an existing installation before upgrading or if no longer needed:
+
+```bash
+# Remove MCP registration (Claude Code)
+claude mcp remove roundtable
+
+# Remove installed files
+rm -rf ~/.local/share/roundtable
+
+# Remove skill file (if installed)
+rm -rf ~/.claude/skills/roundtable
+```
+
+For other clients, remove the `roundtable` entry from the relevant config file (`~/.codex/config.toml`, `~/.config/opencode/config.json`, etc.).
+
+---
+
 ## Install
 
 ```bash
