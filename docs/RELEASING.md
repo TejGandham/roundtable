@@ -26,7 +26,7 @@ Decide the bump:
 Set for the rest of this guide:
 
 ```bash
-NEW_VERSION="0.5.1"  # Change this
+NEW_VERSION="0.5.2"  # Change this
 ```
 
 ## 2. Bump Version
@@ -274,7 +274,7 @@ curl -sL "https://github.com/TejGandham/roundtable/releases/download/v${NEW_VERS
 ## Notes
 
 - **`include_erts: false`**: The release does NOT bundle Erlang. The target machine must have a compatible Erlang/OTP installed.
-- **Dep patching**: `mix deps.get` is aliased to also run `mix deps.patch`, which applies `patches/*.patch` to `deps/hermes_mcp`. Patches that are already applied are skipped.
+- **Hermes fork**: `hermes_mcp` is sourced from `github: "TejGandham/hermes-mcp"` (not Hex). To pick up upstream changes, merge `cloudwalk/hermes-mcp` main into the fork before releasing.
 - **`ROUNDTABLE_MCP` must be exactly `"1"`**: The check is `== "1"`, not truthy. `true`/`yes` will not start the MCP server.
 - **Two entrypoints**: The escript (`roundtable-cli`) is for CLI/scripting use. The OTP release (`roundtable_mcp`) is for MCP server mode. Both share the same `Roundtable.run/1` core logic.
 - **Role directory resolution differs by entrypoint**: MCP uses `:code.priv_dir(:roundtable)`. CLI escript uses sibling `roles/` dir relative to the binary.

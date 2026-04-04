@@ -18,13 +18,13 @@ _Critical rules and patterns for implementing code in Roundtable — an Elixir/O
 
 - **Elixir** ~> 1.19 (mix.exs constraint) — code to 1.19+ features; target this, not dev env version
 - **Erlang/OTP** 27 (ERTS 15.2.7.6)
-- **Hermes MCP** 0.14.1, lockfile-pinned and **locally patched** (`patches/hermes_mcp_stdio_list_fix.patch`) — fixes batch message processing over stdio. Check patch compatibility before any hermes_mcp upgrade.
+- **Hermes MCP** sourced from `TejGandham/hermes-mcp` fork (GitHub, `main` branch) — includes STDIO transport fixes for task crash recovery and batch message dispatch. Upstream PR: cloudwalk/hermes-mcp#249.
 - **Jason** ~> 1.4 — JSON encoding/decoding (only other direct dep)
 - **Release target:** `roundtable_mcp` (no embedded ERTS, `include_erts: false`)
 - **External CLIs:** `gemini`, `codex`, `claude` — resolved at runtime via `ROUNDTABLE_<NAME>_PATH` > `ROUNDTABLE_EXTRA_PATH` > system PATH
 - **Telemetry:** Optional OTEL via direct HTTP POST using OTP built-ins (`:inets`/`:httpc`, `:crypto`). These are started on-demand, not in `extra_applications`. HTTPS endpoints also need `:ssl`.
 - **Transitive deps** (finch, mint, peri, telemetry, etc.) are Hermes internals — do NOT import or depend on them as project APIs
-- **Dep patching:** `mix deps.get` is aliased to `["deps.get", "deps.patch"]` — patches are applied automatically after fetch
+- **Dep source:** `hermes_mcp` is pulled from the GitHub fork, not Hex. No local patches or post-fetch hooks needed.
 
 ## Critical Implementation Rules
 
@@ -97,7 +97,7 @@ _Critical rules and patterns for implementing code in Roundtable — an Elixir/O
 - **`ROUNDTABLE_MCP` must be exactly `"1"`:** The check is `== "1"`, not truthy. `true`/`yes` will not start the MCP server.
 - **Escript:** Tests assert `:escript` config with `main_module: Roundtable.CLI` and `name: "roundtable-cli"`. Integration tests build it in `setup_all`. Verify escript config exists in `mix.exs` before building.
 - **Dev mode:** `ROUNDTABLE_MCP=1 mix run --no-halt`.
-- **Dep patching:** `mix deps.get` aliased to `["deps.get", "deps.patch"]`. Applies `patches/*.patch` to `deps/hermes_mcp`. Already-applied patches skipped.
+- **Hermes fork:** `hermes_mcp` is sourced from `github: "TejGandham/hermes-mcp"`. To sync with upstream: fetch, merge, push the fork's main branch.
 - **Role directory resolution differs by entrypoint:** MCP uses `:code.priv_dir(:roundtable)` with fallback to `Path.expand("roles")`. CLI escript uses sibling `roles/` dir relative to the binary. Both support `project_roles_dir` override.
 - **`priv/` directory:** Role prompts in `priv/roles/` are auto-bundled by the release — no overlay needed. `rel/overlays/` only adds the entry script.
 - **Timeout validation differs:** CLI accepts any positive integer. MCP tools cap at 1-900s. Do not assume the same validation everywhere.
