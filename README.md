@@ -1,6 +1,6 @@
 # Roundtable
 
-Multi-model consensus MCP server. Dispatches prompts to Claude, Gemini, and Codex CLIs in parallel, returns structured JSON with all responses and metadata.
+Multi-model consensus MCP server. Dispatches prompts to Claude, Gemini, and Codex CLIs in parallel, returns structured JSON with all responses and metadata. Supports selective agent dispatch — invoke any subset of CLIs, run the same CLI with different models, and assign per-agent roles.
 
 ## Architecture
 
@@ -61,6 +61,8 @@ ROUNDTABLE_MCP=1 mix run --no-halt
 | `architect` | planner | Implementation planning |
 | `challenge` | codereviewer | Devil's advocate / stress-test |
 | `xray` | gemini=planner, codex=codereviewer | Architecture + code quality review |
+
+All tools accept an optional `agents` parameter (JSON array) for selective dispatch — choose which CLIs to invoke, run the same CLI with different models, and assign per-agent roles. When omitted, all 3 CLIs dispatch as default. See [SKILL.md](SKILL.md) for full parameter docs.
 
 ## Design
 

@@ -17,7 +17,7 @@ All three are recommended for full consensus. Missing CLIs are skipped gracefull
 ## Install
 
 ```bash
-VERSION=0.3.0
+VERSION=0.4.0
 mkdir -p ~/.local/share/roundtable
 curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
   | tar xz -C ~/.local/share/roundtable --strip-components=1
@@ -50,6 +50,8 @@ Restart Claude Code. These tools will be available:
 | `roundtable_architect` | Implementation planning |
 | `roundtable_challenge` | Devil's advocate / stress-test ideas |
 | `roundtable_xray` | Codebase architecture + code quality |
+
+All tools support an `agents` parameter for selective dispatch — choose which CLIs to invoke, run the same CLI with different models, and assign per-agent roles. See [SKILL.md](SKILL.md) for full usage docs.
 
 ### Codex
 

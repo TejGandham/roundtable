@@ -2,7 +2,7 @@
 title: 'Selective Agent Dispatch'
 type: 'feature'
 created: '2026-04-03'
-status: 'in-progress'
+status: 'complete'
 baseline_commit: '1a7fedb'
 context: ['docs/project-context.md']
 ---

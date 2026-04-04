@@ -54,6 +54,50 @@ Call MCP tools directly. No Bash tool, no binary path, no shell.
 | `gemini_resume` | No | Gemini session ID or `latest` to continue a previous conversation |
 | `codex_resume` | No | Codex session/thread ID or `last` to continue a previous conversation |
 | `claude_resume` | No | Claude session ID to continue a previous conversation |
+| `agents` | No | JSON array of agent configs for selective dispatch (see below) |
+
+### Selective Agent Dispatch (`agents` parameter)
+
+The `agents` parameter lets you control exactly which agents run, with what models, and in what roles. When provided, it replaces the default 3-agent dispatch. When omitted, all 3 CLIs run as before.
+
+Each entry in the JSON array:
+
+| Field | Required | Description |
+|-|-|-|
+| `cli` | Yes | Backend: `"gemini"`, `"codex"`, or `"claude"` |
+| `name` | No | Result key in output (defaults to `cli` value; must be unique) |
+| `model` | No | Model override for this agent |
+| `role` | No | Role override: `"default"`, `"planner"`, `"codereviewer"` |
+| `resume` | No | Session ID to continue a previous conversation |
+
+**Examples:**
+
+Skip Claude, only use Gemini and Codex:
+```json
+[{"cli": "gemini"}, {"cli": "codex"}]
+```
+
+Run two Codex instances with different models:
+```json
+[
+  {"name": "fast", "cli": "codex", "model": "gpt-5.4"},
+  {"name": "deep", "cli": "codex", "model": "gpt-5.3-codex"}
+]
+```
+
+Mix models and roles for targeted review:
+```json
+[
+  {"name": "arch", "cli": "gemini", "model": "gemini-2.5-pro", "role": "planner"},
+  {"name": "review", "cli": "codex", "model": "gpt-5.4", "role": "codereviewer"},
+  {"name": "sanity", "cli": "claude", "model": "sonnet", "role": "default"}
+]
+```
+
+**Notes:**
+- When `agents` is provided, per-tool model params (`gemini_model`, `codex_model`, `claude_model`) are ignored
+- Agent names must be unique; `"meta"` is reserved
+- The tool's default role applies unless overridden per-agent
 
 ### Per-Project Role Overrides
 
@@ -93,6 +137,7 @@ Run from the **project root directory** (Gemini restricts file access to its cwd
 | `--claude-resume` | No | Claude session ID to continue a previous conversation |
 | `--roles-dir` | No | Override global roles directory (default: skill's `roles/` dir) |
 | `--project-roles-dir` | No | Project-local roles directory (checked first, falls back to global) |
+| `--agents` | No | JSON string of agent configs for selective dispatch (same format as MCP `agents` param) |
 
 ## Output Format
 
