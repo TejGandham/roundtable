@@ -17,7 +17,7 @@ All three are recommended for full consensus. Missing CLIs are skipped gracefull
 ## Install
 
 ```bash
-VERSION=0.5.0
+VERSION=0.5.1
 mkdir -p ~/.local/share/roundtable
 curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
   | tar xz -C ~/.local/share/roundtable --strip-components=1
