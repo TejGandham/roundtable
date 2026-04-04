@@ -27,7 +27,7 @@ MCP servers inherit a minimal PATH. Resolution order:
 2. `ROUNDTABLE_EXTRA_PATH` directories (colon-separated, searched before system PATH)
 3. `System.find_executable/1` (system PATH)
 
-`ROUNDTABLE_DEFAULT_AGENTS` — configure which agents run by default (JSON array, same schema as the `agents` parameter). See [INSTALL.md](INSTALL.md) for registration examples.
+`ROUNDTABLE_DEFAULT_AGENTS` — configure which agents run by default (JSON array, same schema as the `agents` parameter). Per-call `agents` parameter always overrides. See [INSTALL.md](INSTALL.md) for registration examples.
 
 ## Install
 
