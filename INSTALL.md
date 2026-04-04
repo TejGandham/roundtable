@@ -127,6 +127,73 @@ Resolution order: `ROUNDTABLE_<NAME>_PATH` > `ROUNDTABLE_EXTRA_PATH` > system `P
 
 ---
 
+## Default Agent Configuration
+
+Set `ROUNDTABLE_DEFAULT_AGENTS` to configure which agents run by default — without specifying them on every tool call. Uses the same JSON schema as the `agents` tool parameter (see [SKILL.md](SKILL.md) for schema details).
+
+### Precedence
+
+| Priority | Source | Description |
+|-|-|-|
+| 1 (highest) | Per-call `agents` parameter | Overrides everything — always wins |
+| 2 | `ROUNDTABLE_DEFAULT_AGENTS` env var | Session default set at registration |
+| 3 (fallback) | Built-in default | All 3 CLIs: gemini, codex, claude |
+
+> **The per-call `agents` parameter always overrides your defaults.** You can request a gemini-only review even if gemini isn't in your default configuration — just pass `agents` in the tool call.
+
+### Examples
+
+Run only Codex and Claude by default:
+```json
+[{"cli": "codex"}, {"cli": "claude"}]
+```
+
+With model and role defaults:
+```json
+[
+  {"cli": "codex", "model": "o4-mini", "role": "codereviewer"},
+  {"cli": "claude", "model": "sonnet"}
+]
+```
+
+### Register with Default Agents
+
+**Claude Code**:
+```bash
+claude mcp add -s user \
+  -e ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"codex"},{"cli":"claude"}]' \
+  roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
+```
+
+**Codex** — add to `~/.codex/config.toml`:
+```toml
+[mcp_servers.roundtable]
+command = ["~/.local/share/roundtable/bin/roundtable-mcp"]
+env = { ROUNDTABLE_DEFAULT_AGENTS = '[{"cli":"codex"},{"cli":"claude"}]' }
+```
+
+**OpenCode** — add to `~/.config/opencode/config.json`:
+```json
+{
+  "mcp": {
+    "roundtable": {
+      "command": "~/.local/share/roundtable/bin/roundtable-mcp",
+      "env": {
+        "ROUNDTABLE_DEFAULT_AGENTS": "[{\"cli\":\"codex\"},{\"cli\":\"claude\"}]"
+      }
+    }
+  }
+}
+```
+
+### Notes
+
+- **Invalid config**: If the env var contains invalid JSON or an unrecognized schema, roundtable logs a warning and falls back to all 3 CLIs — it never crashes on bad config.
+- **`resume` field**: The `resume` field in default agent configs is ignored. Session IDs are per-call and must be passed explicitly via `codex_resume`, `claude_resume`, etc.
+- **CLI escript**: The env var also applies to `roundtable-cli` invocations (both share the same dispatch logic).
+
+---
+
 ## Per-Project Role Overrides
 
 Projects can customize role prompts:
