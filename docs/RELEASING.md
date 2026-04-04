@@ -110,7 +110,25 @@ cd -
 
 Verify: `cat _build/prod/rel/SHA256SUMS` should show one line with the hash and filename.
 
-## 4. Commit and Tag
+## 4. Verify Docs
+
+Check that docs referencing version numbers, architecture, or runtime behavior are current.
+
+```bash
+# Stale version references (should only match places you already bumped)
+grep -rn '0\.OLD\.VERSION' *.md docs/ --include='*.md'
+
+# RELEASING.md example version
+grep 'NEW_VERSION=' docs/RELEASING.md
+
+# project-context.md — verify supervisor policy, crash dump, and other
+# runtime notes still match the code
+grep -n 'max_restarts\|watchdog\|crash.dump\|ERL_CRASH_DUMP' docs/project-context.md
+```
+
+Update any stale references, then include the changed docs in the version-bump commit below.
+
+## 5. Commit and Tag
 
 ```bash
 git add mix.exs INSTALL.md release/SKILL.md release/roundtable
@@ -118,7 +136,7 @@ git commit -m "chore: bump version to ${NEW_VERSION}"
 git tag -a "v${NEW_VERSION}" -m "v${NEW_VERSION} — <short description>"
 ```
 
-## 5. Push to Forgejo (Primary)
+## 6. Push to Forgejo (Primary)
 
 Push commits and tags:
 
@@ -139,7 +157,7 @@ git push origin main && git push origin --tags
 git remote set-url origin "https://${FORGEJO_HOST}/stackhouse/roundtable"  # restore clean URL
 ```
 
-## 6. Push to GitHub (Mirror)
+## 7. Push to GitHub (Mirror)
 
 Ensure the `github` remote exists:
 
@@ -156,7 +174,7 @@ git push github main && git push github --tags
 git remote set-url github "https://github.com/TejGandham/roundtable.git"  # restore clean URL
 ```
 
-## 7. Create Release on Forgejo
+## 8. Create Release on Forgejo
 
 ```bash
 tea release create \
@@ -177,7 +195,7 @@ tea release create \
   --asset "_build/prod/rel/SHA256SUMS"
 ```
 
-## 8. Create Release on GitHub
+## 9. Create Release on GitHub
 
 ```bash
 gh release create "v${NEW_VERSION}" \
@@ -201,7 +219,7 @@ EOF
   "_build/prod/rel/SHA256SUMS"
 ```
 
-## 9. Post-Release Verification
+## 10. Post-Release Verification
 
 ```bash
 # Verify Forgejo release
@@ -224,6 +242,7 @@ curl -sL "https://github.com/TejGandham/roundtable/releases/download/v${NEW_VERS
 | Build release | `MIX_ENV=prod mix release roundtable_mcp` | MCP server release |
 | Package | `tar czf roundtable-mcp-X.Y.Z.tar.gz roundtable_mcp/` | Distribution tarball |
 | Checksum | `sha256sum ... > SHA256SUMS` | Integrity verification |
+| Verify docs | `grep` for stale versions in `*.md`, `docs/` | Catch outdated references |
 | Commit + tag | `git commit`, `git tag -a vX.Y.Z` | Version control |
 | Push Forgejo | `git push origin main --tags` | Primary remote |
 | Push GitHub | `git push github main --tags` | Mirror remote |
