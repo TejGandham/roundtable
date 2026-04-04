@@ -7,16 +7,30 @@ defmodule Roundtable.Application do
       if mcp_enabled?() do
         [
           Hermes.Server.Registry,
-          {Roundtable.MCP.Server, transport: :stdio, request_timeout: :timer.minutes(16)}
+          {Roundtable.MCP.Server, transport: :stdio, request_timeout: :timer.minutes(16)},
+          Roundtable.MCP.TransportWatchdog
         ]
       else
         []
       end
 
-    # Low restart intensity: if the stdio transport crashes (e.g. client disconnects),
-    # allow at most 1 restart in 5 seconds to avoid a restart storm on EOF.
-    opts = [strategy: :one_for_one, name: Roundtable.Supervisor, max_restarts: 1, max_seconds: 5]
+    # Allow a few restarts before giving up. The inner Hermes supervisor uses
+    # :one_for_all with its own max_restarts:3/5s limit — a single transient
+    # failure exhausts the inner limit, so the outer supervisor needs headroom
+    # to restart the whole subtree when that happens.
+    opts = [strategy: :one_for_one, name: Roundtable.Supervisor, max_restarts: 3, max_seconds: 30]
     Supervisor.start_link(children, opts)
+  end
+
+  @impl true
+  def stop(_state) do
+    if mcp_enabled?() do
+      # When the supervisor exceeds max_restarts, it exits with :shutdown —
+      # a "normal" exit that doesn't trigger :permanent app halt. Combined
+      # with --no-halt in the release, this leaves a stale BEAM process.
+      # Force halt so Claude Code can restart a fresh MCP server.
+      System.halt(1)
+    end
   end
 
   defp mcp_enabled? do
