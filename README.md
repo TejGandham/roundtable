@@ -38,6 +38,8 @@ When they disagree, that's the real value. Disagreement surfaces tradeoffs you w
 }
 ```
 
+![Roundtable: Cross-checking your code decisions](docs/roundtable.png)
+
 Two models agree on the queue. One says it's overengineered. That disagreement is worth more than any single answer.
 
 ## How it's built
