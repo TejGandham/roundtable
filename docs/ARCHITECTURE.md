@@ -39,6 +39,13 @@ MCP servers inherit a minimal PATH. Resolution order:
 
 All tools accept an optional `agents` parameter (JSON array) for selective dispatch — choose which CLIs to invoke, run the same CLI with different models, and assign per-agent roles. When omitted, all 3 CLIs dispatch as default. See [SKILL.md](../SKILL.md) for full parameter docs.
 
+## Stability
+
+- **Transport error response**: The STDIO transport sends a JSON-RPC error response on every failure path (GenServer.call timeout, server crash, nil server PID) instead of silently dropping the request.
+- **Reading task recovery**: If the stdin reading task crashes, the transport detects the EXIT/DOWN signal and starts a new one instead of going deaf.
+- **Watchdog liveness ping**: The TransportWatchdog uses `:sys.get_status` to detect alive-but-stuck transports (not just PID existence). Halts the BEAM after 3 consecutive failures so Claude Code can restart fresh.
+- **Configurable request timeout**: `ROUNDTABLE_REQUEST_TIMEOUT_MS` env var overrides the default 16-minute MCP request timeout.
+
 ## Development
 
 ```bash

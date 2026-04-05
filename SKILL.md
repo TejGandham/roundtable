@@ -136,7 +136,7 @@ Role-based dispatch:
 **Notes:**
 - Invalid env var JSON → warning logged, falls back to all 3 CLIs
 - The `resume` field is ignored in defaults — session IDs are per-call only
-- See [INSTALL.md](INSTALL.md) for registration examples (Claude Code, Codex, OpenCode).
+- See [INSTALL.md](INSTALL.md) for registration instructions.
 
 ### Per-Project Role Overrides
 
@@ -147,7 +147,7 @@ If a project has `.claude/roundtable/roles/<role>.txt`, pass the directory path 
 For scripting, CI, or use outside an MCP-capable agent, the `roundtable-cli` escript provides the same functionality via flags.
 
 ```bash
-~/.claude/skills/roundtable/roundtable-cli \
+~/.local/share/roundtable/roundtable-cli \
   --prompt "Your question here" \
   --role planner \
   --files src/auth.ts,src/middleware.ts \

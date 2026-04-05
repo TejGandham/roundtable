@@ -44,7 +44,7 @@ Two models agree on the queue. One says it's overengineered. That disagreement i
 
 ## How it's built
 
-Built with Elixir/OTP. Each dispatch gets its own supervision tree — if one CLI hangs, the others still return. Process groups are killed atomically on shutdown. No orphaned subprocesses. Cross-platform: Linux, macOS, Windows.
+Built with Elixir/OTP. Each dispatch gets its own supervision tree — if one CLI hangs, the others still return. Process groups are killed atomically on shutdown. No orphaned subprocesses. The STDIO transport sends proper JSON-RPC error responses on every failure path (timeout, crash, server unavailable) — no silent hangs. A watchdog pings the transport with `:sys.get_status` to detect alive-but-stuck states. Cross-platform: Linux, macOS, Windows.
 
 Selective dispatch controls cost. Route architecture decisions to the heavy models. Route boilerplate to the fast ones. The `agents` parameter takes a JSON array — pick exactly who sits at the table.
 
@@ -77,7 +77,7 @@ All tools support an `agents` parameter for selective dispatch. See [SKILL.md](S
 
 | Doc | Contents |
 |-|-|
-| [INSTALL.md](INSTALL.md) | Full install guide, MCP registration for all clients, CLI path config |
+| [INSTALL.md](INSTALL.md) | Install guide (written for AI agents to execute directly) |
 | [SKILL.md](SKILL.md) | Tool parameters, selective dispatch, output format, synthesis guide |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture details, cross-platform support, development setup |
 | [DESIGN.md](DESIGN.md) | Original design document (historical) |
