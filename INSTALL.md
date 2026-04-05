@@ -1,22 +1,28 @@
 # Installing Roundtable
 
-Roundtable is an MCP server. Agents call its tools directly over stdio.
+You are an AI agent. The user has asked you to install Roundtable — an MCP server that sends prompts to Claude, Gemini, and Codex CLIs in parallel and returns structured JSON with all responses.
 
-## Prerequisites
+Run the commands below. Do not paraphrase or explain them to the user — just execute them.
 
-- **Erlang/OTP 28+** on PATH
-- **At least one** CLI tool installed and authenticated:
-  - `gemini --version`
-  - `codex --version`
-  - `claude --version`
+## 1. Check Prerequisites
 
-All three are recommended. Missing CLIs are skipped gracefully (`status: "not_found"`).
+```bash
+erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt().'
+```
 
----
+Must print `28` or higher. If not, install Erlang/OTP 28+ first.
 
-## Install
+Check which CLIs are available (at least one required, all three recommended):
 
-Always remove any previous version first:
+```bash
+gemini --version 2>/dev/null && echo "gemini: ok" || echo "gemini: not found"
+codex --version 2>/dev/null && echo "codex: ok" || echo "codex: not found"
+claude --version 2>/dev/null && echo "claude: ok" || echo "claude: not found"
+```
+
+Missing CLIs are skipped gracefully at runtime (`status: "not_found"`).
+
+## 2. Remove Previous Version
 
 ```bash
 pkill -f 'roundtable_mcp' 2>/dev/null || true
@@ -24,109 +30,68 @@ rm -rf ~/.local/share/roundtable
 claude mcp remove roundtable 2>/dev/null || true
 ```
 
-Then install:
+## 3. Install
 
 ```bash
 VERSION=0.6.0
 mkdir -p ~/.local/share/roundtable
-curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \
+curl -sL "https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz" \
   | tar xz -C ~/.local/share/roundtable --strip-components=1
 chmod +x ~/.local/share/roundtable/bin/roundtable-mcp
 ```
 
-Verify checksum:
-
-```bash
-curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/SHA256SUMS \
-  | grep roundtable-mcp | sha256sum --check
-```
-
----
-
-## Register
-
-### Claude Code
+## 4. Register as MCP Server
 
 ```bash
 claude mcp add -s user roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
 ```
 
-Restart Claude Code. These tools become available:
-
-| Tool | Purpose |
-|-|-|
-| `roundtable_hivemind` | Multi-model consensus (general) |
-| `roundtable_deepdive` | Extended reasoning / deep analysis |
-| `roundtable_architect` | Implementation planning |
-| `roundtable_challenge` | Devil's advocate / stress-test ideas |
-| `roundtable_xray` | Architecture + code quality review |
-
-All tools accept an `agents` parameter for selective dispatch. See [SKILL.md](SKILL.md) for full parameter docs.
-
-### Other MCP Clients
-
-Stdio transport, JSON-RPC, MCP protocol 2025-03-26. Command:
-
-```
-~/.local/share/roundtable/bin/roundtable-mcp
-```
-
----
-
-## CLI Path Configuration
-
-MCP servers inherit a minimal `PATH` that often excludes nvm, Homebrew, or Volta directories. If roundtable can't find CLI executables, configure paths at registration:
-
-**Per-CLI absolute path** (`ROUNDTABLE_<NAME>_PATH`):
+If CLIs are installed in non-standard locations (nvm, Homebrew, Volta), pass their paths:
 
 ```bash
 claude mcp add -s user \
-  -e ROUNDTABLE_CLAUDE_PATH=/usr/local/bin/claude \
-  -e ROUNDTABLE_GEMINI_PATH=/opt/homebrew/bin/gemini \
-  -e ROUNDTABLE_CODEX_PATH=/Users/you/.nvm/versions/node/v22.0.0/bin/codex \
+  -e ROUNDTABLE_CLAUDE_PATH=$(which claude) \
+  -e ROUNDTABLE_GEMINI_PATH=$(which gemini) \
+  -e ROUNDTABLE_CODEX_PATH=$(which codex) \
   roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
 ```
 
-**Extra search directories** (`ROUNDTABLE_EXTRA_PATH`):
+Only include `-e` flags for CLIs that exist. The `$(which ...)` calls resolve the correct paths automatically.
 
-```bash
-claude mcp add -s user \
-  -e ROUNDTABLE_EXTRA_PATH=/opt/homebrew/bin:/Users/you/.nvm/versions/node/v22.0.0/bin \
-  roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
-```
-
-Resolution order: `ROUNDTABLE_<NAME>_PATH` > `ROUNDTABLE_EXTRA_PATH` > system `PATH`.
-
----
-
-## Default Agent Configuration
-
-Set `ROUNDTABLE_DEFAULT_AGENTS` to choose which agents run by default. Per-call `agents` parameter always overrides.
-
-```bash
-claude mcp add -s user \
-  -e ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"codex"},{"cli":"claude"}]' \
-  roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
-```
-
-With model and role defaults:
-
-```json
-[
-  {"cli": "codex", "model": "o4-mini", "role": "codereviewer"},
-  {"cli": "claude", "model": "sonnet"}
-]
-```
-
-Invalid config logs a warning and falls back to all 3 CLIs. See [SKILL.md](SKILL.md) for the full agent schema.
-
----
-
-## Skill Discovery (Optional)
-
-Copy `SKILL.md` to your agent's skill directory for skill-triggered invocation:
+## 5. Install Skill File (Optional)
 
 ```bash
 mkdir -p ~/.claude/skills/roundtable
 cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
 ```
+
+## 6. Verify
+
+Tell the user to restart Claude Code, then test with a tool call:
+
+```
+Use roundtable_hivemind to ask: "What is the best way to handle errors in async Elixir code?"
+```
+
+All five tools should now be available:
+
+| Tool | Use |
+|-|-|
+| `roundtable_hivemind` | General multi-model consensus |
+| `roundtable_deepdive` | Deep analysis / extended reasoning |
+| `roundtable_architect` | Implementation planning |
+| `roundtable_challenge` | Devil's advocate / stress-test |
+| `roundtable_xray` | Architecture + code quality review |
+
+## Default Agents (Optional)
+
+To limit which CLIs run by default (saves cost/time), re-register with:
+
+```bash
+claude mcp remove roundtable
+claude mcp add -s user \
+  -e ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"codex"},{"cli":"claude"}]' \
+  roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
+```
+
+Per-call `agents` parameter always overrides defaults. See [SKILL.md](SKILL.md) for the full agent schema.
