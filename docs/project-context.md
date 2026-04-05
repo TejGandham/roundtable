@@ -17,8 +17,8 @@ _Critical rules and patterns for implementing code in Roundtable — an Elixir/O
 ## Technology Stack & Versions
 
 - **Elixir** ~> 1.19 (mix.exs constraint) — code to 1.19+ features; target this, not dev env version
-- **Erlang/OTP** 27 (ERTS 15.2.7.6)
-- **Hermes MCP** sourced from `TejGandham/hermes-mcp` fork (GitHub, `main` branch) — includes STDIO transport fixes for task crash recovery and batch message dispatch. Upstream PR: cloudwalk/hermes-mcp#249.
+- **Erlang/OTP** 28 (ERTS 16.x)
+- **Hermes MCP** sourced from `TejGandham/hermes-mcp` fork (GitHub, `main` branch) — includes STDIO transport fixes for task crash recovery, batch message dispatch, and JSON-RPC error responses on server_call_failed. Upstream PR: cloudwalk/hermes-mcp#249.
 - **Jason** ~> 1.4 — JSON encoding/decoding (only other direct dep)
 - **Release target:** `roundtable_mcp` (no embedded ERTS, `include_erts: false`)
 - **External CLIs:** `gemini`, `codex`, `claude` — resolved at runtime via `ROUNDTABLE_<NAME>_PATH` > `ROUNDTABLE_EXTRA_PATH` > system PATH
@@ -31,8 +31,9 @@ _Critical rules and patterns for implementing code in Roundtable — an Elixir/O
 ### OTP & Runtime Rules
 
 - **Conditional boot:** MCP server only starts when `ROUNDTABLE_MCP=1` is set — no long-lived app children otherwise. Dynamic `Task.Supervisor` per dispatch still works in all modes.
-- **Timeout budget:** MCP `request_timeout` is 16 min; tool timeout caps at 900s; `Task.await` adds 10s margin; probe `Task.yield` adds 1s margin. These form a deliberate budget chain — do not change any timeout independently.
-- **Supervisor restart policy:** Outer supervisor uses `max_restarts: 3, max_seconds: 30` to allow recovery from transient failures. The inner Hermes supervisor uses `:one_for_all` with its own `max_restarts: 3, max_seconds: 5` — a single transient failure exhausts the inner limit, so the outer needs headroom. A `TransportWatchdog` monitors the transport and halts the BEAM if it stays dead for 15s. `Application.stop/1` calls `System.halt(1)` in MCP mode to prevent stale BEAM processes under `--no-halt`.
+- **Timeout budget:** MCP `request_timeout` defaults to 16 min (configurable via `ROUNDTABLE_REQUEST_TIMEOUT_MS` env var); tool timeout caps at 900s; `Task.await` adds 10s margin; probe `Task.yield` adds 1s margin. These form a deliberate budget chain — do not change any timeout independently.
+- **Transport error response:** The STDIO transport sends a JSON-RPC error response on every failure path (GenServer.call timeout, server crash, nil server PID). Previously it only logged — leaving MCP clients hanging indefinitely. The error uses JSON-RPC code `-32603` (Internal Error) with a human-readable message.
+- **Supervisor restart policy:** Outer supervisor uses `max_restarts: 3, max_seconds: 30` to allow recovery from transient failures. The inner Hermes supervisor uses `:one_for_all` with its own `max_restarts: 3, max_seconds: 5` — a single transient failure exhausts the inner limit, so the outer needs headroom. A `TransportWatchdog` monitors the transport via `:sys.get_status` liveness ping (not just PID existence) and halts the BEAM if it stays dead or unresponsive for 15s. `Application.stop/1` calls `System.halt(1)` in MCP mode to prevent stale BEAM processes under `--no-halt`.
 - **Stdio purity:** Logger routes to stderr only (`config :default_handler, config: %{type: :standard_error}`), Hermes logging disabled (`config :hermes_mcp, log: false`), log level `:warning`. Never log to stdout or re-enable Hermes logging — it corrupts JSON-RPC.
 - **Re-entrance guard (CLI-only):** `ROUNDTABLE_ACTIVE=1` is injected into subprocess env and checked in `CLI.main/1`. Does NOT block direct `Roundtable.run/1` calls within the same VM.
 - **Process cleanup (3 layers, Unix):** (1) Shell wrapper: `trap 'kill 0' EXIT` kills the CLI's process group on shell exit. (2) Orphan monitor: `run_cli` spawns a process that watches the caller and kills the group if the caller dies. (3) `after` block: `Platform.kill_tree/1` sends `kill -KILL -<os_pid>` (group kill) then `kill -KILL <os_pid>` (direct fallback). On Windows: `taskkill /F /T` instead. Always use `Platform` helpers, never hardcode Unix commands.
@@ -139,4 +140,4 @@ _Critical rules and patterns for implementing code in Roundtable — an Elixir/O
 - Review quarterly for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-04-03
+Last Updated: 2026-04-05

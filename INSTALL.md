@@ -39,7 +39,7 @@ For other clients, also remove the `roundtable` entry from the relevant config f
 ## Install
 
 ```bash
-VERSION=0.5.2
+VERSION=0.6.0
 rm -rf ~/.local/share/roundtable
 mkdir -p ~/.local/share/roundtable
 curl -sL https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz \

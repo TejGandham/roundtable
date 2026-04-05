@@ -26,7 +26,7 @@ Decide the bump:
 Set for the rest of this guide:
 
 ```bash
-NEW_VERSION="0.5.2"  # Change this
+NEW_VERSION="0.6.0"  # Change this
 ```
 
 ## 2. Bump Version
@@ -121,9 +121,9 @@ grep -rn '0\.OLD\.VERSION' *.md docs/ --include='*.md'
 # RELEASING.md example version
 grep 'NEW_VERSION=' docs/RELEASING.md
 
-# project-context.md — verify supervisor policy, crash dump, and other
-# runtime notes still match the code
-grep -n 'max_restarts\|watchdog\|crash.dump\|ERL_CRASH_DUMP' docs/project-context.md
+# project-context.md — verify supervisor policy, watchdog, transport error
+# handling, and other runtime notes still match the code
+grep -n 'max_restarts\|watchdog\|crash.dump\|ERL_CRASH_DUMP\|error.response\|liveness' docs/project-context.md
 ```
 
 Update any stale references, then include the changed docs in the version-bump commit below.
