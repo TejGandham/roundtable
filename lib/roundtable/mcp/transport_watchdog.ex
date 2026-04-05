@@ -27,6 +27,7 @@ defmodule Roundtable.MCP.TransportWatchdog do
       server: Keyword.get(opts, :server, Roundtable.MCP.Server),
       check_interval: Keyword.get(opts, :check_interval, @check_interval),
       max_failures: Keyword.get(opts, :max_failures, @max_failures),
+      liveness_timeout: Keyword.get(opts, :liveness_timeout, 5_000),
       on_halt: Keyword.get(opts, :on_halt)
     }
 
@@ -55,24 +56,41 @@ defmodule Roundtable.MCP.TransportWatchdog do
   defp check_transport(state) do
     case Hermes.Server.Registry.whereis_transport(state.server, :stdio) do
       pid when is_pid(pid) ->
-        if state.ref, do: Process.demonitor(state.ref, [:flush])
-        ref = Process.monitor(pid)
-        %{state | ref: ref, failures: 0}
-
-      nil ->
-        failures = state.failures + 1
-
-        if failures >= state.max_failures do
-          Logger.warning(
-            "[roundtable] stdio transport gone for #{failures} consecutive checks, halting"
-          )
-
-          halt(state)
+        if alive_and_responsive?(pid, state.liveness_timeout) do
+          if state.ref, do: Process.demonitor(state.ref, [:flush])
+          ref = Process.monitor(pid)
+          %{state | ref: ref, failures: 0}
+        else
+          handle_failure(state)
         end
 
-        schedule_check(state)
-        %{state | ref: nil, failures: failures}
+      nil ->
+        handle_failure(state)
     end
+  end
+
+  defp alive_and_responsive?(pid, timeout) do
+    try do
+      :sys.get_status(pid, timeout)
+      true
+    catch
+      :exit, _ -> false
+    end
+  end
+
+  defp handle_failure(state) do
+    failures = state.failures + 1
+
+    if failures >= state.max_failures do
+      Logger.warning(
+        "[roundtable] stdio transport gone or unresponsive for #{failures} consecutive checks, halting"
+      )
+
+      halt(state)
+    end
+
+    schedule_check(state)
+    %{state | ref: nil, failures: failures}
   end
 
   defp halt(%{on_halt: fun}) when is_function(fun, 0), do: fun.()

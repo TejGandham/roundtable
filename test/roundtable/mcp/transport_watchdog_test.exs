@@ -1,7 +1,26 @@
+defmodule Roundtable.MCP.TransportWatchdogTest.FakeTransport do
+  @moduledoc false
+  use GenServer
+
+  def start(name) do
+    GenServer.start(__MODULE__, name)
+  end
+
+  @impl true
+  def init(name) do
+    Registry.register(Hermes.Server.Registry, name, nil)
+    {:ok, %{}}
+  end
+
+  @impl true
+  def handle_info(_msg, state), do: {:noreply, state}
+end
+
 defmodule Roundtable.MCP.TransportWatchdogTest do
   use ExUnit.Case, async: true
 
   alias Roundtable.MCP.TransportWatchdog
+  alias Roundtable.MCP.TransportWatchdogTest.FakeTransport
 
   @check_interval 50
   @max_failures 3
@@ -27,12 +46,9 @@ defmodule Roundtable.MCP.TransportWatchdogTest do
 
   defp spawn_fake_transport do
     transport_name = {:transport, Roundtable.MCP.Server, :stdio}
-
-    spawn(fn ->
-      Registry.register(Hermes.Server.Registry, transport_name, nil)
-      Process.sleep(:infinity)
-    end)
-    |> tap(fn _pid -> Process.sleep(10) end)
+    {:ok, pid} = FakeTransport.start(transport_name)
+    Process.sleep(10)
+    pid
   end
 
   test "attaches to transport on startup" do
@@ -93,5 +109,26 @@ defmodule Roundtable.MCP.TransportWatchdogTest do
     # Kill again — should need full @max_failures checks to halt
     # (not carry over the previous failure count)
     refute_receive :halt_called, @check_interval * 2
+  end
+
+  test "halts when transport is alive but unresponsive to sys.get_status" do
+    transport_name = {:transport, Roundtable.MCP.Server, :stdio}
+
+    stuck_transport =
+      spawn(fn ->
+        Registry.register(Hermes.Server.Registry, transport_name, nil)
+
+        receive do
+          :never -> :ok
+        end
+      end)
+
+    Process.sleep(10)
+
+    _watchdog = start_watchdog(liveness_timeout: 50)
+
+    assert_receive :halt_called, @check_interval * (@max_failures + 3)
+
+    Process.exit(stuck_transport, :kill)
   end
 end
