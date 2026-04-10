@@ -420,6 +420,209 @@ to:
 - start local `roundtable-http-mcp`
 - register Claude Code against the local HTTP MCP endpoint
 
+## Current status
+
+Current branch state:
+
+- Branch: `go-http-phase1`
+- Public control plane: Go HTTP MCP server
+- Backend execution path: existing `roundtable-cli` escript
+- Legacy Elixir stdio MCP server: still present in the repository, but no longer the recommended direction for transport work
+
+Current architecture in this branch:
+
+`Claude Code -> local HTTP MCP -> Go daemon -> roundtable-cli -> CLIs`
+
+This is intentionally hybrid:
+
+- Go owns the MCP transport and request lifecycle.
+- Elixir still owns prompt assembly, role loading, agent selection, CLI spawning, parsing, and output JSON.
+
+## Work completed
+
+Implemented in phase 1:
+
+- Go toolchain bootstrap in this repo via `mise`
+- new Go entrypoint: `cmd/roundtable-http-mcp`
+- new internal Go package: `internal/httpmcp`
+- official Go SDK based stateless streamable HTTP MCP server
+- all five Roundtable tools registered in the Go server:
+  - `hivemind`
+  - `deepdive`
+  - `architect`
+  - `challenge`
+  - `xray`
+- tool-to-CLI mapping that preserves current role behavior and prompt suffixes
+- backend path resolution with fallback lookup
+- per-request backend subprocess execution through `roundtable-cli`
+- timeout enforcement in Go above the backend timeout budget
+- `/healthz` and `/readyz`
+- unit coverage for:
+  - backend argument mapping
+  - backend success/error handling
+  - timeout behavior
+  - readiness probe behavior
+- in-memory MCP tests for:
+  - `tools/list`
+  - successful tool calls
+  - backend failure propagation
+
+## Work pending
+
+Still pending before phase 2:
+
+- update release packaging to ship the Go HTTP server alongside `roundtable-cli`
+- document final user-facing startup model for the local HTTP daemon
+- add first-class Claude Code registration instructions for the HTTP transport path in the main install flow
+- add real end-to-end HTTP listener tests outside this sandbox
+- add burn-in metrics for:
+  - request counts
+  - backend timeouts
+  - backend non-zero exits
+  - backend JSON parse failures
+- complete burn-in period and confirm zero indefinite waits in real usage
+- port the Roundtable core from Elixir to Go
+- remove the old Elixir MCP release path after the Go-native backend is proven
+
+## Current testing procedure
+
+The current app has two relevant test surfaces:
+
+1. Existing Elixir backend tests
+2. New Go HTTP MCP wrapper tests
+
+### Prerequisites
+
+- Erlang/OTP 28
+- Elixir 1.19 compatible with OTP 28
+- Go 1.26.2
+
+The repo currently uses `mise`:
+
+```bash
+mise install
+```
+
+For Go commands in this branch, prefer `mise exec`:
+
+```bash
+mise exec go@1.26.2 -- go version
+```
+
+### Test the existing Elixir backend
+
+```bash
+mix test
+```
+
+Focused suites:
+
+```bash
+mix test test/integration_test.exs
+mix test test/roundtable/mcp/server_e2e_test.exs
+mix test test/roundtable/mcp/stdio_error_response_test.exs
+```
+
+### Test the Go wrapper
+
+Use writable Go caches in restricted environments:
+
+```bash
+mise exec go@1.26.2 -- env \
+  GOTOOLCHAIN=local \
+  GOMODCACHE=/tmp/gomodcache \
+  GOCACHE=/tmp/gocache \
+  go test ./...
+```
+
+This currently validates:
+
+- `internal/httpmcp/backend_test.go`
+- `internal/httpmcp/server_test.go`
+
+### Build the Go server
+
+```bash
+mise exec go@1.26.2 -- env \
+  GOTOOLCHAIN=local \
+  GOMODCACHE=/tmp/gomodcache \
+  GOCACHE=/tmp/gocache \
+  go build ./cmd/roundtable-http-mcp
+```
+
+This produces `./roundtable-http-mcp`.
+
+### Run the current hybrid app locally
+
+Build `roundtable-cli` if needed:
+
+```bash
+mix escript.build
+```
+
+Start the Go HTTP server against the local backend:
+
+```bash
+ROUNDTABLE_HTTP_BACKEND_PATH=./roundtable-cli \
+./roundtable-http-mcp
+```
+
+Optional environment variables:
+
+- `ROUNDTABLE_HTTP_ADDR` default: `127.0.0.1:4040`
+- `ROUNDTABLE_HTTP_MCP_PATH` default: `/mcp`
+- `ROUNDTABLE_HTTP_PROBE_TIMEOUT` default: `2s`
+- `ROUNDTABLE_HTTP_REQUEST_GRACE` default: `15s`
+- `ROUNDTABLE_HTTP_ROLES_DIR` optional roles override
+- `ROUNDTABLE_HTTP_PROJECT_ROLES_DIR` optional project roles override
+
+### Verify health endpoints
+
+With the server running:
+
+```bash
+curl -s http://127.0.0.1:4040/healthz
+curl -s http://127.0.0.1:4040/readyz
+```
+
+Expected responses:
+
+- `/healthz` -> `ok`
+- `/readyz` -> `ready`
+
+### Register Claude Code against the HTTP server
+
+```bash
+claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
+```
+
+Then verify from Claude Code with `/mcp` or by calling one of the tools.
+
+### Manual functional check
+
+```text
+Use roundtable_hivemind to ask: "What is the best way to handle errors in async Elixir code?"
+```
+
+Expected behavior in the current branch:
+
+- Claude Code talks to the Go HTTP MCP server
+- the Go server shells out to `roundtable-cli`
+- `roundtable-cli` dispatches to the installed CLIs
+- the JSON payload comes back as MCP tool text content
+
+## Current recommendation
+
+Recommended validation order for this branch:
+
+1. `mix test`
+2. `mise exec go@1.26.2 -- env GOTOOLCHAIN=local GOMODCACHE=/tmp/gomodcache GOCACHE=/tmp/gocache go test ./...`
+3. `mix escript.build`
+4. `mise exec go@1.26.2 -- env GOTOOLCHAIN=local GOMODCACHE=/tmp/gomodcache GOCACHE=/tmp/gocache go build ./cmd/roundtable-http-mcp`
+5. start `./roundtable-http-mcp`
+6. check `/healthz` and `/readyz`
+7. register Claude Code with the local HTTP MCP endpoint and run a manual tool call
+
 ## Risks
 
 ### Risk: temporary complexity

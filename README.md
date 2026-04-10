@@ -80,4 +80,5 @@ All tools support an `agents` parameter for selective dispatch. See [SKILL.md](S
 | [INSTALL.md](INSTALL.md) | Install guide (written for AI agents to execute directly) |
 | [SKILL.md](SKILL.md) | Tool parameters, selective dispatch, output format, synthesis guide |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture details, cross-platform support, development setup |
+| [docs/go-http-migration-plan.md](docs/go-http-migration-plan.md) | Current Go HTTP migration status, completed work, pending work, and testing procedure for the hybrid phase |
 | [DESIGN.md](DESIGN.md) | Original design document (historical) |

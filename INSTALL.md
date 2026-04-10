@@ -95,3 +95,112 @@ claude mcp add -s user \
 ```
 
 Per-call `agents` parameter always overrides defaults. See [SKILL.md](SKILL.md) for the full agent schema.
+
+## Current Branch Testing: Go HTTP Phase 1
+
+If you are testing the current `go-http-phase1` branch, there is now an experimental Go HTTP MCP server in front of the existing `roundtable-cli` backend.
+
+Current branch architecture:
+
+`Claude Code -> local HTTP MCP -> roundtable-http-mcp -> roundtable-cli -> CLIs`
+
+Use this procedure to test the current branch state.
+
+### 1. Install toolchains
+
+```bash
+mise install
+```
+
+### 2. Run backend and wrapper tests
+
+```bash
+mix test
+mise exec go@1.26.2 -- env \
+  GOTOOLCHAIN=local \
+  GOMODCACHE=/tmp/gomodcache \
+  GOCACHE=/tmp/gocache \
+  go test ./...
+```
+
+### 3. Build both binaries
+
+```bash
+mix escript.build
+mise exec go@1.26.2 -- env \
+  GOTOOLCHAIN=local \
+  GOMODCACHE=/tmp/gomodcache \
+  GOCACHE=/tmp/gocache \
+  go build ./cmd/roundtable-http-mcp
+```
+
+This gives you:
+
+- `./roundtable-cli`
+- `./roundtable-http-mcp`
+
+### 4. Start the HTTP MCP server
+
+```bash
+ROUNDTABLE_HTTP_BACKEND_PATH=./roundtable-cli \
+./roundtable-http-mcp
+```
+
+Optional environment variables:
+
+```bash
+export ROUNDTABLE_HTTP_ADDR=127.0.0.1:4040
+export ROUNDTABLE_HTTP_MCP_PATH=/mcp
+export ROUNDTABLE_HTTP_PROBE_TIMEOUT=2s
+export ROUNDTABLE_HTTP_REQUEST_GRACE=15s
+```
+
+### 5. Verify health and readiness
+
+```bash
+curl -s http://127.0.0.1:4040/healthz
+curl -s http://127.0.0.1:4040/readyz
+```
+
+Expected responses:
+
+- `/healthz` -> `ok`
+- `/readyz` -> `ready`
+
+### 6. Register Claude Code to the HTTP MCP endpoint
+
+```bash
+claude mcp remove roundtable 2>/dev/null || true
+claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
+```
+
+### 7. Verify from Claude Code
+
+Tell the user to restart Claude Code if needed, then test with:
+
+```text
+Use roundtable_hivemind to ask: "What is the best way to handle errors in async Elixir code?"
+```
+
+Expected behavior for the current branch:
+
+- Claude Code talks to the Go HTTP MCP server
+- the Go server shells out to `roundtable-cli`
+- `roundtable-cli` dispatches to the installed CLIs
+- the JSON payload returns as MCP tool text content
+
+### 8. Focused troubleshooting
+
+If `/readyz` fails:
+
+- confirm `./roundtable-cli` exists
+- confirm it is executable
+- confirm `mix escript.build` succeeded
+
+If a tool call fails:
+
+- confirm `gemini`, `codex`, and/or `claude` are installed and authenticated
+- run `./roundtable-cli --prompt "hello"` directly from the repo root
+- check stderr output from `./roundtable-http-mcp`
+
+For the full migration status, work completed, and work pending, see [docs/go-http-migration-plan.md](docs/go-http-migration-plan.md).
