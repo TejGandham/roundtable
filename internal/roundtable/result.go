@@ -1,6 +1,9 @@
 package roundtable
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 type Result struct {
 	Response        string  `json:"response"`
@@ -28,7 +31,7 @@ func ProbeFailedResult(backendName, model, reason string, exitCode *int) *Result
 	if model == "" {
 		model = "cli-default"
 	}
-	stderr := backendName + " CLI probe failed: " + reason
+	stderr := backendName + " CLI probe failed: " + reason + ". Run " + strings.ToLower(backendName) + " --version to diagnose."
 	return &Result{Model: model, Status: "probe_failed", ExitCode: exitCode, Stderr: stderr}
 }
 

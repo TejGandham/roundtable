@@ -81,17 +81,21 @@ func (c *CodexBackend) Start(ctx context.Context) error {
 }
 
 // Stop kills the codex subprocess and releases resources.
+// It grabs references under lock then operates without the lock
+// to avoid deadlock if stdin.Write is blocked holding c.mu.
 func (c *CodexBackend) Stop() error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	cmd := c.cmd
+	stdin := c.stdin
+	c.mu.Unlock()
 
-	if c.cmd == nil || c.cmd.Process == nil {
+	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
 
-	_ = c.stdin.Close()
-	_ = c.cmd.Process.Kill()
-	_ = c.cmd.Wait()
+	_ = stdin.Close()
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
 	<-c.done
 	return nil
 }
@@ -263,17 +267,7 @@ func (c *CodexBackend) collectTurn(
 				}
 
 			case "turn/completed":
-				var p struct {
-					Turn struct {
-						Status string `json:"status"`
-					} `json:"turn"`
-					ThreadID int64 `json:"threadId"`
-				}
-				if json.Unmarshal(notif.Params, &p) == nil {
-					if fmt.Sprintf("%d", p.ThreadID) != "" {
-						sessionID = fmt.Sprintf("%d", threadID)
-					}
-				}
+				sessionID = fmt.Sprintf("%d", threadID)
 
 				elapsed := time.Since(start).Milliseconds()
 				response := ""
@@ -304,8 +298,10 @@ func (c *CodexBackend) collectTurn(
 
 		case <-ctx.Done():
 			elapsed := time.Since(start).Milliseconds()
-			// Attempt to interrupt the turn
-			_, _ = c.call(context.Background(), "turn/interrupt", map[string]any{
+			// Attempt to interrupt the turn with a bounded timeout
+			interruptCtx, interruptCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer interruptCancel()
+			_, _ = c.call(interruptCtx, "turn/interrupt", map[string]any{
 				"threadId": threadID,
 			})
 			return &Result{

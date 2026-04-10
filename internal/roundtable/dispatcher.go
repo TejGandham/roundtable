@@ -2,6 +2,7 @@ package roundtable
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -38,6 +39,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, req Request, roles map[string
 		probeWg.Add(1)
 		go func(idx int, backend Backend) {
 			defer probeWg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					probeResults[idx] = probeOutcome{backend: backend, healthy: false, err: fmt.Errorf("panic: %v", r)}
+				}
+			}()
 			probeCtx, cancel := context.WithTimeout(ctx, ProbeTimeout)
 			defer cancel()
 			err := backend.Healthy(probeCtx)
@@ -71,6 +77,17 @@ func (d *Dispatcher) Dispatch(ctx context.Context, req Request, roles map[string
 		runWg.Add(1)
 		go func(backend Backend) {
 			defer runWg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					runMu.Lock()
+					runResults[backend.Name()] = &Result{
+						Model:  req.Model,
+						Status: "error",
+						Stderr: fmt.Sprintf("backend panic: %v", r),
+					}
+					runMu.Unlock()
+				}
+			}()
 			result, err := backend.Run(runCtx, req)
 			if err != nil && result == nil {
 				result = &Result{
