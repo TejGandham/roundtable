@@ -2,6 +2,7 @@ package httpmcp
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -173,6 +174,130 @@ exit 1
 	}
 	if !strings.Contains(text.Text, "backend failed fast") {
 		t.Fatalf("unexpected error text: %s", text.Text)
+	}
+}
+
+func TestNewAppWithDispatcherToolList(t *testing.T) {
+	dispatch := func(ctx context.Context, spec ToolSpec, input ToolInput) ([]byte, error) {
+		return json.Marshal(map[string]any{
+			"gemini": map[string]any{"status": "ok"},
+			"meta":   map[string]any{"total_elapsed_ms": 1},
+		})
+	}
+
+	app := NewAppWithDispatcher(Config{
+		MCPPath:       "/mcp",
+		ServerName:    "test",
+		ServerVersion: "v0.0.1",
+	}, dispatch)
+
+	ts := httptest.NewServer(app.Handler())
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: ts.URL + "/mcp"}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer session.Close()
+
+	var names []string
+	for tool, err := range session.Tools(ctx, nil) {
+		if err != nil {
+			t.Fatalf("tools: %v", err)
+		}
+		names = append(names, tool.Name)
+	}
+
+	if len(names) != 5 {
+		t.Fatalf("expected 5 tools, got %d: %v", len(names), names)
+	}
+}
+
+func TestNewAppWithDispatcherCallTool(t *testing.T) {
+	var capturedSpec ToolSpec
+	var capturedInput ToolInput
+
+	dispatch := func(ctx context.Context, spec ToolSpec, input ToolInput) ([]byte, error) {
+		capturedSpec = spec
+		capturedInput = input
+		return json.Marshal(map[string]any{
+			"gemini": map[string]any{"status": "ok", "response": "dispatched"},
+			"meta":   map[string]any{"total_elapsed_ms": 42},
+		})
+	}
+
+	app := NewAppWithDispatcher(Config{
+		MCPPath:       "/mcp",
+		ServerName:    "test",
+		ServerVersion: "v0.0.1",
+	}, dispatch)
+
+	ts := httptest.NewServer(app.Handler())
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: ts.URL + "/mcp"}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer session.Close()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "deepdive",
+		Arguments: map[string]any{"prompt": "test prompt", "timeout": 30},
+	})
+	if err != nil {
+		t.Fatalf("call tool: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success, got error: %#v", result.Content)
+	}
+
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("unexpected content type: %T", result.Content[0])
+	}
+	if !strings.Contains(text.Text, "dispatched") {
+		t.Errorf("unexpected response: %s", text.Text)
+	}
+
+	if capturedSpec.Name != "deepdive" {
+		t.Errorf("spec name = %q, want deepdive", capturedSpec.Name)
+	}
+	if capturedInput.Prompt != "test prompt" {
+		t.Errorf("input prompt = %q, want 'test prompt'", capturedInput.Prompt)
+	}
+}
+
+func TestNewAppWithDispatcherReadyz(t *testing.T) {
+	dispatch := func(ctx context.Context, spec ToolSpec, input ToolInput) ([]byte, error) {
+		return []byte("{}"), nil
+	}
+
+	app := NewAppWithDispatcher(Config{
+		MCPPath:       "/mcp",
+		ServerName:    "test",
+		ServerVersion: "v0.0.1",
+	}, dispatch)
+
+	ts := httptest.NewServer(app.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/readyz")
+	if err != nil {
+		t.Fatalf("GET /readyz: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("readyz status = %d, want 200", resp.StatusCode)
 	}
 }
 

@@ -10,6 +10,7 @@ type Metrics struct {
 	BackendTimeouts    atomic.Int64
 	BackendNonZeroExit atomic.Int64
 	BackendParseErrors atomic.Int64
+	DispatchErrors     atomic.Int64
 }
 
 type metricsSnapshot struct {
@@ -17,6 +18,7 @@ type metricsSnapshot struct {
 	BackendTimeouts    int64 `json:"backend_timeouts"`
 	BackendNonZeroExit int64 `json:"backend_non_zero_exit"`
 	BackendParseErrors int64 `json:"backend_parse_errors"`
+	DispatchErrors     int64 `json:"dispatch_errors"`
 }
 
 func (m *Metrics) Snapshot() metricsSnapshot {
@@ -25,6 +27,7 @@ func (m *Metrics) Snapshot() metricsSnapshot {
 		BackendTimeouts:    m.BackendTimeouts.Load(),
 		BackendNonZeroExit: m.BackendNonZeroExit.Load(),
 		BackendParseErrors: m.BackendParseErrors.Load(),
+		DispatchErrors:     m.DispatchErrors.Load(),
 	}
 }
 

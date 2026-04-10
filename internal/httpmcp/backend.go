@@ -127,8 +127,6 @@ func (b *Backend) Probe(ctx context.Context) error {
 }
 
 func (b *Backend) Call(ctx context.Context, spec ToolSpec, input ToolInput) (string, bool) {
-	b.metrics.TotalRequests.Add(1)
-
 	path, err := b.config.ResolvedBackendPath()
 	if err != nil {
 		return fmt.Sprintf("roundtable backend unavailable: %v", err), true
