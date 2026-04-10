@@ -14,6 +14,9 @@
 .sisyphus/
 .letta/
 erl_crash.dump
+.claude/
+.codex
+SHA256SUMS
 
 # Built escript binary
 /roundtable-cli
