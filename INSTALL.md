@@ -6,11 +6,14 @@ Run the commands below. Do not paraphrase or explain them to the user — just e
 
 ## 1. Check Prerequisites
 
+Go 1.26+ and Erlang/OTP 28+ are required:
+
 ```bash
+go version 2>/dev/null || echo "go: not found"
 erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt().'
 ```
 
-Must print `28` or higher. If not, install Erlang/OTP 28+ first.
+Go must be 1.26 or higher. Erlang must print `28` or higher.
 
 Check which CLIs are available (at least one required, all three recommended):
 
@@ -25,6 +28,7 @@ Missing CLIs are skipped gracefully at runtime (`status: "not_found"`).
 ## 2. Remove Previous Version
 
 ```bash
+pkill -f 'roundtable-http-mcp' 2>/dev/null || true
 pkill -f 'roundtable_mcp' 2>/dev/null || true
 rm -rf ~/.local/share/roundtable
 claude mcp remove roundtable 2>/dev/null || true
@@ -35,37 +39,68 @@ claude mcp remove roundtable 2>/dev/null || true
 ```bash
 VERSION=0.6.0
 mkdir -p ~/.local/share/roundtable
-curl -sL "https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz" \
-  | tar xz -C ~/.local/share/roundtable --strip-components=1
-chmod +x ~/.local/share/roundtable/bin/roundtable-mcp
+curl -sL "https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-${VERSION}.tar.gz" \
+  | tar xz -C ~/.local/share/roundtable
+chmod +x ~/.local/share/roundtable/roundtable-http-mcp ~/.local/share/roundtable/roundtable
 ```
 
-## 4. Register as MCP Server
+This installs:
+- `roundtable-http-mcp` — Go HTTP MCP server (primary entrypoint)
+- `roundtable` — Elixir CLI backend (used by the Go server)
+- `roles/` — role prompt files
+- `SKILL.md` — skill file for Claude Code
+
+## 4. Start the HTTP Server
 
 ```bash
-claude mcp add -s user roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
+ROUNDTABLE_HTTP_BACKEND_PATH=~/.local/share/roundtable/roundtable \
+  nohup ~/.local/share/roundtable/roundtable-http-mcp > /tmp/roundtable.log 2>&1 &
 ```
 
-If CLIs are installed in non-standard locations (nvm, Homebrew, Volta), pass their paths:
+Verify it started:
 
 ```bash
-claude mcp add -s user \
-  -e ROUNDTABLE_CLAUDE_PATH=$(which claude) \
-  -e ROUNDTABLE_GEMINI_PATH=$(which gemini) \
-  -e ROUNDTABLE_CODEX_PATH=$(which codex) \
-  roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
+curl -s http://127.0.0.1:4040/healthz
+curl -s http://127.0.0.1:4040/readyz
 ```
 
-Only include `-e` flags for CLIs that exist. The `$(which ...)` calls resolve the correct paths automatically.
+Expected: `ok` and `ready`.
 
-## 5. Install Skill File (Optional)
+Optional environment variables:
+
+| Env Var | Default | Purpose |
+|-|-|-|
+| `ROUNDTABLE_HTTP_ADDR` | `127.0.0.1:4040` | Listen address |
+| `ROUNDTABLE_HTTP_MCP_PATH` | `/mcp` | MCP endpoint path |
+| `ROUNDTABLE_HTTP_PROBE_TIMEOUT` | `2s` | Readiness probe timeout |
+| `ROUNDTABLE_HTTP_REQUEST_GRACE` | `15s` | Extra time beyond tool timeout |
+
+## 5. Register as MCP Server
+
+```bash
+claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
+```
+
+If CLIs are installed in non-standard locations (nvm, Homebrew, Volta), set env vars when starting the server:
+
+```bash
+ROUNDTABLE_HTTP_BACKEND_PATH=~/.local/share/roundtable/roundtable \
+ROUNDTABLE_CLAUDE_PATH=$(which claude) \
+ROUNDTABLE_GEMINI_PATH=$(which gemini) \
+ROUNDTABLE_CODEX_PATH=$(which codex) \
+  nohup ~/.local/share/roundtable/roundtable-http-mcp > /tmp/roundtable.log 2>&1 &
+```
+
+Only include env vars for CLIs that exist.
+
+## 6. Install Skill File (Optional)
 
 ```bash
 mkdir -p ~/.claude/skills/roundtable
 cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
 ```
 
-## 6. Verify
+## 7. Verify
 
 Tell the user to restart Claude Code, then test with a tool call:
 
@@ -85,122 +120,47 @@ All five tools should now be available:
 
 ## Default Agents (Optional)
 
-To limit which CLIs run by default (saves cost/time), re-register with:
+Set `ROUNDTABLE_DEFAULT_AGENTS` when starting the server:
 
 ```bash
-claude mcp remove roundtable
-claude mcp add -s user \
-  -e ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"codex"},{"cli":"claude"}]' \
-  roundtable -- ~/.local/share/roundtable/bin/roundtable-mcp
+ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"codex"},{"cli":"claude"}]' \
+ROUNDTABLE_HTTP_BACKEND_PATH=~/.local/share/roundtable/roundtable \
+  nohup ~/.local/share/roundtable/roundtable-http-mcp > /tmp/roundtable.log 2>&1 &
 ```
 
 Per-call `agents` parameter always overrides defaults. See [SKILL.md](SKILL.md) for the full agent schema.
 
-## Current Branch Testing: Go HTTP Phase 1
+## Monitoring
 
-If you are testing the current `go-http-phase1` branch, there is now an experimental Go HTTP MCP server in front of the existing `roundtable-cli` backend.
+Check burn-in metrics:
 
-Current branch architecture:
+```bash
+curl -s http://127.0.0.1:4040/metricsz
+```
 
-`Claude Code -> local HTTP MCP -> roundtable-http-mcp -> roundtable-cli -> CLIs`
+Returns JSON with `total_requests`, `backend_timeouts`, `backend_non_zero_exit`, `backend_parse_errors`.
 
-Use this procedure to test the current branch state.
+## Troubleshooting
 
-### 1. Install toolchains
+If `/healthz` doesn't respond:
+- Check if the server is running: `pgrep -f roundtable-http-mcp`
+- Check logs: `cat /tmp/roundtable.log`
+
+If `/readyz` returns not ready:
+- Confirm `roundtable` backend binary exists and is executable
+- Confirm Erlang/OTP 28+ is installed
+
+If a tool call fails:
+- Confirm `gemini`, `codex`, and/or `claude` are installed and authenticated
+- Run the backend directly: `~/.local/share/roundtable/roundtable --prompt "hello"`
+- Check server logs: `cat /tmp/roundtable.log`
+
+## Development (Building from Source)
 
 ```bash
 mise install
+make build
+make test
 ```
 
-### 2. Run backend and wrapper tests
-
-```bash
-mix test
-mise exec go@1.26.2 -- env \
-  GOTOOLCHAIN=local \
-  GOMODCACHE=/tmp/gomodcache \
-  GOCACHE=/tmp/gocache \
-  go test ./...
-```
-
-### 3. Build both binaries
-
-```bash
-mix escript.build
-mise exec go@1.26.2 -- env \
-  GOTOOLCHAIN=local \
-  GOMODCACHE=/tmp/gomodcache \
-  GOCACHE=/tmp/gocache \
-  go build ./cmd/roundtable-http-mcp
-```
-
-This gives you:
-
-- `./roundtable-cli`
-- `./roundtable-http-mcp`
-
-### 4. Start the HTTP MCP server
-
-```bash
-ROUNDTABLE_HTTP_BACKEND_PATH=./roundtable-cli \
-./roundtable-http-mcp
-```
-
-Optional environment variables:
-
-```bash
-export ROUNDTABLE_HTTP_ADDR=127.0.0.1:4040
-export ROUNDTABLE_HTTP_MCP_PATH=/mcp
-export ROUNDTABLE_HTTP_PROBE_TIMEOUT=2s
-export ROUNDTABLE_HTTP_REQUEST_GRACE=15s
-```
-
-### 5. Verify health and readiness
-
-```bash
-curl -s http://127.0.0.1:4040/healthz
-curl -s http://127.0.0.1:4040/readyz
-```
-
-Expected responses:
-
-- `/healthz` -> `ok`
-- `/readyz` -> `ready`
-
-### 6. Register Claude Code to the HTTP MCP endpoint
-
-```bash
-claude mcp remove roundtable 2>/dev/null || true
-claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
-```
-
-### 7. Verify from Claude Code
-
-Tell the user to restart Claude Code if needed, then test with:
-
-```text
-Use roundtable_hivemind to ask: "What is the best way to handle errors in async Elixir code?"
-```
-
-Expected behavior for the current branch:
-
-- Claude Code talks to the Go HTTP MCP server
-- the Go server shells out to `roundtable-cli`
-- `roundtable-cli` dispatches to the installed CLIs
-- the JSON payload returns as MCP tool text content
-
-### 8. Focused troubleshooting
-
-If `/readyz` fails:
-
-- confirm `./roundtable-cli` exists
-- confirm it is executable
-- confirm `mix escript.build` succeeded
-
-If a tool call fails:
-
-- confirm `gemini`, `codex`, and/or `claude` are installed and authenticated
-- run `./roundtable-cli --prompt "hello"` directly from the repo root
-- check stderr output from `./roundtable-http-mcp`
-
-For the full migration status, work completed, and work pending, see [docs/go-http-migration-plan.md](docs/go-http-migration-plan.md).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architecture details and [docs/go-http-migration-plan.md](docs/go-http-migration-plan.md) for migration status.

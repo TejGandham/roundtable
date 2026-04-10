@@ -87,7 +87,7 @@ printf '{ "gemini": { "status": "ok" }, "meta": { "total_elapsed_ms": 1 } }\n'
 	backend := NewBackend(Config{
 		BackendPath:  script,
 		RequestGrace: 100 * time.Millisecond,
-	}, ExecRunner{})
+	}, ExecRunner{}, &Metrics{})
 
 	text, isError := backend.Call(context.Background(), ToolSpec{Name: "hivemind", Role: "default"}, ToolInput{
 		Prompt: "hello",
@@ -110,7 +110,7 @@ exit 1
 	backend := NewBackend(Config{
 		BackendPath:  script,
 		RequestGrace: 100 * time.Millisecond,
-	}, ExecRunner{})
+	}, ExecRunner{}, &Metrics{})
 
 	text, isError := backend.Call(context.Background(), ToolSpec{Name: "hivemind", Role: "default"}, ToolInput{
 		Prompt: "hello",
@@ -134,7 +134,7 @@ printf '{ "gemini": { "status": "ok" } }\n'
 	backend := NewBackend(Config{
 		BackendPath:  script,
 		RequestGrace: 100 * time.Millisecond,
-	}, ExecRunner{})
+	}, ExecRunner{}, &Metrics{})
 
 	text, isError := backend.Call(context.Background(), ToolSpec{Name: "hivemind", Role: "default"}, ToolInput{
 		Prompt:  "hello",
@@ -158,7 +158,7 @@ exit 1
 	backend := NewBackend(Config{
 		BackendPath:  script,
 		ProbeTimeout: 1 * time.Second,
-	}, ExecRunner{})
+	}, ExecRunner{}, &Metrics{})
 
 	if err := backend.Probe(context.Background()); err != nil {
 		t.Fatalf("probe failed: %v", err)

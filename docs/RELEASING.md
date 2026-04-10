@@ -61,9 +61,32 @@ Verify: `diff SKILL.md release/SKILL.md` should show no output.
 
 ## 3. Build Artifacts
 
-### Escript binary
+### Quick build (recommended)
 
-The escript is a standalone Elixir binary that ships in the release tarball. It provides the CLI entrypoint (`roundtable-cli`).
+```bash
+make release
+```
+
+This builds both the Go HTTP MCP server and the Elixir escript, and copies them to `release/`.
+
+### Manual build
+
+#### Go HTTP MCP server
+
+The Go binary is the primary MCP entrypoint. It serves HTTP MCP and delegates to `roundtable-cli` for backend dispatch.
+
+```bash
+mise exec go@1.26.2 -- env GOTOOLCHAIN=local GOMODCACHE=/tmp/gomodcache GOCACHE=/tmp/gocache \
+  go build -o roundtable-http-mcp ./cmd/roundtable-http-mcp
+cp roundtable-http-mcp release/
+chmod +x release/roundtable-http-mcp
+```
+
+Verify: `./release/roundtable-http-mcp --help` or start and check `/healthz`.
+
+#### Escript binary
+
+The escript is the Elixir backend used by the Go HTTP server in phase 1. It provides `roundtable-cli`.
 
 ```bash
 mix deps.get
@@ -74,29 +97,23 @@ chmod +x release/roundtable
 
 Verify: `./release/roundtable --help` runs without error.
 
-### MCP server release
+#### Legacy OTP release (optional, stdio path only)
 
-The OTP release is the primary artifact. It produces the `roundtable_mcp` binary that the MCP wrapper script (`roundtable-mcp`) execs.
+The OTP release produces the `roundtable_mcp` binary for the legacy stdio MCP path. This is no longer the recommended entrypoint — use the Go HTTP server instead.
 
 ```bash
 MIX_ENV=prod mix release roundtable_mcp
 ```
 
-Output lands in `_build/prod/rel/roundtable_mcp/`. The release includes:
-- `bin/roundtable_mcp` — OTP release binary (start/stop/etc.)
-- `lib/` — compiled BEAM files
-- `releases/` — release metadata
-- Role prompts are auto-bundled from `priv/roles/`
-
-The `rel/overlays/bin/roundtable-mcp` wrapper script is automatically included in the release. It sets `ROUNDTABLE_MCP=1` and execs the binary.
+Output lands in `_build/prod/rel/roundtable_mcp/`.
 
 ### Release tarball
 
 Package the release into a tarball for distribution:
 
 ```bash
-cd _build/prod/rel
-tar czf roundtable-mcp-${NEW_VERSION}.tar.gz roundtable_mcp/
+cd release
+tar czf ../roundtable-${NEW_VERSION}.tar.gz roundtable-http-mcp roundtable roles/ SKILL.md
 cd -
 ```
 
@@ -255,11 +272,13 @@ curl -sL "https://github.com/TejGandham/roundtable/releases/download/v${NEW_VERS
 |-|-|
 | `mix.exs:7` | Version string (`version: "X.Y.Z"`) |
 | `INSTALL.md:20` | Install script version (`VERSION=X.Y.Z`) |
+| `release/roundtable-http-mcp` | Go HTTP MCP server binary (primary entrypoint) |
+| `release/roundtable` | Escript backend binary |
 | `release/SKILL.md` | Skill file shipped in tarball |
-| `release/roundtable` | Escript binary shipped in tarball |
 | `release/roles/` | Role prompts shipped in tarball |
+| `Makefile` | Build orchestration for Go + Elixir |
 | `rel/env.sh.eex` | Release env config (`RELEASE_DISTRIBUTION=none`) |
-| `rel/overlays/bin/roundtable-mcp` | MCP wrapper script (sets `ROUNDTABLE_MCP=1`) |
+| `rel/overlays/bin/roundtable-mcp` | Legacy MCP wrapper script (sets `ROUNDTABLE_MCP=1`) |
 | `priv/roles/` | Role prompts bundled by OTP release |
 
 ## Environment

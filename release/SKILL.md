@@ -144,10 +144,10 @@ If a project has `.claude/roundtable/roles/<role>.txt`, pass the directory path 
 
 ## CLI Invocation (Secondary — scripting and standalone use)
 
-For scripting, CI, or use outside an MCP-capable agent, the `roundtable-cli` escript provides the same functionality via flags.
+For scripting, CI, or use outside an MCP-capable agent, the backend CLI provides the same functionality via flags.
 
 ```bash
-~/.local/share/roundtable/roundtable-cli \
+~/.local/share/roundtable/roundtable \
   --prompt "Your question here" \
   --role planner \
   --files src/auth.ts,src/middleware.ts \

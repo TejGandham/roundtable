@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -63,6 +64,7 @@ var toolInputSchema = json.RawMessage(`{
 type App struct {
 	config  Config
 	backend *Backend
+	metrics *Metrics
 	server  *mcp.Server
 }
 
@@ -72,9 +74,11 @@ func NewApp(config Config, runner Runner) *App {
 		Version: config.ServerVersion,
 	}, nil)
 
+	metrics := &Metrics{}
 	app := &App{
 		config:  config,
-		backend: NewBackend(config, runner),
+		backend: NewBackend(config, runner, metrics),
+		metrics: metrics,
 		server:  server,
 	}
 
@@ -89,14 +93,14 @@ func (a *App) Handler() http.Handler {
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return a.server
 	}, &mcp.StreamableHTTPOptions{
-		JSONResponse: true,
-		Stateless:    true,
+		Stateless: true,
 	})
 
 	mux := http.NewServeMux()
 	mux.Handle(a.config.MCPPath, mcpHandler)
 	mux.HandleFunc("/healthz", a.healthz)
 	mux.HandleFunc("/readyz", a.readyz)
+	mux.HandleFunc("/metricsz", a.metricsz)
 	mux.HandleFunc("/", a.index)
 	return mux
 }
@@ -106,12 +110,41 @@ func registerTool(server *mcp.Server, backend *Backend, spec ToolSpec) {
 		Name:        spec.Name,
 		Description: spec.Description,
 		InputSchema: toolInputSchema,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, input ToolInput) (*mcp.CallToolResult, struct{}, error) {
-		text, isError := backend.Call(ctx, spec, input)
-		return &mcp.CallToolResult{
-			IsError: isError,
-			Content: []mcp.Content{&mcp.TextContent{Text: text}},
-		}, struct{}{}, nil
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input ToolInput) (*mcp.CallToolResult, any, error) {
+		token := req.Params.GetProgressToken()
+
+		type callResult struct {
+			text    string
+			isError bool
+		}
+		done := make(chan callResult, 1)
+		go func() {
+			text, isError := backend.Call(ctx, spec, input)
+			done <- callResult{text, isError}
+		}()
+
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		ticks := 0
+		for {
+			select {
+			case result := <-done:
+				return &mcp.CallToolResult{
+					IsError: result.isError,
+					Content: []mcp.Content{&mcp.TextContent{Text: result.text}},
+				}, nil, nil
+			case <-ticker.C:
+				ticks++
+				if token != nil && req.Session != nil {
+					_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
+						ProgressToken: token,
+						Progress:      float64(ticks),
+						Message:       "backend running",
+					})
+				}
+			}
+		}
 	})
 }
 
@@ -125,6 +158,12 @@ func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writePlain(w, http.StatusOK, "ready")
+}
+
+func (a *App) metricsz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(a.metrics.JSON())
 }
 
 func (a *App) index(w http.ResponseWriter, r *http.Request) {

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -56,6 +58,14 @@ func (ExecRunner) Run(ctx context.Context, path string, args []string) RunResult
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	cmd.WaitDelay = 2 * time.Second
+
+	if runtime.GOOS != "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error {
+			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+	}
 
 	err := cmd.Run()
 	exitCode := 0
@@ -77,15 +87,16 @@ func (ExecRunner) Run(ctx context.Context, path string, args []string) RunResult
 }
 
 type Backend struct {
-	config Config
-	runner Runner
+	config  Config
+	runner  Runner
+	metrics *Metrics
 }
 
-func NewBackend(config Config, runner Runner) *Backend {
+func NewBackend(config Config, runner Runner, metrics *Metrics) *Backend {
 	if runner == nil {
 		runner = ExecRunner{}
 	}
-	return &Backend{config: config, runner: runner}
+	return &Backend{config: config, runner: runner, metrics: metrics}
 }
 
 func (b *Backend) Probe(ctx context.Context) error {
@@ -116,6 +127,8 @@ func (b *Backend) Probe(ctx context.Context) error {
 }
 
 func (b *Backend) Call(ctx context.Context, spec ToolSpec, input ToolInput) (string, bool) {
+	b.metrics.TotalRequests.Add(1)
+
 	path, err := b.config.ResolvedBackendPath()
 	if err != nil {
 		return fmt.Sprintf("roundtable backend unavailable: %v", err), true
@@ -129,19 +142,24 @@ func (b *Backend) Call(ctx context.Context, spec ToolSpec, input ToolInput) (str
 	result := b.runner.Run(ctx, path, args)
 
 	if ctx.Err() != nil {
+		b.metrics.BackendTimeouts.Add(1)
 		return fmt.Sprintf("roundtable backend timed out after %s", deadline.Truncate(time.Second)), true
 	}
 
 	stdout := strings.TrimSpace(string(result.Stdout))
 	if result.Err == nil {
 		if stdout == "" {
+			b.metrics.BackendParseErrors.Add(1)
 			return "roundtable backend returned empty stdout", true
 		}
 		if _, err := decodeJSONObject(result.Stdout); err != nil {
+			b.metrics.BackendParseErrors.Add(1)
 			return fmt.Sprintf("roundtable backend returned invalid JSON: %v", err), true
 		}
 		return stdout, false
 	}
+
+	b.metrics.BackendNonZeroExit.Add(1)
 
 	if stdout != "" {
 		if payload, err := decodeJSONObject(result.Stdout); err == nil {

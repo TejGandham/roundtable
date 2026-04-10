@@ -44,7 +44,7 @@ Two models agree on the queue. One says it's overengineered. That disagreement i
 
 ## How it's built
 
-Built with Elixir/OTP. Each dispatch gets its own supervision tree — if one CLI hangs, the others still return. Process groups are killed atomically on shutdown. No orphaned subprocesses. The STDIO transport sends proper JSON-RPC error responses on every failure path (timeout, crash, server unavailable) — no silent hangs. A watchdog pings the transport with `:sys.get_status` to detect alive-but-stuck states. Cross-platform: Linux, macOS, Windows.
+Go HTTP MCP server as the public control plane. Elixir backend for prompt assembly, role loading, and CLI dispatch. Each request gets a fresh backend subprocess — no long-lived process to wedge. If the backend hangs, Go kills it at the deadline and returns an error. If the Go server dies, the HTTP connection fails immediately. Health endpoints (`/healthz`, `/readyz`) and burn-in metrics (`/metricsz`) are built in. Cross-platform: Linux, macOS.
 
 Selective dispatch controls cost. Route architecture decisions to the heavy models. Route boilerplate to the fast ones. The `agents` parameter takes a JSON array — pick exactly who sits at the table.
 
