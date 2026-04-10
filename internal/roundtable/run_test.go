@@ -3,7 +3,6 @@ package roundtable
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 )
@@ -464,5 +463,4 @@ func TestResolveAgentsExplicitOverEnv(t *testing.T) {
 	if len(agents) != 1 || agents[0].CLI != "gemini" {
 		t.Fatalf("expected explicit gemini agent, got %v", agents)
 	}
-	os.Clearenv() // won't affect other tests since t.Setenv restores
 }
