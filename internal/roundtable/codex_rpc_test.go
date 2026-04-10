@@ -17,7 +17,7 @@ import (
 type fakeCodexServer struct {
 	reader   *bufio.Reader // reads from clientR (client's stdin writes)
 	writer   io.Writer     // writes to serverW (client's stdout reads)
-	threadID int64
+	threadID string
 	mu       sync.Mutex
 }
 
@@ -25,7 +25,7 @@ func newFakeCodexServer(clientR io.Reader, serverW io.Writer) *fakeCodexServer {
 	return &fakeCodexServer{
 		reader:   bufio.NewReader(clientR),
 		writer:   serverW,
-		threadID: 42,
+		threadID: "thr_42",
 	}
 }
 
@@ -47,6 +47,11 @@ func (f *fakeCodexServer) serve(t *testing.T) {
 		}
 
 		switch req.Method {
+		case "initialize":
+			f.respond(req.ID, map[string]any{
+				"serverInfo": map[string]any{"name": "fake", "version": "0.0"},
+			})
+
 		case "thread/start":
 			f.respond(req.ID, map[string]any{
 				"thread": map[string]any{
@@ -66,7 +71,7 @@ func (f *fakeCodexServer) serve(t *testing.T) {
 			f.notify("item/completed", map[string]any{
 				"threadId": f.threadID,
 				"item": map[string]any{
-					"type": "agent_message",
+					"type": "agentMessage",
 					"text": "Hello from Codex!",
 				},
 			})
@@ -118,7 +123,7 @@ func setupFakeCodex(t *testing.T) (*CodexBackend, *fakeCodexServer) {
 	cb := &CodexBackend{
 		execPath: "fake-codex",
 		model:    "o3-pro",
-		notifs:   make(map[int64]chan json.RawMessage),
+		notifs:   make(map[string]chan json.RawMessage),
 		pending:  make(map[int64]chan json.RawMessage),
 		done:     make(chan struct{}),
 		stdin:    clientW,
@@ -178,8 +183,8 @@ func TestCodexRunSuccess(t *testing.T) {
 	if result.Model != "o3-pro" {
 		t.Errorf("model = %q, want o3-pro", result.Model)
 	}
-	if result.SessionID == nil || *result.SessionID != "42" {
-		t.Errorf("session_id = %v, want 42", result.SessionID)
+	if result.SessionID == nil || *result.SessionID != "thr_42" {
+		t.Errorf("session_id = %v, want thr_42", result.SessionID)
 	}
 	if result.ElapsedMs < 0 {
 		t.Errorf("elapsed_ms = %d, want >= 0", result.ElapsedMs)
@@ -193,7 +198,7 @@ func TestCodexRunMultipleMessages(t *testing.T) {
 	cb := &CodexBackend{
 		execPath: "fake-codex",
 		model:    "o3-pro",
-		notifs:   make(map[int64]chan json.RawMessage),
+		notifs:   make(map[string]chan json.RawMessage),
 		pending:  make(map[int64]chan json.RawMessage),
 		done:     make(chan struct{}),
 		stdin:    clientW,
@@ -217,24 +222,28 @@ func TestCodexRunMultipleMessages(t *testing.T) {
 			}
 
 			switch req.Method {
+			case "initialize":
+				server.respond(req.ID, map[string]any{
+					"serverInfo": map[string]any{"name": "fake", "version": "0.0"},
+				})
 			case "thread/start":
 				server.respond(req.ID, map[string]any{
-					"thread": map[string]any{"id": int64(99)},
+					"thread": map[string]any{"id": "thr_99"},
 				})
 			case "turn/start":
 				server.respond(req.ID, map[string]any{
 					"turn": map[string]any{"id": 1, "status": "inProgress"},
 				})
 				server.notify("item/completed", map[string]any{
-					"threadId": int64(99),
-					"item":     map[string]any{"type": "agent_message", "text": "First message"},
+					"threadId": "thr_99",
+					"item":     map[string]any{"type": "agentMessage", "text": "First message"},
 				})
 				server.notify("item/completed", map[string]any{
-					"threadId": int64(99),
-					"item":     map[string]any{"type": "agent_message", "text": "Second message"},
+					"threadId": "thr_99",
+					"item":     map[string]any{"type": "agentMessage", "text": "Second message"},
 				})
 				server.notify("turn/completed", map[string]any{
-					"threadId": int64(99),
+					"threadId": "thr_99",
 					"turn":     map[string]any{"status": "completed"},
 				})
 			}
@@ -269,7 +278,7 @@ func TestCodexRunTimeout(t *testing.T) {
 	cb := &CodexBackend{
 		execPath: "fake-codex",
 		model:    "o3-pro",
-		notifs:   make(map[int64]chan json.RawMessage),
+		notifs:   make(map[string]chan json.RawMessage),
 		pending:  make(map[int64]chan json.RawMessage),
 		done:     make(chan struct{}),
 		stdin:    clientW,
@@ -294,11 +303,17 @@ func TestCodexRunTimeout(t *testing.T) {
 			}
 			var resp []byte
 			switch req.Method {
+			case "initialize":
+				resp, _ = json.Marshal(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"serverInfo": map[string]any{"name": "fake", "version": "0.0"}},
+				})
 			case "thread/start":
 				resp, _ = json.Marshal(map[string]any{
 					"jsonrpc": "2.0",
 					"id":      req.ID,
-					"result":  map[string]any{"thread": map[string]any{"id": int64(77)}},
+					"result":  map[string]any{"thread": map[string]any{"id": "thr_77"}},
 				})
 			case "turn/start":
 				resp, _ = json.Marshal(map[string]any{
@@ -350,7 +365,7 @@ func TestCodexRunProcessExit(t *testing.T) {
 	cb := &CodexBackend{
 		execPath: "fake-codex",
 		model:    "o3-pro",
-		notifs:   make(map[int64]chan json.RawMessage),
+		notifs:   make(map[string]chan json.RawMessage),
 		pending:  make(map[int64]chan json.RawMessage),
 		done:     make(chan struct{}),
 		stdin:    clientW,
@@ -375,11 +390,18 @@ func TestCodexRunProcessExit(t *testing.T) {
 			}
 			var resp []byte
 			switch req.Method {
+			case "initialize":
+				resp, _ = json.Marshal(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"serverInfo": map[string]any{"name": "fake", "version": "0.0"}},
+				})
+				fmt.Fprintf(serverW, "%s\n", resp)
 			case "thread/start":
 				resp, _ = json.Marshal(map[string]any{
 					"jsonrpc": "2.0",
 					"id":      req.ID,
-					"result":  map[string]any{"thread": map[string]any{"id": int64(55)}},
+					"result":  map[string]any{"thread": map[string]any{"id": "thr_55"}},
 				})
 				fmt.Fprintf(serverW, "%s\n", resp)
 			case "turn/start":
@@ -424,7 +446,7 @@ func TestCodexRPCErrorResponse(t *testing.T) {
 	cb := &CodexBackend{
 		execPath: "fake-codex",
 		model:    "o3-pro",
-		notifs:   make(map[int64]chan json.RawMessage),
+		notifs:   make(map[string]chan json.RawMessage),
 		pending:  make(map[int64]chan json.RawMessage),
 		done:     make(chan struct{}),
 		stdin:    clientW,

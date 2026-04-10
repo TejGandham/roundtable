@@ -27,7 +27,7 @@ type CodexBackend struct {
 	// notifications is keyed by turn ID; each entry receives all
 	// JSON-RPC notifications for that turn until turn/completed.
 	notifMu sync.Mutex
-	notifs  map[int64]chan json.RawMessage
+	notifs  map[string]chan json.RawMessage
 
 	// pending is keyed by request ID; each entry receives the
 	// JSON-RPC response for that request.
@@ -42,7 +42,7 @@ func NewCodexBackend(execPath, model string) *CodexBackend {
 	return &CodexBackend{
 		execPath: execPath,
 		model:    model,
-		notifs:   make(map[int64]chan json.RawMessage),
+		notifs:   make(map[string]chan json.RawMessage),
 		pending:  make(map[int64]chan json.RawMessage),
 		done:     make(chan struct{}),
 	}
@@ -50,24 +50,28 @@ func NewCodexBackend(execPath, model string) *CodexBackend {
 
 func (c *CodexBackend) Name() string { return "codex" }
 
-// Start launches the codex app-server subprocess.
+// Start launches the codex app-server subprocess and completes the
+// JSON-RPC initialize handshake. The app-server rejects all other
+// methods with -32600 "Not initialized" until this handshake finishes.
 func (c *CodexBackend) Start(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	cmd := exec.CommandContext(ctx, c.execPath, "app-server", "--listen", "stdio://")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		c.mu.Unlock()
 		return fmt.Errorf("codex stdin pipe: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		stdin.Close()
+		c.mu.Unlock()
 		return fmt.Errorf("codex stdout pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
 		stdin.Close()
+		c.mu.Unlock()
 		return fmt.Errorf("codex start: %w", err)
 	}
 
@@ -77,6 +81,21 @@ func (c *CodexBackend) Start(ctx context.Context) error {
 	c.done = make(chan struct{})
 
 	go c.readLoop()
+	c.mu.Unlock()
+
+	// Send initialize outside the lock — c.call acquires c.mu for the
+	// stdin write, so we must not hold it here.
+	initCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err = c.call(initCtx, "initialize", map[string]any{
+		"clientInfo": map[string]any{
+			"name":    "roundtable-http-mcp",
+			"version": "0.7.0",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("codex initialize: %w", err)
+	}
 	return nil
 }
 
@@ -131,7 +150,7 @@ func (c *CodexBackend) Run(ctx context.Context, req Request) (*Result, error) {
 	var threadResult struct {
 		Result struct {
 			Thread struct {
-				ID int64 `json:"id"`
+				ID string `json:"id"`
 			} `json:"thread"`
 		} `json:"result"`
 	}
@@ -152,9 +171,12 @@ func (c *CodexBackend) Run(ctx context.Context, req Request) (*Result, error) {
 	}()
 
 	// Step 2: turn/start
+	// input is an array of UserInput objects per the schema
 	turnParams := map[string]any{
 		"threadId": threadID,
-		"input":    req.Prompt,
+		"input": []map[string]any{
+			{"type": "text", "text": req.Prompt},
+		},
 	}
 	if req.Model != "" {
 		turnParams["model"] = req.Model
@@ -226,7 +248,7 @@ func (c *CodexBackend) call(ctx context.Context, method string, params any) (jso
 func (c *CodexBackend) collectTurn(
 	ctx context.Context,
 	req Request,
-	threadID int64,
+	threadID string,
 	notifCh <-chan json.RawMessage,
 	start time.Time,
 ) (*Result, error) {
@@ -259,7 +281,7 @@ func (c *CodexBackend) collectTurn(
 						Text string `json:"text"`
 					} `json:"item"`
 				}
-				if json.Unmarshal(notif.Params, &p) == nil && p.Item.Type == "agent_message" {
+				if json.Unmarshal(notif.Params, &p) == nil && p.Item.Type == "agentMessage" {
 					text := p.Item.Text
 					if text != "" {
 						messages = append(messages, text)
@@ -267,7 +289,7 @@ func (c *CodexBackend) collectTurn(
 				}
 
 			case "turn/completed":
-				sessionID = fmt.Sprintf("%d", threadID)
+				sessionID = threadID
 
 				elapsed := time.Since(start).Milliseconds()
 				response := ""
@@ -361,9 +383,9 @@ func (c *CodexBackend) readLoop() {
 			// This is a notification — route to the appropriate turn
 			// Extract threadId from params to find the right channel
 			var params struct {
-				ThreadID int64 `json:"threadId"`
+				ThreadID string `json:"threadId"`
 			}
-			if json.Unmarshal(msg.Params, &params) == nil && params.ThreadID != 0 {
+			if json.Unmarshal(msg.Params, &params) == nil && params.ThreadID != "" {
 				c.notifMu.Lock()
 				ch, ok := c.notifs[params.ThreadID]
 				c.notifMu.Unlock()

@@ -106,12 +106,19 @@ func main() {
 		// CodexRPC (app-server RPC from Phase 2A) is the primary Codex path.
 		// If it fails to start, degrade to CodexFallback (CLI wrapper).
 		var codexBackend roundtable.Backend
-		codexRPC := roundtable.NewCodexBackend("", "")
-		if err := codexRPC.Start(context.Background()); err != nil {
-			logger.Warn("CodexRPC failed to start, falling back to CodexFallback", "error", err)
-			codexBackend = roundtable.NewCodexFallbackBackend("", "")
+		codexPath := roundtable.ResolveExecutable("codex")
+		if codexPath != "" {
+			codexRPC := roundtable.NewCodexBackend(codexPath, "")
+			if err := codexRPC.Start(context.Background()); err != nil {
+				logger.Warn("CodexRPC failed to start, falling back to CodexFallback", "error", err)
+				codexBackend = roundtable.NewCodexFallbackBackend("", "")
+			} else {
+				logger.Info("CodexRPC app-server started", "path", codexPath)
+				codexBackend = codexRPC
+			}
 		} else {
-			codexBackend = codexRPC
+			logger.Warn("codex binary not found, using CodexFallback")
+			codexBackend = roundtable.NewCodexFallbackBackend("", "")
 		}
 
 		backends = map[string]roundtable.Backend{
