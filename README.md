@@ -20,7 +20,7 @@ You cross-check sometimes. Just not often enough to catch the subtle ones — be
 
 ## What it does
 
-Roundtable is an MCP server that sends your prompt to Claude, Gemini, and Codex CLIs — in parallel — and returns structured JSON with all their responses. One tool call from inside your existing agent. It uses the CLIs already in your PATH, already authenticated. Runs locally. Nothing stored or proxied — Roundtable itself never sees your prompts; it passes them directly to your CLIs, which talk to their providers as usual.
+Roundtable is an MCP server that sends your prompt to Claude, Gemini, and Codex CLIs — in parallel — and returns structured JSON with all their responses. One tool call from inside your existing agent. It uses the CLIs already in your PATH, already authenticated. Runs locally on `127.0.0.1`. Prompts stay in-memory on your machine — Roundtable assembles the role + prompt + file references in-process, hands them to your local CLIs, and never persists or proxies them anywhere else. The CLIs talk to their providers as usual.
 
 You can run the same CLI with different models in a single dispatch. Claude with Opus for the architecture review, Claude with Sonnet for the quick sanity check. Gemini for the edge cases. Codex for an independent take. Compose your own panel.
 
@@ -65,11 +65,11 @@ Each tool assigns a role to each agent, shaping its system prompt.
 
 | Tool | Role | Use Case |
 |-|-|-|
-| `roundtable_hivemind` | default | General multi-model consensus |
-| `roundtable_deepdive` | planner | Extended reasoning / deep analysis |
-| `roundtable_architect` | planner | Implementation planning |
-| `roundtable_challenge` | codereviewer | Devil's advocate / stress-test |
-| `roundtable_xray` | gemini=planner, codex=codereviewer | Architecture + code quality review |
+|`hivemind`|default|General multi-model consensus|
+|`deepdive`|planner|Extended reasoning / deep analysis|
+|`architect`|planner|Implementation planning|
+|`challenge`|codereviewer|Devil's advocate / stress-test|
+|`xray`|gemini=planner, codex=codereviewer|Architecture + code quality review|
 
 All tools support an `agents` parameter for selective dispatch. See [SKILL.md](SKILL.md) for full parameter docs.
 
@@ -81,4 +81,3 @@ All tools support an `agents` parameter for selective dispatch. See [SKILL.md](S
 |[SKILL.md](SKILL.md)|Tool parameters, selective dispatch, output format, synthesis guide|
 |[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)|Architecture details, components, request flow, Codex RPC protocol, concurrency model|
 |[docs/RELEASING.md](docs/RELEASING.md)|Release process — build, tag, publish|
-|[DESIGN.md](DESIGN.md)|Original design document (historical)|

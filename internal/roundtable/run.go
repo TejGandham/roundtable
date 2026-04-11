@@ -9,8 +9,15 @@ import (
 	"time"
 )
 
+const (
+	// ProbeTimeout is the maximum time for a single backend health check.
+	ProbeTimeout = 5 * time.Second
+
+	// RunGrace is added to the tool timeout for the Run phase deadline.
+	RunGrace = 30 * time.Second
+)
+
 // AgentSpec describes a single agent to dispatch to.
-// Matches the normalized agent structure from Elixir common.ex.
 type AgentSpec struct {
 	Name   string // display name, defaults to CLI name
 	CLI    string // "gemini", "codex", or "claude"

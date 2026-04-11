@@ -11,7 +11,6 @@ const (
 	defaultAddr         = "127.0.0.1:4040"
 	defaultMCPPath      = "/mcp"
 	defaultProbeTimeout = 2 * time.Second
-	defaultRequestGrace = 15 * time.Second
 	defaultVersion      = "0.7.0"
 )
 
@@ -21,7 +20,6 @@ type Config struct {
 	RolesDir        string
 	ProjectRolesDir string
 	ProbeTimeout    time.Duration
-	RequestGrace    time.Duration
 	ServerName      string
 	ServerVersion   string
 	Logger          *slog.Logger
@@ -38,7 +36,6 @@ func LoadConfig(logger *slog.Logger) Config {
 		RolesDir:        os.Getenv("ROUNDTABLE_HTTP_ROLES_DIR"),
 		ProjectRolesDir: os.Getenv("ROUNDTABLE_HTTP_PROJECT_ROLES_DIR"),
 		ProbeTimeout:    durationEnv("ROUNDTABLE_HTTP_PROBE_TIMEOUT", defaultProbeTimeout),
-		RequestGrace:    durationEnv("ROUNDTABLE_HTTP_REQUEST_GRACE", defaultRequestGrace),
 		ServerName:      stringEnv("ROUNDTABLE_HTTP_SERVER_NAME", "roundtable-http-mcp"),
 		ServerVersion:   stringEnv("ROUNDTABLE_HTTP_SERVER_VERSION", defaultVersion),
 		Logger:          logger,

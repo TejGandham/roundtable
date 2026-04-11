@@ -22,7 +22,6 @@ Roundtable ships as a single static Go binary. No Elixir, Erlang, or Node are re
 
 ```bash
 pkill -f 'roundtable-http-mcp' 2>/dev/null || true
-pkill -f 'roundtable_mcp' 2>/dev/null || true
 rm -rf ~/.local/share/roundtable
 claude mcp remove roundtable 2>/dev/null || true
 ```
@@ -99,18 +98,18 @@ cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
 Tell the user to restart Claude Code, then test with a tool call:
 
 ```
-Use roundtable_hivemind to ask: "What is the best way to handle errors in async Go code?"
+Use the roundtable hivemind tool to ask: "What is the best way to handle errors in async Go code?"
 ```
 
 All five tools should now be available:
 
 |Tool|Use|
 |-|-|
-|`roundtable_hivemind`|General multi-model consensus|
-|`roundtable_deepdive`|Deep analysis / extended reasoning|
-|`roundtable_architect`|Implementation planning|
-|`roundtable_challenge`|Devil's advocate / stress-test|
-|`roundtable_xray`|Architecture + code quality review|
+|`hivemind`|General multi-model consensus|
+|`deepdive`|Deep analysis / extended reasoning|
+|`architect`|Implementation planning|
+|`challenge`|Devil's advocate / stress-test|
+|`xray`|Architecture + code quality review|
 
 ## Default Agents (Optional)
 
@@ -131,7 +130,7 @@ Check burn-in metrics:
 curl -s http://127.0.0.1:4040/metricsz
 ```
 
-Returns JSON with `total_requests`, `backend_timeouts`, `backend_non_zero_exit`, `backend_parse_errors`, `dispatch_errors`.
+Returns JSON with `total_requests` and `dispatch_errors` atomic counters.
 
 ## Troubleshooting
 

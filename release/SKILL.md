@@ -1,8 +1,8 @@
 ---
 name: roundtable
 description: >-
-  Multi-model consensus MCP server. Call roundtable_hivemind, roundtable_deepdive, roundtable_architect,
-  roundtable_challenge, or roundtable_xray directly — no Bash tool needed. Dispatches to Gemini, Codex,
+  Multi-model consensus MCP server. Call the hivemind, deepdive, architect, challenge, or xray
+  tools directly — no Bash tool needed. Dispatches to Gemini, Codex,
   and Claude in parallel, then synthesizes. Commands: hivemind (consensus), deepdive (extended reasoning),
   architect (implementation plan), challenge (devil's advocate), xray (codebase architecture + code quality).
   Use this skill whenever the user wants a second opinion, consensus, validation, or external
@@ -23,19 +23,19 @@ Roundtable is an **MCP server**. Call its tools directly — no Bash tool needed
 
 ## Core Rule
 
-1. Call the appropriate MCP tool (`roundtable_hivemind`, `roundtable_deepdive`, etc.)
+1. Call the appropriate MCP tool (`hivemind`, `deepdive`, etc.) on the `roundtable` server
 2. Parse the JSON response
 3. Synthesize all model responses into unified output
 
 ## Commands
 
-| Command | MCP Tool | Role Guidance |
+|Command|MCP Tool|Role Guidance|
 |-|-|-|
-| **hivemind** | `roundtable_hivemind` | Ask the question directly |
-| **deepdive** | `roundtable_deepdive` | Add: "Provide conclusions, assumptions, alternatives, and confidence level." |
-| **architect** | `roundtable_architect` | Request: phases, dependencies, risks, milestones |
-| **challenge** | `roundtable_challenge` | Prefix: "Act as critical reviewer. Find flaws, risks, weaknesses." |
-| **xray** | `roundtable_xray` | Include `files`. Gemini analyzes architecture, Codex reviews code quality. |
+|**hivemind**|`hivemind`|Ask the question directly|
+|**deepdive**|`deepdive`|Add: "Provide conclusions, assumptions, alternatives, and confidence level."|
+|**architect**|`architect`|Request: phases, dependencies, risks, milestones|
+|**challenge**|`challenge`|Prefix: "Act as critical reviewer. Find flaws, risks, weaknesses."|
+|**xray**|`xray`|Include `files`. Gemini analyzes architecture, Codex reviews code quality.|
 
 ## MCP Invocation (Primary)
 
@@ -45,22 +45,26 @@ Call MCP tools directly. No Bash tool, no binary path, no shell.
 
 | Parameter | Required | Description |
 |-|-|-|
-| `prompt` | Yes | The question or task |
-| `files` | No | Comma-separated **relative** file paths for context |
-| `timeout` | No | Seconds per CLI (default: 900). Don't lower unless the task is quick. |
-| `gemini_model` | No | Override Gemini model |
-| `codex_model` | No | Override Codex model |
-| `claude_model` | No | Override Claude model (e.g., `sonnet`, `opus`) |
-| `gemini_resume` | No | Gemini session ID or `latest` to continue a previous conversation |
-| `codex_resume` | No | Codex session/thread ID or `last` to continue a previous conversation |
-| `claude_resume` | No | Claude session ID to continue a previous conversation |
-| `agents` | No | JSON array of agent configs for selective dispatch (see below) |
+|Parameter|Required|Description|
+|-|-|-|
+|`prompt`|Yes|The question or task|
+|`files`|No|Comma-separated **relative** file paths for context|
+|`timeout`|No|Seconds per CLI (default and max: 900). Lower only if the task is quick — the default is the ceiling.|
+|`gemini_model`|No|Override Gemini model|
+|`codex_model`|No|Override Codex model|
+|`claude_model`|No|Override Claude model (e.g., `sonnet`, `opus`)|
+|`gemini_resume`|No|Gemini session ID or `latest` to continue a previous conversation|
+|`codex_resume`|No|Codex session/thread ID or `last` to continue a previous conversation|
+|`claude_resume`|No|Claude session ID to continue a previous conversation|
+|`agents`|No|**JSON-encoded string** describing selective dispatch (see below). Pass a string, not an array.|
 
 ### Selective Agent Dispatch (`agents` parameter)
 
 The `agents` parameter lets you control exactly which agents run, with what models, and in what roles. When provided, it replaces the default 3-agent dispatch. When omitted, all 3 CLIs run as before.
 
-Each entry in the JSON array:
+**Important:** `agents` is passed as a JSON-encoded **string** (not a JSON array object). Serialize your array with `JSON.stringify` or the equivalent, then pass the resulting string value.
+
+Each entry in the encoded array:
 
 | Field | Required | Description |
 |-|-|-|
@@ -95,9 +99,9 @@ Mix models and roles for targeted review:
 ```
 
 **Notes:**
-- When `agents` is provided, per-tool model params (`gemini_model`, `codex_model`, `claude_model`) are ignored
-- Agent names must be unique; `"meta"` is reserved
-- The tool's default role applies unless overridden per-agent
+- Per-agent `model` wins over the per-tool `gemini_model` / `codex_model` / `claude_model` params. If an agent entry omits `model`, the matching per-tool param (if any) is used as a fallback.
+- Agent names must be unique; `"meta"` is reserved.
+- The tool's default role applies unless overridden per-agent.
 
 ### Default Agent Configuration
 
@@ -140,7 +144,9 @@ Role-based dispatch:
 
 ### Per-Project Role Overrides
 
-If a project has `.claude/roundtable/roles/<role>.txt`, pass the directory path via the `project_roles_dir` parameter. This lets projects customize planner/reviewer context for their domain.
+To use project-scoped role prompts, place them at `<project>/.claude/roundtable/roles/<role>.txt` and start the server with `ROUNDTABLE_HTTP_PROJECT_ROLES_DIR=<path>` set. There is no per-call parameter for this — project roles are resolved at server startup.
+
+The role lookup order is: project dir → global dir (`ROUNDTABLE_HTTP_ROLES_DIR`) → embedded defaults shipped in the binary.
 
 ## Output Format
 
@@ -148,12 +154,21 @@ MCP tool calls return JSON with this structure:
 
 ```json
 {
-  "gemini": { "response": "...", "status": "ok|error|timeout|not_found|probe_failed", "session_id": "...", ... },
+  "gemini": { "response": "...", "status": "ok|error|timeout|terminated|not_found|probe_failed|rate_limited", "session_id": "...", ... },
   "codex": { "response": "...", "status": "...", "session_id": "...", ... },
   "claude": { "response": "...", "status": "...", "session_id": "...", ... },
-  "meta": { "gemini_role": "...", "codex_role": "...", "claude_role": "...", "files_referenced": [...] }
+  "meta": { "gemini_role": "...", "codex_role": "...", "claude_role": "...", "files_referenced": [...], "total_elapsed_ms": 0 }
 }
 ```
+
+Possible `status` values:
+- `ok` — normal response
+- `error` — backend returned an error payload or non-zero exit
+- `timeout` — backend exceeded the per-CLI deadline
+- `terminated` — backend killed by signal
+- `not_found` — CLI binary not on PATH
+- `probe_failed` — `--version` probe failed
+- `rate_limited` — provider rate-limited the request (Gemini detects 429/RESOURCE_EXHAUSTED/quota)
 
 ## Synthesis Template
 
@@ -183,10 +198,10 @@ After calling a roundtable tool, synthesize the results:
 Each response includes `session_id` fields — use these for follow-up rounds.
 
 **First call** (MCP):
-Call `roundtable_hivemind` with `prompt: "Review the auth architecture"` and `files: "src/auth.ts"`.
+Call `hivemind` with `prompt: "Review the auth architecture"` and `files: "src/auth.ts"`.
 
 **Follow-up call** (MCP):
-Call `roundtable_hivemind` with `prompt: "What about the token refresh edge case you mentioned?"`, `gemini_resume: "latest"`, `codex_resume: "last"`, and `claude_resume: "<session-id from previous response>"`.
+Call `hivemind` with `prompt: "What about the token refresh edge case you mentioned?"`, `gemini_resume: "latest"`, `codex_resume: "last"`, and `claude_resume: "<session-id from previous response>"`.
 
 - `gemini_resume: "latest"` resumes Gemini's most recent session
 - `codex_resume: "last"` resumes Codex's most recent session
@@ -195,20 +210,21 @@ Call `roundtable_hivemind` with `prompt: "What about the token refresh edge case
 
 ## Degradation Rules
 
-- If one CLI has `status: "error"`, `"timeout"`, or `"probe_failed"`: synthesize with available response, note which was unavailable and why
-- If one CLI has `status: "not_found"`: note it's not installed, synthesize with the other
-- If both fail: report errors, do not attempt synthesis
-- If `parse_error` is set: note the response may be incomplete but still usable
-- Non-zero exit codes are automatically downgraded to `"error"` even if the parser found content
+- If one CLI has `status: "error"`, `"timeout"`, `"terminated"`, or `"probe_failed"`: synthesize with the available responses, note which was unavailable and why.
+- If one CLI has `status: "not_found"`: note it's not installed, synthesize with the others.
+- If one CLI has `status: "rate_limited"`: tell the user the provider rate-limited the request and suggest retrying or resuming that session.
+- If all CLIs fail: report errors, do not attempt synthesis.
+- If `parse_error` is set: note the response may be incomplete but still usable.
+- Non-zero exit codes are automatically downgraded to `"error"` even if the parser found content.
 
 ## Important: Gemini Workspace Constraint
 
 Gemini CLI restricts file access to its current working directory. When using `files` (especially with `xray`):
 
-1. Use **relative paths** in `files` (not absolute paths)
-2. When using the CLI directly, run from the project root
+1. Use **relative paths** in `files` (not absolute paths).
+2. Start the `roundtable-http-mcp` server from the project root — Gemini inherits the server's cwd.
 
-This is a Gemini CLI constraint, not a roundtable issue. Codex does not have this limitation.
+This is a Gemini CLI constraint, not a roundtable issue. Codex and Claude do not have this limitation.
 
 ## Prompt Framing
 
