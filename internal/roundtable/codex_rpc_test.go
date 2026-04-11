@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -153,10 +154,28 @@ func TestCodexBackendName(t *testing.T) {
 	}
 }
 
-func TestCodexBackendHealthyBeforeStart(t *testing.T) {
-	cb := NewCodexBackend("/usr/bin/codex", "o3-pro")
-	if err := cb.Healthy(context.Background()); err == nil {
-		t.Error("Healthy() returned nil before Start, want error")
+// TestCodexBackend_HealthyBeforeStart verifies the cheap Healthy path
+// works without ever calling Start.
+func TestCodexBackend_HealthyBeforeStart(t *testing.T) {
+	// Use any existing file as the exec path — we're testing the
+	// cheap check, not the real codex binary.
+	f := t.TempDir() + "/fake-codex"
+	if err := os.WriteFile(f, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cb := NewCodexBackend(f, "")
+	if err := cb.Healthy(context.Background()); err != nil {
+		t.Errorf("Healthy before Start returned error: %v", err)
+	}
+}
+
+// TestCodexBackend_HealthyMissingExecPath verifies Healthy fails loudly
+// when the exec path no longer resolves.
+func TestCodexBackend_HealthyMissingExecPath(t *testing.T) {
+	cb := NewCodexBackend("/nonexistent/codex", "")
+	err := cb.Healthy(context.Background())
+	if err == nil {
+		t.Error("Healthy with missing exec path: expected error, got nil")
 	}
 }
 

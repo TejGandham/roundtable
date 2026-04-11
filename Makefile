@@ -2,7 +2,7 @@ GO = mise exec go@1.26.2 -- go
 GO_ENV = GOTOOLCHAIN=local GOMODCACHE=/tmp/gomodcache GOCACHE=/tmp/gocache
 VERSION ?= 0.7.0
 
-.PHONY: all build test vet clean release run
+.PHONY: all build test vet clean release run run-stdio
 
 all: build
 
@@ -20,6 +20,9 @@ clean:
 
 run: build
 	./roundtable-http-mcp
+
+run-stdio: build
+	./roundtable-http-mcp stdio
 
 release: build
 	mkdir -p release
