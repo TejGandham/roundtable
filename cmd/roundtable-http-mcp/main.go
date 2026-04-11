@@ -12,6 +12,7 @@ import (
 
 	"github.com/TejGandham/roundtable/internal/httpmcp"
 	"github.com/TejGandham/roundtable/internal/roundtable"
+	"github.com/TejGandham/roundtable/internal/stdiomcp"
 )
 
 func buildDispatchFunc(
@@ -79,10 +80,11 @@ func stopBackends(backends map[string]roundtable.Backend, logger *slog.Logger) {
 }
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	// MUST be first. See internal/stdiomcp.InitStdioDiscipline docs.
+	logger := stdiomcp.InitStdioDiscipline()
 	config := httpmcp.LoadConfig(logger)
 
-	logger.Info("starting roundtable HTTP MCP server (native Go dispatch)")
+	logger.Info("starting roundtable MCP server (HTTP, legacy — will be removed in Phase C)")
 
 	// Construct native backends. CodexRPC (app-server) is the primary Codex
 	// path; if it fails to start, degrade to CodexFallback (subprocess-per-request).
