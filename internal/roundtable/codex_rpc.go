@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,9 @@ import (
 type CodexBackend struct {
 	execPath string
 	model    string
+
+	startOnce sync.Once
+	startErr  error
 
 	mu     sync.Mutex
 	cmd    *exec.Cmd
@@ -50,13 +54,28 @@ func NewCodexBackend(execPath, model string) *CodexBackend {
 
 func (c *CodexBackend) Name() string { return "codex" }
 
-// Start launches the codex app-server subprocess and completes the
-// JSON-RPC initialize handshake. The app-server rejects all other
-// methods with -32600 "Not initialized" until this handshake finishes.
-func (c *CodexBackend) Start(ctx context.Context) error {
+// doStart launches the codex app-server subprocess and completes the
+// JSON-RPC initialize handshake. This is the body of the old Start(),
+// called exactly once via startOnce from ensureStarted.
+//
+// The subprocess is NOT bound to any caller context. Its lifetime is
+// tied to the CodexBackend itself and is terminated only by Stop(),
+// which kills the process group explicitly. Binding the subprocess to
+// a per-request context would cause the process to be killed when the
+// first caller's context expires, latching a permanent error in
+// startOnce for all subsequent callers.
+func (c *CodexBackend) doStart(_ context.Context) error {
 	c.mu.Lock()
+	// If stdin is already wired (e.g., in tests that inject fake pipes),
+	// skip exec and handshake — the caller has already set things up.
+	if c.stdin != nil {
+		c.mu.Unlock()
+		return nil
+	}
 
-	cmd := exec.CommandContext(ctx, c.execPath, "app-server", "--listen", "stdio://")
+	// Use exec.Command (not exec.CommandContext) so the subprocess is not
+	// tied to any individual caller's context. Cleanup is via Stop().
+	cmd := exec.Command(c.execPath, "app-server", "--listen", "stdio://")
 	applyPdeathsig(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -85,8 +104,9 @@ func (c *CodexBackend) Start(ctx context.Context) error {
 	c.mu.Unlock()
 
 	// Send initialize outside the lock — c.call acquires c.mu for the
-	// stdin write, so we must not hold it here.
-	initCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// stdin write, so we must not hold it here. Derive from Background so
+	// the handshake is not cut short by a short-lived caller context.
+	initCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err = c.call(initCtx, "initialize", map[string]any{
 		"clientInfo": map[string]any{
@@ -98,6 +118,26 @@ func (c *CodexBackend) Start(ctx context.Context) error {
 		return fmt.Errorf("codex initialize: %w", err)
 	}
 	return nil
+}
+
+// ensureStarted runs doStart under sync.Once. Subsequent callers block
+// on the Once until the first caller finishes, then see the same startErr.
+//
+// Note: ctx is currently not used for subprocess creation — the codex
+// app-server lifecycle is bound to the CodexBackend, not the caller's
+// request context. ctx is retained for API symmetry with Start().
+func (c *CodexBackend) ensureStarted(ctx context.Context) error {
+	c.startOnce.Do(func() {
+		c.startErr = c.doStart(ctx)
+	})
+	return c.startErr
+}
+
+// Start is an idempotent shim that delegates to ensureStarted. Safe to
+// call many times. The HTTP path still calls it during buildBackends;
+// Phase C removes that call and exports only Run/Healthy/Stop.
+func (c *CodexBackend) Start(ctx context.Context) error {
+	return c.ensureStarted(ctx)
 }
 
 // Stop kills the codex subprocess and releases resources.
@@ -125,15 +165,27 @@ func (c *CodexBackend) Stop() error {
 	return nil
 }
 
-// Healthy checks if the subprocess is still alive.
+// Healthy is a cheap liveness check. It does NOT start the subprocess;
+// it only verifies the exec path still resolves. This lets run.go's
+// probe phase succeed without paying the app-server startup cost.
+//
+// If the subprocess was already started (via a prior Run or Start),
+// Healthy also checks that readLoop has not exited. Otherwise nil.
 func (c *CodexBackend) Healthy(_ context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.cmd == nil || c.cmd.Process == nil {
-		return errors.New("codex not started")
+	if c.execPath == "" {
+		return errors.New("codex exec path empty")
+	}
+	if _, err := os.Stat(c.execPath); err != nil {
+		return fmt.Errorf("codex exec path %q: %w", c.execPath, err)
 	}
 
+	c.mu.Lock()
+	cmd := c.cmd
+	c.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
+		// Not started yet — that's fine, Run will start lazily.
+		return nil
+	}
 	select {
 	case <-c.done:
 		return errors.New("codex process exited")
@@ -146,6 +198,11 @@ func (c *CodexBackend) Healthy(_ context.Context) error {
 // Protocol: thread/start -> turn/start -> collect notifications until turn/completed.
 func (c *CodexBackend) Run(ctx context.Context, req Request) (*Result, error) {
 	start := time.Now()
+
+	// Lazy-start the app-server subprocess on first use.
+	if err := c.ensureStarted(ctx); err != nil {
+		return c.errorResult(req, start, fmt.Errorf("codex start: %w", err)), nil
+	}
 
 	// Step 1: thread/start
 	threadResp, err := c.call(ctx, "thread/start", map[string]any{})

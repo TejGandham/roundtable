@@ -111,14 +111,8 @@ func buildBackends(logger *slog.Logger) map[string]roundtable.Backend {
 	var codexBackend roundtable.Backend
 	codexPath := roundtable.ResolveExecutable("codex")
 	if codexPath != "" {
-		codexRPC := roundtable.NewCodexBackend(codexPath, "")
-		if err := codexRPC.Start(context.Background()); err != nil {
-			logger.Warn("CodexRPC failed to start, falling back to CodexFallback", "error", err)
-			codexBackend = roundtable.NewCodexFallbackBackend("", "")
-		} else {
-			logger.Info("CodexRPC app-server started", "path", codexPath)
-			codexBackend = codexRPC
-		}
+		codexBackend = roundtable.NewCodexBackend(codexPath, "")
+		logger.Info("codex backend configured (lazy start)", "path", codexPath)
 	} else {
 		logger.Warn("codex binary not found, using CodexFallback")
 		codexBackend = roundtable.NewCodexFallbackBackend("", "")
