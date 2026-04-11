@@ -24,7 +24,48 @@ func main() {
 		runStdio(logger)
 		return
 	}
+	// PHASE B2 TEMPORARY — remove in Phase C.
+	// Hidden subcommand used to test Claude Code stdio crash recovery.
+	// See docs/plans/2026-04-11-phase-b-verification-results.md.
+	if len(args) > 0 && args[0] == "__crash" {
+		runCrash(logger)
+		return
+	}
+	// END PHASE B2 TEMPORARY.
 	runHTTP(logger)
+}
+
+// runCrash is the body of the PHASE B2 TEMPORARY __crash subcommand.
+// It wires a dispatch function that calls os.Exit(42) on any tool call
+// so we can observe how Claude Code handles an abrupt stdio MCP death.
+//
+// Remove this function and the main() branch that calls it in Phase C.
+func runCrash(logger *slog.Logger) {
+	cfg := stdiomcp.Config{
+		ServerName:    "roundtable-crash",
+		ServerVersion: "b2-test",
+	}
+
+	crashDispatch := func(ctx context.Context, spec stdiomcp.ToolSpec, input stdiomcp.ToolInput) ([]byte, error) {
+		logger.Error("PHASE B2 TEMPORARY: crashing on tool call", "tool", spec.Name)
+		// Give the response goroutine a moment to be in-flight so the
+		// exit path resembles a real panic mid-response, not a pre-call
+		// abort.
+		time.Sleep(100 * time.Millisecond)
+		os.Exit(42)
+		return nil, nil // unreachable
+	}
+
+	srv := stdiomcp.NewServer(cfg, crashDispatch, logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	logger.Info("PHASE B2 TEMPORARY: roundtable-crash stdio server starting; will exit(42) on any tool call")
+	if err := stdiomcp.Serve(ctx, srv); err != nil {
+		logger.Error("stdio serve error", "error", err)
+		os.Exit(1)
+	}
 }
 
 func runStdio(logger *slog.Logger) {
