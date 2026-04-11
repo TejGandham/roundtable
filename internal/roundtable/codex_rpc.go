@@ -57,6 +57,7 @@ func (c *CodexBackend) Start(ctx context.Context) error {
 	c.mu.Lock()
 
 	cmd := exec.CommandContext(ctx, c.execPath, "app-server", "--listen", "stdio://")
+	applyPdeathsig(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		c.mu.Unlock()
@@ -113,6 +114,11 @@ func (c *CodexBackend) Stop() error {
 	}
 
 	_ = stdin.Close()
+
+	// Kill the process group so any codex-spawned children die with it.
+	if cmd.Process.Pid > 0 {
+		killProcessGroup(cmd.Process.Pid)
+	}
 	_ = cmd.Process.Kill()
 	_ = cmd.Wait()
 	<-c.done
