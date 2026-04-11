@@ -1,9 +1,0 @@
-#!/bin/sh
-if [ "$1" = "--version" ]; then
-  echo "mock-gemini-rate-limited 1.0.0"
-  exit 0
-fi
-cat >&2 <<'EOF'
-Error: 429 RESOURCE_EXHAUSTED: Too many requests. Retry later or resume the session.
-EOF
-exit 1

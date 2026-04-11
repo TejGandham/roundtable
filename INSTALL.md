@@ -6,15 +6,6 @@ Run the commands below. Do not paraphrase or explain them to the user — just e
 
 ## 1. Check Prerequisites
 
-Go 1.26+ and Erlang/OTP 28+ are required:
-
-```bash
-go version 2>/dev/null || echo "go: not found"
-erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt().'
-```
-
-Go must be 1.26 or higher. Erlang must print `28` or higher.
-
 Check which CLIs are available (at least one required, all three recommended):
 
 ```bash
@@ -24,6 +15,8 @@ claude --version 2>/dev/null && echo "claude: ok" || echo "claude: not found"
 ```
 
 Missing CLIs are skipped gracefully at runtime (`status: "not_found"`).
+
+Roundtable ships as a single static Go binary. No Elixir, Erlang, or Node are required at runtime.
 
 ## 2. Remove Previous Version
 
@@ -37,24 +30,21 @@ claude mcp remove roundtable 2>/dev/null || true
 ## 3. Install
 
 ```bash
-VERSION=0.6.0
+VERSION=0.7.0
 mkdir -p ~/.local/share/roundtable
 curl -sL "https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-${VERSION}.tar.gz" \
   | tar xz -C ~/.local/share/roundtable
-chmod +x ~/.local/share/roundtable/roundtable-http-mcp ~/.local/share/roundtable/roundtable
+chmod +x ~/.local/share/roundtable/roundtable-http-mcp
 ```
 
 This installs:
-- `roundtable-http-mcp` — Go HTTP MCP server (primary entrypoint)
-- `roundtable` — Elixir CLI backend (used by the Go server)
-- `roles/` — role prompt files
-- `SKILL.md` — skill file for Claude Code
+- `roundtable-http-mcp` — the single Go binary (server + dispatcher + parsers + embedded role prompts)
+- `SKILL.md` — optional skill file for Claude Code
 
 ## 4. Start the HTTP Server
 
 ```bash
-ROUNDTABLE_HTTP_BACKEND_PATH=~/.local/share/roundtable/roundtable \
-  nohup ~/.local/share/roundtable/roundtable-http-mcp > /tmp/roundtable.log 2>&1 &
+nohup ~/.local/share/roundtable/roundtable-http-mcp > /tmp/roundtable.log 2>&1 &
 ```
 
 Verify it started:
@@ -68,12 +58,17 @@ Expected: `ok` and `ready`.
 
 Optional environment variables:
 
-| Env Var | Default | Purpose |
+|Env Var|Default|Purpose|
 |-|-|-|
-| `ROUNDTABLE_HTTP_ADDR` | `127.0.0.1:4040` | Listen address |
-| `ROUNDTABLE_HTTP_MCP_PATH` | `/mcp` | MCP endpoint path |
-| `ROUNDTABLE_HTTP_PROBE_TIMEOUT` | `2s` | Readiness probe timeout |
-| `ROUNDTABLE_HTTP_REQUEST_GRACE` | `15s` | Extra time beyond tool timeout |
+|`ROUNDTABLE_HTTP_ADDR`|`127.0.0.1:4040`|Listen address|
+|`ROUNDTABLE_HTTP_MCP_PATH`|`/mcp`|MCP endpoint path|
+|`ROUNDTABLE_HTTP_ROLES_DIR`|(embedded)|Override directory with custom role prompt files|
+|`ROUNDTABLE_HTTP_PROJECT_ROLES_DIR`|(none)|Project-scoped role prompt directory|
+|`ROUNDTABLE_DEFAULT_AGENTS`|(all 3)|JSON array of agents to run by default|
+|`ROUNDTABLE_GEMINI_PATH`|`$PATH` lookup|Explicit path to the gemini CLI|
+|`ROUNDTABLE_CODEX_PATH`|`$PATH` lookup|Explicit path to the codex CLI|
+|`ROUNDTABLE_CLAUDE_PATH`|`$PATH` lookup|Explicit path to the claude CLI|
+|`ROUNDTABLE_EXTRA_PATH`|(none)|Extra directories to search for CLI binaries|
 
 ## 5. Register as MCP Server
 
@@ -84,7 +79,6 @@ claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
 If CLIs are installed in non-standard locations (nvm, Homebrew, Volta), set env vars when starting the server:
 
 ```bash
-ROUNDTABLE_HTTP_BACKEND_PATH=~/.local/share/roundtable/roundtable \
 ROUNDTABLE_CLAUDE_PATH=$(which claude) \
 ROUNDTABLE_GEMINI_PATH=$(which gemini) \
 ROUNDTABLE_CODEX_PATH=$(which codex) \
@@ -105,18 +99,18 @@ cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
 Tell the user to restart Claude Code, then test with a tool call:
 
 ```
-Use roundtable_hivemind to ask: "What is the best way to handle errors in async Elixir code?"
+Use roundtable_hivemind to ask: "What is the best way to handle errors in async Go code?"
 ```
 
 All five tools should now be available:
 
-| Tool | Use |
+|Tool|Use|
 |-|-|
-| `roundtable_hivemind` | General multi-model consensus |
-| `roundtable_deepdive` | Deep analysis / extended reasoning |
-| `roundtable_architect` | Implementation planning |
-| `roundtable_challenge` | Devil's advocate / stress-test |
-| `roundtable_xray` | Architecture + code quality review |
+|`roundtable_hivemind`|General multi-model consensus|
+|`roundtable_deepdive`|Deep analysis / extended reasoning|
+|`roundtable_architect`|Implementation planning|
+|`roundtable_challenge`|Devil's advocate / stress-test|
+|`roundtable_xray`|Architecture + code quality review|
 
 ## Default Agents (Optional)
 
@@ -124,7 +118,6 @@ Set `ROUNDTABLE_DEFAULT_AGENTS` when starting the server:
 
 ```bash
 ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"codex"},{"cli":"claude"}]' \
-ROUNDTABLE_HTTP_BACKEND_PATH=~/.local/share/roundtable/roundtable \
   nohup ~/.local/share/roundtable/roundtable-http-mcp > /tmp/roundtable.log 2>&1 &
 ```
 
@@ -138,7 +131,7 @@ Check burn-in metrics:
 curl -s http://127.0.0.1:4040/metricsz
 ```
 
-Returns JSON with `total_requests`, `backend_timeouts`, `backend_non_zero_exit`, `backend_parse_errors`.
+Returns JSON with `total_requests`, `backend_timeouts`, `backend_non_zero_exit`, `backend_parse_errors`, `dispatch_errors`.
 
 ## Troubleshooting
 
@@ -146,13 +139,12 @@ If `/healthz` doesn't respond:
 - Check if the server is running: `pgrep -f roundtable-http-mcp`
 - Check logs: `cat /tmp/roundtable.log`
 
-If `/readyz` returns not ready:
-- Confirm `roundtable` backend binary exists and is executable
-- Confirm Erlang/OTP 28+ is installed
+If `/readyz` returns 503:
+- Confirm at least one CLI (`gemini`, `codex`, or `claude`) is installed and on PATH
+- Check logs for per-backend health messages
 
 If a tool call fails:
-- Confirm `gemini`, `codex`, and/or `claude` are installed and authenticated
-- Run the backend directly: `~/.local/share/roundtable/roundtable --prompt "hello"`
+- Confirm the CLIs you requested are installed and authenticated
 - Check server logs: `cat /tmp/roundtable.log`
 
 ## Development (Building from Source)
@@ -161,6 +153,7 @@ If a tool call fails:
 mise install
 make build
 make test
+make run
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architecture details and [docs/go-http-migration-plan.md](docs/go-http-migration-plan.md) for migration status.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architecture details.

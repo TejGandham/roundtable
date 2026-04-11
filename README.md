@@ -44,7 +44,7 @@ Two models agree on the queue. One says it's overengineered. That disagreement i
 
 ## How it's built
 
-Go HTTP MCP server as the public control plane. Elixir backend for prompt assembly, role loading, and CLI dispatch. Each request gets a fresh backend subprocess — no long-lived process to wedge. If the backend hangs, Go kills it at the deadline and returns an error. If the Go server dies, the HTTP connection fails immediately. Health endpoints (`/healthz`, `/readyz`) and burn-in metrics (`/metricsz`) are built in. Cross-platform: Linux, macOS.
+Single Go binary. HTTP MCP server on `127.0.0.1:4040` dispatching to Gemini and Claude via subprocess-per-request and to Codex via a long-lived `codex app-server` JSON-RPC connection. Each CLI runs in its own process group with atomic kill on timeout. If a backend hangs, Go kills it at the deadline and returns a structured error. If the Go server dies, the HTTP connection fails immediately. Health endpoints (`/healthz`, `/readyz`) and burn-in metrics (`/metricsz`) are built in. Cross-platform: Linux, macOS.
 
 Selective dispatch controls cost. Route architecture decisions to the heavy models. Route boilerplate to the fast ones. The `agents` parameter takes a JSON array — pick exactly who sits at the table.
 
@@ -75,10 +75,10 @@ All tools support an `agents` parameter for selective dispatch. See [SKILL.md](S
 
 ## Docs
 
-| Doc | Contents |
+|Doc|Contents|
 |-|-|
-| [INSTALL.md](INSTALL.md) | Install guide (written for AI agents to execute directly) |
-| [SKILL.md](SKILL.md) | Tool parameters, selective dispatch, output format, synthesis guide |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture details, cross-platform support, development setup |
-| [docs/go-http-migration-plan.md](docs/go-http-migration-plan.md) | Current Go HTTP migration status, completed work, pending work, and testing procedure for the hybrid phase |
-| [DESIGN.md](DESIGN.md) | Original design document (historical) |
+|[INSTALL.md](INSTALL.md)|Install guide (written for AI agents to execute directly)|
+|[SKILL.md](SKILL.md)|Tool parameters, selective dispatch, output format, synthesis guide|
+|[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)|Architecture details, components, request flow, Codex RPC protocol, concurrency model|
+|[docs/RELEASING.md](docs/RELEASING.md)|Release process — build, tag, publish|
+|[DESIGN.md](DESIGN.md)|Original design document (historical)|

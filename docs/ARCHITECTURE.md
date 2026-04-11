@@ -2,7 +2,7 @@
 
 Multi-model consensus MCP server. Dispatches prompts to Claude, Gemini, and Codex CLIs in parallel, returns structured JSON with all responses and metadata. Supports selective agent dispatch — invoke any subset of CLIs, run the same CLI with different models, and assign per-agent roles.
 
-> Status: **Phase 2 complete.** The Elixir `roundtable-cli` is no longer in the hot path — dispatch is fully native Go. The legacy escript remains as an opt-in fallback via `ROUNDTABLE_HTTP_BACKEND_MODE=cli`.
+> Status: **Phase 2 complete.** The Elixir `roundtable-cli` and all Elixir infrastructure have been removed. Roundtable is now a single static Go binary.
 
 ## Overview
 
@@ -13,7 +13,7 @@ Roundtable is a single Go binary (`roundtable-http-mcp`) that:
 3. On each tool call, assembles a role-scoped prompt and dispatches it to three model backends in parallel.
 4. Normalizes each backend's output into a uniform JSON contract and returns the aggregate to the caller.
 
-The Go binary is the only process Claude Code talks to. All dispatch, prompt assembly, role loading, output parsing, and JSON construction happen in Go — no Elixir runtime is needed for normal operation.
+The Go binary is the only process Claude Code talks to. All dispatch, prompt assembly, role loading, output parsing, and JSON construction happen in Go. There is no Elixir or Erlang runtime involved.
 
 ## Architecture diagram
 
@@ -66,10 +66,10 @@ Dashed line for Codex: the long-lived `codex app-server` process is launched onc
 
 | Package / file | Responsibility |
 |-|-|
-| `cmd/roundtable-http-mcp/main.go` | Entry point. Builds backends, starts app-server if available, wires dispatcher into httpmcp, runs HTTP server with signal-driven graceful shutdown. |
-| `internal/httpmcp/server.go` | MCP tool registration, HTTP handler mux, streamable HTTP transport, progress notifications, request panic recovery. |
-| `internal/httpmcp/backend.go` | Legacy CLI backend wrapper (subprocess-per-request to `roundtable-cli`). Only used when `ROUNDTABLE_HTTP_BACKEND_MODE=cli`. |
-| `internal/httpmcp/config.go` | Environment variable loader, backend path resolution for CLI mode. |
+| `cmd/roundtable-http-mcp/main.go` | Entry point. Builds backends, starts the Codex app-server, wires the dispatch function into httpmcp, runs HTTP server with signal-driven graceful shutdown. |
+| `internal/httpmcp/server.go` | MCP tool registration, HTTP handler mux, streamable HTTP transport, progress notifications, request panic recovery, cached backend health probes. |
+| `internal/httpmcp/backend.go` | `ToolInput` and `ToolSpec` types shared between the tool handler and the dispatch bridge. |
+| `internal/httpmcp/config.go` | Environment variable loader. |
 | `internal/httpmcp/metrics.go` | Atomic counters exposed via `/metricsz`. |
 | `internal/roundtable/run.go` | `Run()` — the native dispatch entry point. Resolves agents, loads roles, assembles prompts, runs two-phase parallel probe/run, returns `DispatchResult` JSON. |
 | `internal/roundtable/dispatcher.go` | Legacy `Dispatcher` struct (single role). Retained for potential reuse; current path is `Run()`. |
@@ -196,11 +196,9 @@ All configuration is via environment variables.
 | `ROUNDTABLE_HTTP_ADDR` | `127.0.0.1:4040` | Listen address. |
 | `ROUNDTABLE_HTTP_MCP_PATH` | `/mcp` | MCP endpoint path. |
 | `ROUNDTABLE_HTTP_SERVER_NAME` | `roundtable-http-mcp` | Reported MCP server name. |
-| `ROUNDTABLE_HTTP_SERVER_VERSION` | `0.6.0` | Reported MCP server version. |
-| `ROUNDTABLE_HTTP_PROBE_TIMEOUT` | `2s` | Duration for CLI-mode readiness probe. |
-| `ROUNDTABLE_HTTP_REQUEST_GRACE` | `15s` | Extra time beyond tool timeout for the CLI backend (legacy mode only). |
-| `ROUNDTABLE_HTTP_BACKEND_MODE` | `native` | `native` (default, Go dispatch) or `cli` (legacy escript). |
-| `ROUNDTABLE_HTTP_BACKEND_PATH` | (auto-resolve) | Path to `roundtable-cli` for `cli` mode. |
+| `ROUNDTABLE_HTTP_SERVER_VERSION` | `0.7.0` | Reported MCP server version. |
+| `ROUNDTABLE_HTTP_PROBE_TIMEOUT` | `2s` | Duration for the readyz health probe. |
+| `ROUNDTABLE_HTTP_REQUEST_GRACE` | `15s` | Reserved for future use. |
 
 ### Dispatch
 
@@ -236,12 +234,10 @@ Metrics counters (atomic, never reset):
 | Counter | Incremented when |
 |-|-|
 | `total_requests` | Any tool call arrives. |
-| `backend_timeouts` | CLI-mode backend exceeds its deadline. |
-| `backend_non_zero_exit` | CLI-mode backend exits non-zero. |
-| `backend_parse_errors` | CLI-mode backend returned unparseable JSON. |
-| `dispatch_errors` | Native dispatch returned an error or the tool handler panicked. |
-
-The native path currently only updates `total_requests` and `dispatch_errors`. The CLI-specific counters are dormant until `cli` mode is used.
+| `dispatch_errors` | Dispatch returned an error or the tool handler panicked. |
+| `backend_timeouts` | Reserved (not currently incremented). |
+| `backend_non_zero_exit` | Reserved (not currently incremented). |
+| `backend_parse_errors` | Reserved (not currently incremented). |
 
 ## Concurrency model
 
@@ -267,14 +263,12 @@ The native path currently only updates `total_requests` and `dispatch_errors`. T
 ### Prerequisites
 
 - Go 1.26+ (via `mise`).
-- Erlang/OTP 28+ and Elixir 1.19+ — only needed if you build the legacy escript for fallback use. Not required for native-mode operation.
 - `gemini`, `codex`, and `claude` CLIs on PATH (or configured via env vars).
 
 ### Build
 
 ```bash
-make build        # builds both Go binary and Elixir escript
-make build-go     # Go only
+make build
 ```
 
 Manually:
@@ -287,17 +281,14 @@ mise exec go@1.26.2 -- env GOTOOLCHAIN=local GOMODCACHE=/tmp/gomodcache GOCACHE=
 ### Test
 
 ```bash
-make test         # Go + Elixir
-make test-go      # Go only
+make test
 ```
 
 Go test layout:
 
 | File | Coverage |
 |-|-|
-| `internal/httpmcp/backend_test.go` | CLI-mode backend call, arg building, error propagation. |
-| `internal/httpmcp/server_test.go` | In-memory MCP session, tool registration, dispatcher wiring. |
-| `internal/httpmcp/e2e_test.go` | Real HTTP round-trip, health endpoints, timeout, metrics. |
+| `internal/httpmcp/server_test.go` | Dispatch function wiring, readyz with mock probes, panic recovery, metrics, 404 handling. |
 | `internal/roundtable/run_test.go` | `Run()` with mock backends, agent resolution, per-agent roles. |
 | `internal/roundtable/dispatcher_test.go` | Legacy dispatcher, probe failure, panic recovery. |
 | `internal/roundtable/runner_test.go` | Fake CLI scripts, timeout kill, truncation. |
@@ -324,25 +315,15 @@ Register with Claude Code:
 claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
 ```
 
-### Legacy CLI-mode fallback
-
-```bash
-ROUNDTABLE_HTTP_BACKEND_MODE=cli \
-ROUNDTABLE_HTTP_BACKEND_PATH=./roundtable-cli \
-  ./roundtable-http-mcp
-```
-
 ## Migration history
 
-The current architecture is the product of a two-phase migration off the original Elixir/OTP stdio MCP server. Source of truth: `docs/go-http-migration-plan.md` and `docs/go-native-core-design.md`.
+The current architecture is the result of a staged migration off the original Elixir/OTP stdio MCP server.
 
-| Phase | Branch | Status | Outcome |
-|-|-|-|-|
-| **0** | `go-http-phase1` | done | Baseline, branch cut, migration plan frozen. |
-| **1** | `go-http-phase1` | done | Go HTTP MCP wrapper added. `httpmcp` package shells out to the Elixir `roundtable-cli` escript for each tool call. Killed the long-lived BEAM process and its stdio hang failure mode. |
-| **2A** | `go-http-phase1` | done | Codex app-server proof of concept. `codex_rpc.go` JSON-RPC client built, used alongside the Elixir backend for everything else. De-risked the trickiest part of phase 2 first. |
-| **2B** | `go-http-phase1` | done | Pure-domain ports: `prompt.go`, `roles.go` (with `go:embed` defaults), `output.go`, `result.go`, plus golden-file tests validating byte-level parity with the Elixir output. |
-| **2C** | `go-http-phase1` | done | Subprocess backends: `runner.go`, `runner_unix.go`, `runner_windows.go`, `gemini.go`, `claude.go`, `codex_fallback.go`. Full `Backend` interface implementations with tests against fake CLI scripts. |
-| **2D** | `go-http-phase1` | done | `main.go` swapped to build backends directly and pass a `DispatchFunc` into `httpmcp.NewAppWithDispatcherAndBackends`. `roundtable-cli` no longer in the runtime path unless opted in via `ROUNDTABLE_HTTP_BACKEND_MODE=cli`. |
-
-The Elixir tree (`lib/`, `mix.exs`, `test/`) is preserved. The escript still builds via `mix escript.build` and is still shipped in the release tarball as `release/roundtable`, but only for explicit fallback use. All new feature work happens in Go.
+| Phase | Status | Outcome |
+|-|-|-|
+| **1** | done | Go HTTP MCP wrapper added. Killed the long-lived BEAM process and its stdio hang failure mode by shelling out to `roundtable-cli` per request. |
+| **2A** | done | Codex app-server proof of concept. `codex_rpc.go` JSON-RPC client built to de-risk the trickiest part of phase 2 first. |
+| **2B** | done | Pure-domain ports: `prompt.go`, `roles.go` (with `go:embed` defaults), `output.go`, `result.go`. |
+| **2C** | done | Subprocess backends: `runner.go`, `runner_unix.go`, `runner_windows.go`, `gemini.go`, `claude.go`, `codex_fallback.go`. |
+| **2D** | done | `main.go` swapped to build native Go backends directly and pass a `DispatchFunc` into `httpmcp`. |
+| **Cleanup** | done | All Elixir code (`lib/`, `mix.exs`, `test/`, `priv/`, `rel/`), the `roundtable-cli` escript, and the CLI-mode fallback path were deleted. Roundtable is now a single static Go binary. |

@@ -1,34 +1,29 @@
 GO = mise exec go@1.26.2 -- go
 GO_ENV = GOTOOLCHAIN=local GOMODCACHE=/tmp/gomodcache GOCACHE=/tmp/gocache
-VERSION ?= $(shell grep 'version:' mix.exs | sed 's/.*"\(.*\)"/\1/')
+VERSION ?= 0.7.0
 
-.PHONY: all build test clean release
+.PHONY: all build test vet clean release run
 
 all: build
 
-build: build-go build-escript
-
-build-go:
+build:
 	$(GO_ENV) $(GO) build -o roundtable-http-mcp ./cmd/roundtable-http-mcp
 
-build-escript:
-	mise exec -- mix escript.build
+test:
+	$(GO_ENV) $(GO) test ./... -count=1 -timeout 60s
 
-test: test-go test-elixir
-
-test-go:
-	$(GO_ENV) $(GO) test ./...
-
-test-elixir:
-	mise exec -- mix test
+vet:
+	$(GO_ENV) $(GO) vet ./...
 
 clean:
-	rm -f roundtable-http-mcp roundtable-cli
+	rm -f roundtable-http-mcp
+
+run: build
+	./roundtable-http-mcp
 
 release: build
 	mkdir -p release
 	cp roundtable-http-mcp release/
-	cp roundtable-cli release/roundtable
-	chmod +x release/roundtable-http-mcp release/roundtable
+	chmod +x release/roundtable-http-mcp
 	@echo "Release artifacts in release/:"
-	@ls -la release/roundtable-http-mcp release/roundtable release/roles release/SKILL.md 2>/dev/null || true
+	@ls -la release/ 2>/dev/null || true

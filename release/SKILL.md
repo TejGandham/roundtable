@@ -142,45 +142,9 @@ Role-based dispatch:
 
 If a project has `.claude/roundtable/roles/<role>.txt`, pass the directory path via the `project_roles_dir` parameter. This lets projects customize planner/reviewer context for their domain.
 
-## CLI Invocation (Secondary — scripting and standalone use)
-
-For scripting, CI, or use outside an MCP-capable agent, the backend CLI provides the same functionality via flags.
-
-```bash
-~/.local/share/roundtable/roundtable \
-  --prompt "Your question here" \
-  --role planner \
-  --files src/auth.ts,src/middleware.ts \
-  --timeout 300
-```
-
-Run from the **project root directory** (Gemini restricts file access to its cwd).
-
-### CLI Parameters
-
-| Flag | Required | Description |
-|-|-|-|
-| `--prompt` | Yes | The question or task |
-| `--role` | No | Role for all CLIs: `default`, `planner`, `codereviewer` (default: `default`) |
-| `--gemini-role` | No | Override role for Gemini only (for xray command) |
-| `--codex-role` | No | Override role for Codex only (for xray command) |
-| `--claude-role` | No | Override role for Claude only |
-| `--files` | No | Comma-separated **relative** file paths for context |
-| `--gemini-model` | No | Override Gemini model |
-| `--codex-model` | No | Override Codex model |
-| `--claude-model` | No | Override Claude model |
-| `--codex-reasoning` | No | Codex reasoning effort: `xhigh`, `high`, `medium` |
-| `--timeout` | No | Seconds per CLI (default: 900). The default is intentionally generous — LLM inference can take minutes, and Gemini retries 429s internally. **Do not set this flag unless you know the task is quick.** |
-| `--gemini-resume` | No | Gemini session ID or `latest` to continue a previous conversation |
-| `--codex-resume` | No | Codex session/thread ID or `last` to continue a previous conversation |
-| `--claude-resume` | No | Claude session ID to continue a previous conversation |
-| `--roles-dir` | No | Override global roles directory (default: skill's `roles/` dir) |
-| `--project-roles-dir` | No | Project-local roles directory (checked first, falls back to global) |
-| `--agents` | No | JSON string of agent configs for selective dispatch (same format as MCP `agents` param) |
-
 ## Output Format
 
-Both MCP tools and the CLI return JSON with this structure:
+MCP tool calls return JSON with this structure:
 
 ```json
 {

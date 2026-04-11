@@ -17,7 +17,6 @@ import (
 func buildDispatchFunc(
 	backends map[string]roundtable.Backend,
 	config httpmcp.Config,
-	logger *slog.Logger,
 ) httpmcp.DispatchFunc {
 	return func(ctx context.Context, spec httpmcp.ToolSpec, input httpmcp.ToolInput) ([]byte, error) {
 		// Parse agents from JSON string
@@ -71,14 +70,6 @@ func buildDispatchFunc(
 	}
 }
 
-func startBackends(ctx context.Context, backends map[string]roundtable.Backend, logger *slog.Logger) {
-	for name, b := range backends {
-		if err := b.Start(ctx); err != nil {
-			logger.Error("failed to start backend", "backend", name, "error", err)
-		}
-	}
-}
-
 func stopBackends(backends map[string]roundtable.Backend, logger *slog.Logger) {
 	for name, b := range backends {
 		if err := b.Stop(); err != nil {
@@ -91,75 +82,45 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	config := httpmcp.LoadConfig(logger)
 
-	mode := strings.TrimSpace(os.Getenv("ROUNDTABLE_HTTP_BACKEND_MODE"))
-	if mode == "" {
-		mode = "native"
-	}
+	logger.Info("starting roundtable HTTP MCP server (native Go dispatch)")
 
-	var app *httpmcp.App
-	var backends map[string]roundtable.Backend
-
-	switch mode {
-	case "native":
-		logger.Info("starting in native dispatch mode")
-
-		// CodexRPC (app-server RPC from Phase 2A) is the primary Codex path.
-		// If it fails to start, degrade to CodexFallback (CLI wrapper).
-		var codexBackend roundtable.Backend
-		codexPath := roundtable.ResolveExecutable("codex")
-		if codexPath != "" {
-			codexRPC := roundtable.NewCodexBackend(codexPath, "")
-			if err := codexRPC.Start(context.Background()); err != nil {
-				logger.Warn("CodexRPC failed to start, falling back to CodexFallback", "error", err)
-				codexBackend = roundtable.NewCodexFallbackBackend("", "")
-			} else {
-				logger.Info("CodexRPC app-server started", "path", codexPath)
-				codexBackend = codexRPC
-			}
-		} else {
-			logger.Warn("codex binary not found, using CodexFallback")
+	// Construct native backends. CodexRPC (app-server) is the primary Codex
+	// path; if it fails to start, degrade to CodexFallback (subprocess-per-request).
+	var codexBackend roundtable.Backend
+	codexPath := roundtable.ResolveExecutable("codex")
+	if codexPath != "" {
+		codexRPC := roundtable.NewCodexBackend(codexPath, "")
+		if err := codexRPC.Start(context.Background()); err != nil {
+			logger.Warn("CodexRPC failed to start, falling back to CodexFallback", "error", err)
 			codexBackend = roundtable.NewCodexFallbackBackend("", "")
-		}
-
-		backends = map[string]roundtable.Backend{
-			"gemini": roundtable.NewGeminiBackend(""),
-			"codex":  codexBackend,
-			"claude": roundtable.NewClaudeBackend(""),
-		}
-
-		ctx := context.Background()
-		startBackends(ctx, backends, logger)
-		defer stopBackends(backends, logger)
-
-		// Build BackendProbe map for readyz health probes.
-		probes := make(map[string]httpmcp.BackendProbe, len(backends))
-		for name, b := range backends {
-			probes[name] = b
-		}
-
-		dispatch := buildDispatchFunc(backends, config, logger)
-		app = httpmcp.NewAppWithDispatcherAndBackends(config, dispatch, probes)
-
-	case "cli":
-		logger.Info("starting in CLI backend mode (legacy)")
-
-		if path, err := config.ResolvedBackendPath(); err == nil {
-			logger.Info("resolved backend", "path", path)
 		} else {
-			logger.Warn("backend not ready at startup", "error", err)
+			logger.Info("CodexRPC app-server started", "path", codexPath)
+			codexBackend = codexRPC
 		}
-
-		app = httpmcp.NewApp(config, nil)
-
-	default:
-		logger.Error("unknown ROUNDTABLE_HTTP_BACKEND_MODE", "mode", mode)
-		os.Exit(1)
+	} else {
+		logger.Warn("codex binary not found, using CodexFallback")
+		codexBackend = roundtable.NewCodexFallbackBackend("", "")
 	}
 
-	logger.Info("starting roundtable HTTP MCP server",
+	backends := map[string]roundtable.Backend{
+		"gemini": roundtable.NewGeminiBackend(""),
+		"codex":  codexBackend,
+		"claude": roundtable.NewClaudeBackend(""),
+	}
+	defer stopBackends(backends, logger)
+
+	// Build BackendProbe map for readyz health checks.
+	probes := make(map[string]httpmcp.BackendProbe, len(backends))
+	for name, b := range backends {
+		probes[name] = b
+	}
+
+	dispatch := buildDispatchFunc(backends, config)
+	app := httpmcp.NewApp(config, dispatch, probes)
+
+	logger.Info("roundtable HTTP MCP server listening",
 		"addr", config.Addr,
 		"mcp_path", config.MCPPath,
-		"mode", mode,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -168,10 +129,9 @@ func main() {
 	server := &http.Server{
 		Addr:              config.Addr,
 		Handler:           app.Handler(),
-		ReadHeaderTimeout: config.ProbeTimeout,
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 
-	// Start server in background, shut down gracefully on signal
 	serverErrCh := make(chan error, 1)
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -65,11 +65,10 @@ var toolInputSchema = json.RawMessage(`{
 
 // DispatchFunc is the native dispatch entry point. It takes a context, a tool
 // spec, and tool input, and returns the JSON-encoded DispatchResult.
-// The httpmcp layer calls this instead of shelling out to roundtable-cli.
 type DispatchFunc func(ctx context.Context, spec ToolSpec, input ToolInput) ([]byte, error)
 
-// BackendProbe is the minimal interface required for startup/readyz health checks
-// when running in native dispatch mode.
+// BackendProbe is the minimal interface required for startup and readyz
+// health checks. The main package wires each roundtable backend in here.
 type BackendProbe interface {
 	Healthy(ctx context.Context) error
 }
@@ -84,8 +83,7 @@ type healthCache struct {
 
 type App struct {
 	config   Config
-	backend  *Backend     // nil when using native dispatch
-	dispatch DispatchFunc // nil when using CLI backend
+	dispatch DispatchFunc
 	metrics  *Metrics
 	server   *mcp.Server
 
@@ -93,36 +91,9 @@ type App struct {
 	health   healthCache
 }
 
-func NewApp(config Config, runner Runner) *App {
-	server := mcp.NewServer(&mcp.Implementation{
-		Name:    config.ServerName,
-		Version: config.ServerVersion,
-	}, nil)
-
-	metrics := &Metrics{}
-	app := &App{
-		config:  config,
-		backend: NewBackend(config, runner, metrics),
-		metrics: metrics,
-		server:  server,
-	}
-
-	for _, spec := range toolSpecs {
-		registerTool(server, app, spec)
-	}
-
-	return app
-}
-
-// NewAppWithDispatcher creates an App that uses the native Go roundtable core
-// for dispatch instead of shelling out to roundtable-cli.
-func NewAppWithDispatcher(config Config, dispatch DispatchFunc) *App {
-	return NewAppWithDispatcherAndBackends(config, dispatch, nil)
-}
-
-// NewAppWithDispatcherAndBackends is like NewAppWithDispatcher but additionally
-// wires backend probes used by the readyz handler in native dispatch mode.
-func NewAppWithDispatcherAndBackends(config Config, dispatch DispatchFunc, backends map[string]BackendProbe) *App {
+// NewApp creates an App wired to a native Go dispatch function.
+// Optionally pass backend probes to enable per-backend readyz health checks.
+func NewApp(config Config, dispatch DispatchFunc, backends map[string]BackendProbe) *App {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    config.ServerName,
 		Version: config.ServerVersion,
@@ -194,20 +165,13 @@ func registerTool(server *mcp.Server, app *App, spec ToolSpec) {
 					done <- callResult{text: fmt.Sprintf("internal error: %v", r), isError: true}
 				}
 			}()
-			if app.dispatch != nil {
-				// Native dispatch path
-				data, err := app.dispatch(ctx, spec, input)
-				if err != nil {
-					app.metrics.DispatchErrors.Add(1)
-					done <- callResult{text: fmt.Sprintf("roundtable dispatch error: %v", err), isError: true}
-					return
-				}
-				done <- callResult{text: string(data), isError: false}
+			data, err := app.dispatch(ctx, spec, input)
+			if err != nil {
+				app.metrics.DispatchErrors.Add(1)
+				done <- callResult{text: fmt.Sprintf("roundtable dispatch error: %v", err), isError: true}
 				return
 			}
-			// CLI backend fallback path
-			text, isError := app.backend.Call(ctx, spec, input)
-			done <- callResult{text: text, isError: isError}
+			done <- callResult{text: string(data), isError: false}
 		}()
 
 		ticker := time.NewTicker(30 * time.Second)
@@ -245,29 +209,20 @@ func (a *App) healthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
-	if a.dispatch != nil {
-		// Native dispatch mode: check cached backend health
-		a.health.mu.Lock()
-		stale := time.Since(a.health.checkedAt) > healthCacheTTL
-		a.health.mu.Unlock()
+	a.health.mu.Lock()
+	stale := time.Since(a.health.checkedAt) > healthCacheTTL
+	a.health.mu.Unlock()
 
-		if stale && len(a.backends) > 0 {
-			a.reprobeBackends(r.Context())
-		}
-
-		a.health.mu.Lock()
-		healthy := a.health.healthy
-		a.health.mu.Unlock()
-
-		if !healthy {
-			writePlain(w, http.StatusServiceUnavailable, "not ready: one or more backends unhealthy")
-			return
-		}
-		writePlain(w, http.StatusOK, "ready")
-		return
+	if stale && len(a.backends) > 0 {
+		a.reprobeBackends(r.Context())
 	}
-	if err := a.backend.Probe(r.Context()); err != nil {
-		writePlain(w, http.StatusServiceUnavailable, fmt.Sprintf("not ready: %v", err))
+
+	a.health.mu.Lock()
+	healthy := a.health.healthy
+	a.health.mu.Unlock()
+
+	if !healthy {
+		writePlain(w, http.StatusServiceUnavailable, "not ready: one or more backends unhealthy")
 		return
 	}
 	writePlain(w, http.StatusOK, "ready")
