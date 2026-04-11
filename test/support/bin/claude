@@ -1,9 +1,0 @@
-#!/bin/sh
-# Mock claude CLI - handles --version for probe, outputs fixture JSON for actual run
-if [ "$1" = "--version" ]; then
-  echo "mock-claude 1.0.0"
-  exit 0
-fi
-cat <<'EOF'
-{"result":"\n\nHello from Claude","session_id":"sess_claude_001","is_error":false,"modelUsage":{"claude-sonnet-4-20250514":{"input":200,"output":80}}}
-EOF

@@ -20,7 +20,7 @@ You cross-check sometimes. Just not often enough to catch the subtle ones — be
 
 ## What it does
 
-Roundtable is an MCP server that sends your prompt to Claude, Gemini, and Codex CLIs — in parallel — and returns structured JSON with all their responses. One tool call from inside your existing agent. It uses the CLIs already in your PATH, already authenticated. Runs locally. Nothing stored or proxied — Roundtable itself never sees your prompts; it passes them directly to your CLIs, which talk to their providers as usual.
+Roundtable is an MCP server that sends your prompt to Claude, Gemini, and Codex CLIs — in parallel — and returns structured JSON with all their responses. One tool call from inside your existing agent. It uses the CLIs already in your PATH, already authenticated. Runs locally on `127.0.0.1`. Prompts stay in-memory on your machine — Roundtable assembles the role + prompt + file references in-process, hands them to your local CLIs, and never persists or proxies them anywhere else. The CLIs talk to their providers as usual.
 
 You can run the same CLI with different models in a single dispatch. Claude with Opus for the architecture review, Claude with Sonnet for the quick sanity check. Gemini for the edge cases. Codex for an independent take. Compose your own panel.
 
@@ -44,7 +44,7 @@ Two models agree on the queue. One says it's overengineered. That disagreement i
 
 ## How it's built
 
-Built with Elixir/OTP. Each dispatch gets its own supervision tree — if one CLI hangs, the others still return. Process groups are killed atomically on shutdown. No orphaned subprocesses. The STDIO transport sends proper JSON-RPC error responses on every failure path (timeout, crash, server unavailable) — no silent hangs. A watchdog pings the transport with `:sys.get_status` to detect alive-but-stuck states. Cross-platform: Linux, macOS, Windows.
+Single Go binary. HTTP MCP server on `127.0.0.1:4040` dispatching to Gemini and Claude via subprocess-per-request and to Codex via a long-lived `codex app-server` JSON-RPC connection. Each CLI runs in its own process group with atomic kill on timeout. If a backend hangs, Go kills it at the deadline and returns a structured error. If the Go server dies, the HTTP connection fails immediately. Health endpoints (`/healthz`, `/readyz`) and burn-in metrics (`/metricsz`) are built in. Cross-platform: Linux, macOS.
 
 Selective dispatch controls cost. Route architecture decisions to the heavy models. Route boilerplate to the fast ones. The `agents` parameter takes a JSON array — pick exactly who sits at the table.
 
@@ -65,19 +65,19 @@ Each tool assigns a role to each agent, shaping its system prompt.
 
 | Tool | Role | Use Case |
 |-|-|-|
-| `roundtable_hivemind` | default | General multi-model consensus |
-| `roundtable_deepdive` | planner | Extended reasoning / deep analysis |
-| `roundtable_architect` | planner | Implementation planning |
-| `roundtable_challenge` | codereviewer | Devil's advocate / stress-test |
-| `roundtable_xray` | gemini=planner, codex=codereviewer | Architecture + code quality review |
+|`hivemind`|default|General multi-model consensus|
+|`deepdive`|planner|Extended reasoning / deep analysis|
+|`architect`|planner|Implementation planning|
+|`challenge`|codereviewer|Devil's advocate / stress-test|
+|`xray`|gemini=planner, codex=codereviewer|Architecture + code quality review|
 
 All tools support an `agents` parameter for selective dispatch. See [SKILL.md](SKILL.md) for full parameter docs.
 
 ## Docs
 
-| Doc | Contents |
+|Doc|Contents|
 |-|-|
-| [INSTALL.md](INSTALL.md) | Install guide (written for AI agents to execute directly) |
-| [SKILL.md](SKILL.md) | Tool parameters, selective dispatch, output format, synthesis guide |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture details, cross-platform support, development setup |
-| [DESIGN.md](DESIGN.md) | Original design document (historical) |
+|[INSTALL.md](INSTALL.md)|Install guide (written for AI agents to execute directly)|
+|[SKILL.md](SKILL.md)|Tool parameters, selective dispatch, output format, synthesis guide|
+|[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)|Architecture details, components, request flow, Codex RPC protocol, concurrency model|
+|[docs/RELEASING.md](docs/RELEASING.md)|Release process — build, tag, publish|

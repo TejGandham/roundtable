@@ -1,7 +1,0 @@
-#!/bin/sh
-# Mock gemini CLI that times out - handles --version for probe, sleeps for actual run
-if [ "$1" = "--version" ]; then
-  echo "mock-gemini-timeout 1.0.0"
-  exit 0
-fi
-sleep 999
