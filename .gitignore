@@ -22,3 +22,4 @@ SHA256SUMS
 /roundtable-cli
 /roundtable-http-mcp
 .depwire/
+roundtable-0.8.0-*.tar.gz
