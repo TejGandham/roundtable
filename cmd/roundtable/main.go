@@ -31,9 +31,6 @@ Environment:
   ROUNDTABLE_ROLES_DIR          Override global roles directory
   ROUNDTABLE_PROJECT_ROLES_DIR  Per-project role overrides
   ROUNDTABLE_PROVIDERS          JSON array of OpenAI-compatible HTTP providers
-
-Installation:
-  curl -sSL https://raw.githubusercontent.com/TejGandham/roundtable/main/install.sh | sh
 `
 
 func main() {
@@ -43,16 +40,31 @@ func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(0)
+		os.Exit(2)
+	}
+
+	// Global --help / -h / help short-circuit, so `roundtable stdio --help`
+	// prints usage instead of entering the MCP loop and hanging on stdin.
+	for _, a := range args {
+		if a == "--help" || a == "-h" || a == "help" {
+			fmt.Fprint(os.Stdout, usage)
+			return
+		}
 	}
 
 	switch args[0] {
 	case "stdio":
+		if len(args) > 1 {
+			fmt.Fprintf(os.Stderr, "stdio: unexpected arguments %q\n\n%s", args[1:], usage)
+			os.Exit(2)
+		}
 		runStdio(logger)
-	case "version", "--version", "-v":
-		fmt.Fprintln(os.Stderr, "roundtable", version)
-	case "help", "--help", "-h":
-		fmt.Fprint(os.Stderr, usage)
+	case "version", "--version":
+		if len(args) > 1 {
+			fmt.Fprintf(os.Stderr, "version: unexpected arguments %q\n", args[1:])
+			os.Exit(2)
+		}
+		fmt.Fprintln(os.Stdout, "roundtable", version)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n\n%s", args[0], usage)
 		os.Exit(2)
