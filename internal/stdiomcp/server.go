@@ -10,6 +10,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const keepaliveInterval = 5 * time.Second
+
 var toolSpecs = []ToolSpec{
 	{
 		Name:        "hivemind",
@@ -116,7 +118,20 @@ func registerTool(srv *mcp.Server, spec ToolSpec, dispatch DispatchFunc, logger 
 			done <- callResult{text: string(data), isError: false}
 		}()
 
-		ticker := time.NewTicker(30 * time.Second)
+		notify := func(tick int) {
+			if token == nil || req.Session == nil {
+				return
+			}
+			_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
+				ProgressToken: token,
+				Progress:      float64(tick),
+				Message:       "backend running",
+			})
+		}
+
+		notify(0)
+
+		ticker := time.NewTicker(keepaliveInterval)
 		defer ticker.Stop()
 		ticks := 0
 		for {
@@ -133,13 +148,7 @@ func registerTool(srv *mcp.Server, spec ToolSpec, dispatch DispatchFunc, logger 
 				}, nil, nil
 			case <-ticker.C:
 				ticks++
-				if token != nil && req.Session != nil {
-					_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
-						ProgressToken: token,
-						Progress:      float64(ticks),
-						Message:       "backend running",
-					})
-				}
+				notify(ticks)
 			}
 		}
 	})
