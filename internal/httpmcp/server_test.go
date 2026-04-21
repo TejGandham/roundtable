@@ -35,7 +35,7 @@ func newTestApp(t *testing.T, dispatch DispatchFunc, probes map[string]BackendPr
 		MCPPath:       "/mcp",
 		ServerName:    "test",
 		ServerVersion: "v0.0.1",
-	}, dispatch, probes)
+	}, dispatch, probes, &Metrics{})
 
 	ts := httptest.NewServer(app.Handler())
 	t.Cleanup(ts.Close)
@@ -280,15 +280,19 @@ func TestMetricsEndpoint(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
-	var m map[string]int64
+	// Metrics JSON now contains nested objects for per-backend counters
+	// (roundtable_backend_requests_total etc.) alongside the scalar
+	// total_requests / dispatch_errors. Unmarshal into map[string]any and
+	// assert the scalars via float64 (JSON number default).
+	var m map[string]any
 	if err := json.Unmarshal(body, &m); err != nil {
 		t.Fatalf("parse metrics JSON: %v (body: %s)", err, body)
 	}
-	if m["total_requests"] < 1 {
-		t.Errorf("total_requests = %d, want >= 1", m["total_requests"])
+	if v, _ := m["total_requests"].(float64); v < 1 {
+		t.Errorf("total_requests = %v, want >= 1", m["total_requests"])
 	}
-	if m["dispatch_errors"] != 0 {
-		t.Errorf("dispatch_errors = %d, want 0", m["dispatch_errors"])
+	if v, _ := m["dispatch_errors"].(float64); v != 0 {
+		t.Errorf("dispatch_errors = %v, want 0", m["dispatch_errors"])
 	}
 }
 

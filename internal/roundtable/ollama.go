@@ -161,14 +161,28 @@ func (o *OllamaBackend) Run(ctx context.Context, req Request) (*Result, error) {
 		model = o.defaultModel
 	}
 
+	// Observe every exit path. observe is non-nil after the constructor
+	// (nil normalized to a no-op), so the call is unconditional. Using a
+	// named return-bound variable is tempting but awkward given we already
+	// have multi-return paths; capture the last *Result produced before
+	// each return via a closure-scoped variable.
+	runStart := time.Now()
+	var result *Result
+	defer func() {
+		if result != nil {
+			o.observe("ollama", result.Status, time.Since(runStart).Milliseconds())
+		}
+	}()
+
 	// NOTE: we don't re-validate apiKey here. Healthy() already failed the
 	// dispatcher's probe if unset, and buildBackends only registers this
 	// backend when the key is present at startup. A defensive check here
 	// would be dead code given those invariants. Model is per-Request so
 	// that check stays.
 	if model == "" {
-		return ConfigErrorResult("ollama", "",
-			"no model resolved: set OLLAMA_DEFAULT_MODEL or AgentSpec.Model"), nil
+		result = ConfigErrorResult("ollama", "",
+			"no model resolved: set OLLAMA_DEFAULT_MODEL or AgentSpec.Model")
+		return result, nil
 	}
 
 	// Prepend inlined file contents (if any). Subprocess backends get file
@@ -196,7 +210,8 @@ func (o *OllamaBackend) Run(ctx context.Context, req Request) (*Result, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		baseURL+"/api/chat", bytes.NewReader(bodyBytes))
 	if err != nil {
-		return ConfigErrorResult("ollama", model, "request build: "+err.Error()), nil
+		result = ConfigErrorResult("ollama", model, "request build: "+err.Error())
+		return result, nil
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -212,7 +227,7 @@ func (o *OllamaBackend) Run(ctx context.Context, req Request) (*Result, error) {
 		waited := time.Since(acquireStart).Milliseconds()
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) ||
 			errors.Is(err, context.DeadlineExceeded) {
-			return BuildResult(
+			result = BuildResult(
 				RawRunOutput{
 					TimedOut:  true,
 					ElapsedMs: waited,
@@ -220,14 +235,16 @@ func (o *OllamaBackend) Run(ctx context.Context, req Request) (*Result, error) {
 				},
 				ParsedOutput{},
 				model,
-			), nil
+			)
+			return result, nil
 		}
-		return &Result{
+		result = &Result{
 			Model:     model,
 			Status:    "error",
 			Stderr:    "ollama gate acquire failed: " + err.Error(),
 			ElapsedMs: waited,
-		}, nil
+		}
+		return result, nil
 	}
 	defer o.sem.Release(1)
 	if waited := time.Since(acquireStart); waited > ollamaGateSlowLogThreshold {
@@ -246,38 +263,42 @@ func (o *OllamaBackend) Run(ctx context.Context, req Request) (*Result, error) {
 		// matches subprocess backends. Other transport errors stay direct.
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) ||
 			errors.Is(err, context.DeadlineExceeded) {
-			return BuildResult(
+			result = BuildResult(
 				RawRunOutput{TimedOut: true, ElapsedMs: elapsed, Stderr: err.Error()},
 				ParsedOutput{},
 				model,
-			), nil
+			)
+			return result, nil
 		}
-		return &Result{
+		result = &Result{
 			Model:     model,
 			Status:    "error",
 			Stderr:    err.Error(),
 			ElapsedMs: elapsed,
-		}, nil
+		}
+		return result, nil
 	}
 	defer resp.Body.Close()
 
 	// Cap response under LimitReader to protect against runaway upstream.
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, ollamaMaxResponseBytes))
 	if readErr != nil {
-		return &Result{
+		result = &Result{
 			Model:     model,
 			Status:    "error",
 			Stderr:    "read body: " + readErr.Error(),
 			ElapsedMs: elapsed,
-		}, nil
+		}
+		return result, nil
 	}
 
 	parsed := ollamaParseResponse(raw, resp.StatusCode, resp.Header.Get("Retry-After"))
-	return BuildResult(
+	result = BuildResult(
 		RawRunOutput{Stdout: raw, ElapsedMs: elapsed},
 		parsed,
 		model,
-	), nil
+	)
+	return result, nil
 }
 
 // ollamaParseResponse converts a raw response body + HTTP status code into

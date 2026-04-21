@@ -664,3 +664,50 @@ func TestOllamaBackend_ResolveMaxConcurrent(t *testing.T) {
 		})
 	}
 }
+
+// -----------------------------------------------------------------------
+// Task 8: observe wiring E2E
+// -----------------------------------------------------------------------
+
+func TestOllamaRun_EmitsMetrics(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"model":"kimi-k2.6:cloud","message":{"role":"assistant","content":"hi"},"done_reason":"stop"}`))
+	}))
+	defer srv.Close()
+
+	type call struct {
+		backend, status string
+		elapsedMs       int64
+	}
+	// Capture observe invocations into a local slice. No global state, no
+	// save/restore dance, no test-parallelism hazard.
+	var (
+		mu  sync.Mutex
+		got []call
+	)
+	observe := func(backend, status string, elapsedMs int64) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, call{backend, status, elapsedMs})
+	}
+
+	t.Setenv("OLLAMA_BASE_URL", srv.URL)
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	b := NewOllamaBackend("kimi-k2.6:cloud", observe)
+
+	if _, err := b.Run(context.Background(), Request{Prompt: "hi", Model: "kimi-k2.6:cloud"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 {
+		t.Fatalf("metrics calls = %d, want 1", len(got))
+	}
+	if got[0].backend != "ollama" || got[0].status != "ok" {
+		t.Errorf("metrics call = %+v, want backend=ollama status=ok", got[0])
+	}
+	if got[0].elapsedMs < 0 {
+		t.Errorf("elapsed_ms = %d, want >= 0", got[0].elapsedMs)
+	}
+}
