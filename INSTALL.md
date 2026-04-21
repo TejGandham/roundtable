@@ -30,7 +30,7 @@ claude mcp remove roundtable-crash 2>/dev/null || true
 ## 3. Install
 
 ```bash
-VERSION=0.7.0
+VERSION=0.8.0
 mkdir -p ~/.local/share/roundtable
 curl -sL "https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz" \
   | tar xz -C ~/.local/share/roundtable

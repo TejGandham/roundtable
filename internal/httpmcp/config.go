@@ -11,7 +11,7 @@ const (
 	defaultAddr         = "127.0.0.1:4040"
 	defaultMCPPath      = "/mcp"
 	defaultProbeTimeout = 2 * time.Second
-	defaultVersion      = "0.7.0"
+	defaultVersion      = "0.8.0"
 )
 
 type Config struct {

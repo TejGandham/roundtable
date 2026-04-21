@@ -1,6 +1,6 @@
 GO = mise exec go@1.26.2 -- go
 GO_ENV = GOTOOLCHAIN=local GOMODCACHE=/tmp/gomodcache GOCACHE=/tmp/gocache
-VERSION ?= 0.7.0
+VERSION ?= 0.8.0
 
 .PHONY: all build test vet clean release run run-stdio
 
