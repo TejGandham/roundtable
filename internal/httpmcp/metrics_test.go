@@ -25,16 +25,16 @@ func TestMetrics_ObserveProvider(t *testing.T) {
 		t.Fatalf("missing roundtable_provider_requests_total; got: %v", snap)
 	}
 	wantKeys := []string{
-		"moonshot/kimi-k2-0711-preview/ok",
-		"moonshot/kimi-k2-0711-preview/rate_limited",
-		"ollama/kimi-k2.6:cloud/ok",
+		"moonshot|kimi-k2-0711-preview|ok",
+		"moonshot|kimi-k2-0711-preview|rate_limited",
+		"ollama|kimi-k2.6:cloud|ok",
 	}
 	for _, k := range wantKeys {
 		if _, ok := reqs[k]; !ok {
 			t.Errorf("missing request counter key %q; got: %v", k, reqs)
 		}
 	}
-	if count, _ := reqs["moonshot/kimi-k2-0711-preview/ok"].(float64); count != 2 {
+	if count, _ := reqs["moonshot|kimi-k2-0711-preview|ok"].(float64); count != 2 {
 		t.Errorf("moonshot ok count = %v, want 2", count)
 	}
 
@@ -42,8 +42,27 @@ func TestMetrics_ObserveProvider(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing roundtable_provider_request_duration_ms_sum")
 	}
-	if sum, _ := durSum["moonshot/kimi-k2-0711-preview"].(float64); sum != 410 {
+	if sum, _ := durSum["moonshot|kimi-k2-0711-preview"].(float64); sum != 410 {
 		t.Errorf("moonshot duration sum = %v, want 410", sum)
+	}
+}
+
+// Regression guard: Fireworks and other providers serve models under paths
+// like "accounts/fireworks/models/kimi-k2p6". The metric key delimiter
+// must not collide with slashes in model identifiers.
+func TestMetrics_ObserveProvider_SlashesInModelIDSurvive(t *testing.T) {
+	m := &Metrics{}
+	m.ObserveProvider("fireworks", "accounts/fireworks/models/kimi-k2p6", "ok", 100)
+	snap := m.Snapshot()
+	wantKey := "fireworks|accounts/fireworks/models/kimi-k2p6|ok"
+	if _, ok := snap.ProviderRequests[wantKey]; !ok {
+		t.Errorf("missing key %q; got: %v", wantKey, snap.ProviderRequests)
+	}
+	for k := range snap.ProviderRequests {
+		parts := strings.Split(k, "|")
+		if len(parts) != 3 {
+			t.Errorf("key %q splits into %d parts on pipe, want 3", k, len(parts))
+		}
 	}
 }
 
@@ -62,11 +81,11 @@ func TestMetrics_ObserveProvider_BoundsModelCardinality(t *testing.T) {
 	var distinctModels int
 	seenOther := false
 	for k := range snap.ProviderRequests {
-		if strings.HasPrefix(k, "moonshot/"+otherModelLabel+"/") {
+		if strings.HasPrefix(k, "moonshot|"+otherModelLabel+"|") {
 			seenOther = true
 			continue
 		}
-		if strings.HasPrefix(k, "moonshot/") {
+		if strings.HasPrefix(k, "moonshot|") {
 			distinctModels++
 		}
 	}
@@ -77,7 +96,7 @@ func TestMetrics_ObserveProvider_BoundsModelCardinality(t *testing.T) {
 		t.Errorf("expected overflow to be bucketed into %q; keys: %v", otherModelLabel, snap.ProviderRequests)
 	}
 	var otherCount float64
-	if v, ok := snap.ProviderRequests["moonshot/"+otherModelLabel+"/ok"]; ok {
+	if v, ok := snap.ProviderRequests["moonshot|"+otherModelLabel+"|ok"]; ok {
 		otherCount = float64(v)
 	}
 	if otherCount < 50 {
@@ -90,22 +109,20 @@ func TestMetrics_ObserveProvider_RejectsOversizeLabel(t *testing.T) {
 	long := strings.Repeat("x", maxModelLabelLen+1)
 	m.ObserveProvider("moonshot", long, "ok", 10)
 	snap := m.Snapshot()
-	if _, ok := snap.ProviderRequests["moonshot/"+long+"/ok"]; ok {
+	if _, ok := snap.ProviderRequests["moonshot|"+long+"|ok"]; ok {
 		t.Errorf("oversize label should not appear in keys: %v", snap.ProviderRequests)
 	}
-	if _, ok := snap.ProviderRequests["moonshot/"+otherModelLabel+"/ok"]; !ok {
+	if _, ok := snap.ProviderRequests["moonshot|"+otherModelLabel+"|ok"]; !ok {
 		t.Errorf("oversize label should be bucketed into %q; keys: %v", otherModelLabel, snap.ProviderRequests)
 	}
 }
 
 func TestMetrics_ObserveProvider_KnownLabelsStillCount(t *testing.T) {
-	// Regression guard: bounding must not dedup counts for legitimate repeat
-	// models. Same model seen twice still increments the counter.
 	m := &Metrics{}
 	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "ok", 10)
 	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "ok", 10)
 	snap := m.Snapshot()
-	if v := snap.ProviderRequests["moonshot/kimi-k2-0711-preview/ok"]; v != 2 {
+	if v := snap.ProviderRequests["moonshot|kimi-k2-0711-preview|ok"]; v != 2 {
 		t.Errorf("legit repeat count = %d, want 2", v)
 	}
 }

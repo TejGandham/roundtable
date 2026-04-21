@@ -45,6 +45,22 @@ func TestLoadProviderRegistry_WellFormedSingle(t *testing.T) {
 	}
 }
 
+// Provider IDs become part of the metric-key tuple (provider|model|status)
+// and get logged at startup. Slashes / pipes / whitespace in IDs would
+// either break downstream metric consumers or make log lines hard to
+// parse. Reject at load.
+func TestLoadProviderRegistry_RejectsReservedCharsInID(t *testing.T) {
+	for _, badID := range []string{"has/slash", "has|pipe", "has space"} {
+		t.Run(badID, func(t *testing.T) {
+			js := `[{"id":"` + badID + `","base_url":"https://x","api_key_env":"X"}]`
+			_, err := LoadProviderRegistry(fakeEnv(map[string]string{"ROUNDTABLE_PROVIDERS": js}))
+			if err == nil || !strings.Contains(err.Error(), "reserved") {
+				t.Errorf("want reserved-chars rejection for %q, got: %v", badID, err)
+			}
+		})
+	}
+}
+
 func TestLoadProviderRegistry_RejectsBuiltInCollision(t *testing.T) {
 	js := `[{"id":"gemini","base_url":"https://x","api_key_env":"X"}]`
 	_, err := LoadProviderRegistry(fakeEnv(map[string]string{"ROUNDTABLE_PROVIDERS": js}))

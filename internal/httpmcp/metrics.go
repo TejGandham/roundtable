@@ -6,6 +6,15 @@ import (
 	"sync/atomic"
 )
 
+// metricKeySeparator is the delimiter used to join (provider, model, status)
+// into a single map key. Intentionally NOT "/" because real model
+// identifiers contain slashes — e.g., Fireworks serves
+// "accounts/fireworks/models/kimi-k2p6". A "/" delimiter plus embedded "/"
+// in model names makes the key ambiguous for any consumer that splits on
+// "/". The pipe is effectively never used in provider / model / status
+// strings we produce or accept.
+const metricKeySeparator = "|"
+
 // maxModelsPerProvider caps the number of distinct model labels observed
 // per provider before new models collapse to "_other". This enforces FR-28
 // (bounded cardinality) and hardens against memory-DoS from a client that
@@ -82,8 +91,8 @@ func (m *Metrics) ObserveProvider(provider, model, status string, elapsedMs int6
 	}
 
 	model = boundedModelLabelLocked(m.providerModels, provider, model)
-	reqKey := provider + "/" + model + "/" + status
-	durKey := provider + "/" + model
+	reqKey := provider + metricKeySeparator + model + metricKeySeparator + status
+	durKey := provider + metricKeySeparator + model
 
 	c, ok := m.providerRequests[reqKey]
 	if !ok {

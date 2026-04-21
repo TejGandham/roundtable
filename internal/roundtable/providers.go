@@ -106,6 +106,9 @@ func LoadProviderRegistry(getenv func(string) string) ([]ProviderConfig, error) 
 		if e.ID == "" {
 			return nil, fmt.Errorf("ROUNDTABLE_PROVIDERS[%d]: id is required", i)
 		}
+		if strings.ContainsAny(e.ID, "/|\t\n ") {
+			return nil, fmt.Errorf("ROUNDTABLE_PROVIDERS[%d]: id %q must not contain slash, pipe, or whitespace (reserved for metric-key delimiting)", i, e.ID)
+		}
 		if builtInSubprocessIDs[e.ID] {
 			return nil, fmt.Errorf("ROUNDTABLE_PROVIDERS[%d]: id %q collides with built-in subprocess backend", i, e.ID)
 		}
