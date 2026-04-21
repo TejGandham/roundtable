@@ -10,7 +10,22 @@
 
 ---
 
-## 0. Requirements amendments (2026-04-21)
+## 0. Pre-implementation gate (go/no-go verification)
+
+**Before the implementation plan is authored, one live check MUST be run** against Ollama Cloud's OpenAI-compat endpoint with a real `OLLAMA_API_KEY`:
+
+```bash
+curl https://ollama.com/v1/chat/completions \
+  -H "Authorization: Bearer $OLLAMA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"kimi-k2.6:cloud","messages":[{"role":"user","content":"ping"}],"stream":false}'
+```
+
+Confirm: (a) the `:cloud` model-id suffix is accepted on `/v1/chat/completions`; (b) the response has `choices[0].message.content`, `choices[0].finish_reason`, and `usage.{prompt_tokens, completion_tokens}`. If either check fails, the "delete `OllamaBackend`" premise collapses and this design is revised before implementation starts.
+
+This check is asymmetric: thirty seconds to run, days of work to recover from if discovered mid-implementation.
+
+## 0.5 Requirements amendments (2026-04-21)
 
 Per product-owner decision during the design session, **Migration Requirements MR-1/MR-2/MR-3 are waived**. Roundtable has a single operator today; backward compatibility with PR-#11 Ollama-specific configuration buys nothing. The consequences propagate through this design:
 
@@ -121,9 +136,12 @@ Fields:
 | `api_key_env` | yes | string | — | Name of the env var holding the secret. Indirection per §4.2. |
 | `default_model` | no | string | `""` | Used when `AgentSpec.Model` is empty. |
 | `max_concurrent` | no | int | 3 | Per-process semaphore capacity. |
-| `response_header_timeout` | no | string (time.Duration) | `"60s"` | `http.Transport.ResponseHeaderTimeout`. |
+| `response_header_timeout` | no | string (time.Duration) | `"60s"` | `http.Transport.ResponseHeaderTimeout`. Note: with `stream: false` this effectively caps *total* response time for the provider. Operators running long-context deepdives on slow providers must raise this per-provider; tool-level `req.Timeout` alone cannot override a shorter transport timeout. |
+| `gate_slow_log_threshold` | no | string (time.Duration) | `"100ms"` | Wait above which the concurrency-gate Acquire emits a debug log (FR-29). |
 
-Unknown JSON keys, missing required fields, id collisions, and unparseable durations all produce a parse error at startup. The composition root logs the error and proceeds with subprocess-only backends — the process does not exit (FR-3).
+Unknown JSON keys, missing required fields, id collisions, and unparseable durations all produce a parse error at startup. The composition root logs the error and proceeds with subprocess-only backends — the process does not exit.
+
+**Fail-loud is deliberate.** A single JSON typo disables *every* HTTP provider for that process rather than partially registering some and silently dropping others. Partial registration would be worse: the operator's dispatch against a "missing" provider would return `not_found` with no indication that a config parse failure caused the absence. The loud `ERROR` log on startup is the signal.
 
 ### 4.2 Secret indirection
 
@@ -190,12 +208,12 @@ Status mapping:
 
 Metadata populated on success (FR-18):
 
-| Key | Source |
-|-|-|
-| `model_used` | `response.model` |
-| `finish_reason` | `response.choices[0].finish_reason` (FR-17 truncation signal) |
-| `tokens.prompt_tokens` | `response.usage.prompt_tokens` |
-| `tokens.completion_tokens` | `response.usage.completion_tokens` |
+| Key | Shape | Source |
+|-|-|-|
+| `model_used` | string | `response.model` |
+| `finish_reason` | string | `response.choices[0].finish_reason` (raw value preserved for auditability) |
+| `output_truncated` | bool | **Normalized truncation signal** per FR-17. Set `true` when `finish_reason == "length"`; omitted otherwise. Callers query this key generically, without knowing OpenAI's `"length"` convention. |
+| `tokens` | `map[string]any` | `{ "prompt_tokens": N, "completion_tokens": N }` — nested to match the existing Ollama `tokens` shape for consistency across providers. Values are `json.Number`/float64 as encoding/json produces them. |
 
 On 429/503: `retry_after` on Metadata when the header is present; otherwise absent.
 
@@ -205,14 +223,24 @@ On 429/503: `retry_after` on Metadata when the header is present; otherwise abse
 
 - `inlineFileContents([]string) string` moves to **`internal/roundtable/files.go`** (new file, same package; no behavior change).
 - `defaultMaxFileBytes` / `defaultMaxTotalFileBytes` constants move to `files.go` (renamed from their ollama-prefixed names; FR-31 generalization).
+- `defaultMaxResponseBytes = 8 * 1024 * 1024` (renamed from `ollamaMaxResponseBytes`) moves to `openai_http.go` and is enforced via `io.LimitReader` before `io.ReadAll`. **Memory-safety invariant — not optional.** A misbehaving upstream streaming unbounded garbage would otherwise exhaust the process. Tested identically to how `ollama_test.go` covers it today.
 - The `http.Transport` construction (`ollama.go:142-159`) lifts to a small helper `newHTTPTransport(responseHeaderTimeout time.Duration) *http.Transport` in **`internal/roundtable/openai_http.go`** — used by `NewOpenAIHTTPBackend`.
-- `httpGateSlowLogThreshold = 100 * time.Millisecond` (renamed from `ollamaGateSlowLogThreshold`) lives alongside the backend.
+- `defaultGateSlowLogThreshold = 100 * time.Millisecond` (renamed from `ollamaGateSlowLogThreshold`) lives in `openai_http.go` as the fallback when `ProviderConfig.GateSlowLogThreshold` is unset (FR-29 "configurable").
 
 ### 5.3 `internal/roundtable/run.go` changes
 
 - Rename `AgentSpec.CLI` → `AgentSpec.Provider`. JSON tag is `"provider"` (no alias).
-- `ParseAgents`:
-  - Accept only the `provider` field from input. A present-but-unknown JSON key `cli` produces an error: *`"unknown field \"cli\"; use \"provider\" instead"`*. (Implementation note: use `json.Decoder.DisallowUnknownFields` on a typed struct, or explicit key-set checking on the existing `map[string]any` path.)
+- `ParseAgents` switches from the current `[]map[string]any` path to **typed-struct decoding** with `json.Decoder.DisallowUnknownFields`:
+  ```go
+  type agentSpecJSON struct {
+      Name     string `json:"name,omitempty"`
+      Provider string `json:"provider"`
+      Model    string `json:"model,omitempty"`
+      Role     string `json:"role,omitempty"`
+      Resume   string `json:"resume,omitempty"`
+  }
+  ```
+  `DisallowUnknownFields` does **not** work on `map[string]any` (maps accept any key by construction); the rewrite to typed structs is required to reject the legacy `cli` key with a clear error. The existing `"must be array"` and `"invalid JSON"` error messages are preserved verbatim; the `"unknown field"` message comes from Go's json package and is wrapped to read *`"unknown field \"cli\"; use \"provider\""`* when detected.
   - Empty `provider` → error.
   - Delete `validCLIs` map entirely.
   - Structural checks retained: non-duplicate `name`, non-reserved `name`.
@@ -242,6 +270,14 @@ func buildBackends(
         return backends, infos
     }
     for _, c := range configs {
+        // FR-3: skip providers whose credential env var is empty. The provider
+        // is unregistered, not registered-but-unhealthy — callers see not_found,
+        // /readyz stays green, no dead rows on /metricsz.
+        if os.Getenv(c.APIKeyEnv) == "" {
+            logger.Warn("provider skipped — credential env var unset",
+                "id", c.ID, "api_key_env", c.APIKeyEnv)
+            continue
+        }
         backends[c.ID] = roundtable.NewOpenAIHTTPBackend(c, observe)
         infos = append(infos, roundtable.ProviderInfo{
             ID: c.ID, BaseURL: c.BaseURL, DefaultModel: c.DefaultModel,
@@ -291,6 +327,7 @@ type ProviderConfig struct {
     DefaultModel          string
     MaxConcurrent         int
     ResponseHeaderTimeout time.Duration
+    GateSlowLogThreshold  time.Duration // optional; defaults to 100ms — FR-29 "configurable"
 }
 
 type ProviderInfo struct {
@@ -382,12 +419,14 @@ Preserving these unchanged is a design feature:
 - `/readyz` behavior: unchanged; no provider contributes to readiness (FR-26, C-4).
 - Retry policy: still none (C-2, Decision C).
 - Status values: only `ok` / `rate_limited` / `timeout` / `error` (FR-20).
+- **Subprocess backend observation**: `GeminiBackend`, `CodexBackend`, `ClaudeBackend` do not emit `ObserveFunc` calls today (see `cmd/roundtable-http-mcp/main.go:104`, where `observe` is only threaded to the HTTP path). This refactor **does not** extend them. FR-27 ("per-provider, per-model metrics") is satisfied for the HTTP providers that this refactor introduces; `/metricsz` will remain silent for subprocess backends. Extending subprocess backend instrumentation is a natural follow-up but out of scope for C-1's "single reviewable change" constraint — it requires modifying three backend constructors and their Run methods, which expands the diff meaningfully for a property ("subprocess per-model metrics") that isn't this refactor's goal.
 
 ## 13. Known risks
 
-- **Ollama OpenAI-compat dialect acceptance.** This design assumes Ollama Cloud's `/v1/chat/completions` accepts the `:cloud`-suffix model IDs (e.g. `kimi-k2.6:cloud`) and returns tokens in OpenAI `usage.*` shape. Ollama does ship an OpenAI-compat shim; the exact `:cloud` suffix behavior on that endpoint is a **verification item for the implementation plan's first step** (smoke test with a live key before committing to the new backend). If the compat shim rejects `:cloud` suffixes, the fallback is to use the non-suffixed model id and rely on Ollama Cloud's default routing — or, worst case, restore a minimal Ollama-native path. The risk is visible, bounded, and discoverable early.
-- **JSON-embedded config is fragile.** A single missing comma in `ROUNDTABLE_PROVIDERS` disables every HTTP provider for that process. Mitigated by (a) the startup log line per registered provider making absence visible, (b) a loud `ERROR` log on parse failure with the JSON error message included, (c) `providers_test.go` covering common malformations. A failure mode to keep in mind — flagged in `INSTALL.md`.
+- **Ollama OpenAI-compat dialect acceptance.** Elevated to the §0 pre-implementation gate. Not a residual risk after the gate runs.
+- **JSON-embedded config is fragile.** A single missing comma in `ROUNDTABLE_PROVIDERS` disables every HTTP provider for that process. Mitigated by (a) the startup log line per registered provider making absence visible, (b) a loud `ERROR` log on parse failure with the JSON error message included, (c) `providers_test.go` covering common malformations. Documented in `INSTALL.md`.
 - **Label cardinality growth.** If an operator registers many providers with many model ids each, `/metricsz` labels multiply. FR-28 notes expected cardinality is low; no enforcement. Accepted risk.
+- **ResponseHeaderTimeout vs. `req.Timeout` mismatch.** A tool call with `timeout: 900` won't override a provider's 60s `response_header_timeout`; the transport closes the connection at 60s regardless of context deadline. For long-context deepdive workloads against slow providers, operators must raise `response_header_timeout` in `ROUNDTABLE_PROVIDERS`. Documented in `INSTALL.md` alongside the default.
 
 ---
 
@@ -401,8 +440,8 @@ Preserving these unchanged is a design feature:
 | `internal/roundtable/ollama.go` | DELETED |
 | `internal/roundtable/ollama_test.go` | DELETED (contracts migrated to `openai_http_test.go`; file-inlining tests to `files_test.go`) |
 | `internal/roundtable/run.go` | MODIFIED — `CLI`→`Provider`; drop `validCLIs`; reject `cli` JSON key |
-| `internal/roundtable/backend.go` | UNCHANGED |
-| `internal/roundtable/result.go` | UNCHANGED |
+| `internal/roundtable/backend.go` | UNCHANGED (interface signature; NFR-1) |
+| `internal/roundtable/result.go` | MODIFIED — `NotFoundResult` and `ProbeFailedResult` messages generalized: the hardcoded `"CLI not found in PATH"` / `"Run <name> --version"` strings are subprocess-flavored and read as nonsense for HTTP provider ids. `NotFoundResult` message becomes `"provider %q not registered"`; `ProbeFailedResult` becomes `"provider %q probe failed: %s"`. The `Result` **struct** shape and status-value set stay unchanged (NFR-2, FR-20). |
 | `cmd/roundtable-http-mcp/main.go` | MODIFIED — `buildBackends` returns `(map, []ProviderInfo)`; registry wiring; legacy branch removed |
 | `internal/httpmcp/metrics.go` | MODIFIED — `(provider, model, status)` label shape; `ObserveBackend` → `ObserveProvider` |
 | `internal/httpmcp/server.go` | MODIFIED — expose `ProviderInfo` list on `/metricsz` |
