@@ -3,9 +3,11 @@
   "mcp": {
     "roundtable": {
       "type": "local",
-      "command": ["/home/dev/.nix-profile/bin/mix", "run", "--no-halt"],
+      "command": ["/usr/bin/zsh", "-c", "exec ./roundtable-http-mcp stdio"],
+      "timeout": 600000,
       "environment": {
-        "ROUNDTABLE_MCP": "1"
+        "ROUNDTABLE_PROVIDERS": "[{\"id\":\"fireworks-minimax\",\"base_url\":\"https://api.fireworks.ai/inference/v1\",\"api_key_env\":\"FIREWORKS_API_KEY\",\"default_model\":\"accounts/fireworks/models/minimax-m2p7\",\"max_concurrent\":5},{\"id\":\"fireworks-kimi\",\"base_url\":\"https://api.fireworks.ai/inference/v1\",\"api_key_env\":\"FIREWORKS_API_KEY\",\"default_model\":\"accounts/fireworks/models/kimi-k2p6\",\"max_concurrent\":5}]",
+        "ROUNDTABLE_DEFAULT_AGENTS": "[{\"provider\":\"gemini\"},{\"provider\":\"codex\"},{\"provider\":\"claude\"},{\"provider\":\"fireworks-minimax\",\"name\":\"minimax\"},{\"provider\":\"fireworks-kimi\",\"name\":\"kimi\"}]"
       }
     }
   }
