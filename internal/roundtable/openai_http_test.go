@@ -431,6 +431,32 @@ func TestOpenAIParse_ContentArrayEmptyTextParts(t *testing.T) {
 	}
 }
 
+// Empirically observed: Fireworks returned HTTP 299 on a long-running
+// chat/completions request. Our original parser treated anything other
+// than 200 as a hard error, emitting cryptic empty-bodied results. 2xx
+// responses should fall through to the parse path; real parse failures
+// still error via the JSON path.
+func TestOpenAIParse_2xxNon200IsParsed(t *testing.T) {
+	body := []byte(`{"model":"x","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+	for _, code := range []int{201, 202, 299} {
+		parsed := openAIParseResponse(body, code, "", "p")
+		if parsed.Status != "ok" {
+			t.Errorf("HTTP %d: status = %q, want ok (2xx bodies must parse)", code, parsed.Status)
+		}
+		if parsed.Response != "ok" {
+			t.Errorf("HTTP %d: response = %q, want ok", code, parsed.Response)
+		}
+	}
+}
+
+// 3xx codes are unexpected (we don't follow redirects) — still error-class.
+func TestOpenAIParse_3xxIsError(t *testing.T) {
+	parsed := openAIParseResponse([]byte(`{}`), 301, "", "p")
+	if parsed.Status != "error" {
+		t.Errorf("HTTP 301: status = %q, want error", parsed.Status)
+	}
+}
+
 func TestOpenAIParse_ContentUnknownShape(t *testing.T) {
 	body := []byte(`{"model":"x","choices":[{"message":{"content":42}}]}`)
 	parsed := openAIParseResponse(body, 200, "", "p")

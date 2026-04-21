@@ -78,23 +78,23 @@ Each entry in the encoded array:
 
 Skip Claude, only use Gemini and Codex:
 ```json
-[{"cli": "gemini"}, {"cli": "codex"}]
+[{"provider": "gemini"}, {"provider": "codex"}]
 ```
 
 Run two Codex instances with different models:
 ```json
 [
-  {"name": "fast", "cli": "codex", "model": "gpt-5.4"},
-  {"name": "deep", "cli": "codex", "model": "gpt-5.3-codex"}
+  {"name": "fast", "provider": "codex", "model": "gpt-5.4"},
+  {"name": "deep", "provider": "codex", "model": "gpt-5.3-codex"}
 ]
 ```
 
 Mix models and roles for targeted review:
 ```json
 [
-  {"name": "arch", "cli": "gemini", "model": "gemini-2.5-pro", "role": "planner"},
-  {"name": "review", "cli": "codex", "model": "gpt-5.4", "role": "codereviewer"},
-  {"name": "sanity", "cli": "claude", "model": "sonnet", "role": "default"}
+  {"name": "arch", "provider": "gemini", "model": "gemini-2.5-pro", "role": "planner"},
+  {"name": "review", "provider": "codex", "model": "gpt-5.4", "role": "codereviewer"},
+  {"name": "sanity", "provider": "claude", "model": "sonnet", "role": "default"}
 ]
 ```
 
@@ -112,28 +112,28 @@ Set `ROUNDTABLE_DEFAULT_AGENTS` at MCP registration time to configure which agen
 2. `ROUNDTABLE_DEFAULT_AGENTS` env var — session default
 3. Built-in default — all 3 CLIs (gemini, codex, claude)
 
-> **You can always override defaults per-call.** Even if your defaults only include codex and claude, you can pass `agents: [{"cli": "gemini"}]` to get a gemini-only review.
+> **You can always override defaults per-call.** Even if your defaults only include codex and claude, you can pass `agents: [{"provider": "gemini"}]` to get a gemini-only review.
 
 **Examples:**
 
 Only Codex and Claude by default:
 ```json
-[{"cli": "codex"}, {"cli": "claude"}]
+[{"provider": "codex"}, {"provider": "claude"}]
 ```
 
 With model and role:
 ```json
 [
-  {"cli": "codex", "model": "o4-mini", "role": "codereviewer"},
-  {"cli": "claude", "model": "sonnet"}
+  {"provider": "codex", "model": "o4-mini", "role": "codereviewer"},
+  {"provider": "claude", "model": "sonnet"}
 ]
 ```
 
 Role-based dispatch:
 ```json
 [
-  {"cli": "gemini", "role": "planner"},
-  {"cli": "codex", "role": "codereviewer"}
+  {"provider": "gemini", "role": "planner"},
+  {"provider": "codex", "role": "codereviewer"}
 ]
 ```
 

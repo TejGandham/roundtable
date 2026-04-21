@@ -198,15 +198,21 @@ func (o *OpenAIHTTPBackend) Run(ctx context.Context, req Request) (*Result, erro
 	// SECURITY: never log bodyBytes or response body at any level — they
 	// contain user prompts and model output (PII/secret surface). Only
 	// status code and elapsed time are safe to log.
-	start := time.Now()
-	resp, err := o.httpClient.Do(httpReq)
-	elapsed := time.Since(start).Milliseconds()
+	//
+	// elapsed() is computed fresh on each return so Result.ElapsedMs
+	// reflects full wall-clock time from entering Run(), including
+	// semaphore-queue wait, DNS, TLS, request send, response headers,
+	// and body read. Measuring only httpClient.Do would silently exclude
+	// queue time and body-stream time from both the Result and the meta
+	// total_elapsed_ms rollup.
+	elapsed := func() int64 { return time.Since(runStart).Milliseconds() }
 
+	resp, err := o.httpClient.Do(httpReq)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) ||
 			errors.Is(err, context.DeadlineExceeded) {
 			result = BuildResult(
-				RawRunOutput{TimedOut: true, ElapsedMs: elapsed, Stderr: err.Error()},
+				RawRunOutput{TimedOut: true, ElapsedMs: elapsed(), Stderr: err.Error()},
 				ParsedOutput{},
 				model,
 			)
@@ -216,7 +222,7 @@ func (o *OpenAIHTTPBackend) Run(ctx context.Context, req Request) (*Result, erro
 			Model:     model,
 			Status:    "error",
 			Stderr:    err.Error(),
-			ElapsedMs: elapsed,
+			ElapsedMs: elapsed(),
 		}
 		return result, nil
 	}
@@ -227,7 +233,7 @@ func (o *OpenAIHTTPBackend) Run(ctx context.Context, req Request) (*Result, erro
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) ||
 			errors.Is(readErr, context.DeadlineExceeded) {
 			result = BuildResult(
-				RawRunOutput{TimedOut: true, ElapsedMs: elapsed, Stderr: "read body: " + readErr.Error()},
+				RawRunOutput{TimedOut: true, ElapsedMs: elapsed(), Stderr: "read body: " + readErr.Error()},
 				ParsedOutput{},
 				model,
 			)
@@ -237,14 +243,14 @@ func (o *OpenAIHTTPBackend) Run(ctx context.Context, req Request) (*Result, erro
 			Model:     model,
 			Status:    "error",
 			Stderr:    "read body: " + readErr.Error(),
-			ElapsedMs: elapsed,
+			ElapsedMs: elapsed(),
 		}
 		return result, nil
 	}
 
 	parsed := openAIParseResponse(raw, resp.StatusCode, resp.Header.Get("Retry-After"), o.id)
 	result = BuildResult(
-		RawRunOutput{Stdout: raw, ElapsedMs: elapsed},
+		RawRunOutput{Stdout: raw, ElapsedMs: elapsed()},
 		parsed,
 		model,
 	)
@@ -265,9 +271,15 @@ func openAIParseResponse(body []byte, statusCode int, retryAfter, providerLabel 
 		return openAIRateLimitedOutput(body, statusCode, retryAfter, providerLabel)
 	case statusCode >= 400:
 		return openAIErrorOutput(body, statusCode, providerLabel)
-	case statusCode != 200:
+	case statusCode >= 300:
+		return openAIErrorOutput(body, statusCode, providerLabel)
+	case statusCode < 200:
 		return openAIErrorOutput(body, statusCode, providerLabel)
 	}
+	// 2xx falls through to the parse path. Fireworks (and presumably others)
+	// occasionally return 2xx-non-200 codes (observed 299 on long-running
+	// requests) with valid choices bodies; treating anything other than 200
+	// as a hard error was producing cryptic empty responses.
 
 	var data struct {
 		Model   string `json:"model"`
