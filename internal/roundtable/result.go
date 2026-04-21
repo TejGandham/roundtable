@@ -6,17 +6,18 @@ import (
 )
 
 type Result struct {
-	Response        string  `json:"response"`
-	Model           string  `json:"model"`
-	Status          string  `json:"status"`
-	ExitCode        *int    `json:"exit_code"`
-	ExitSignal      *string `json:"exit_signal"`
-	Stderr          string  `json:"stderr"`
-	ElapsedMs       int64   `json:"elapsed_ms"`
-	ParseError      *string `json:"parse_error"`
-	Truncated       bool    `json:"truncated"`
-	StderrTruncated bool    `json:"stderr_truncated"`
-	SessionID       *string `json:"session_id"`
+	Response        string         `json:"response"`
+	Model           string         `json:"model"`
+	Status          string         `json:"status"`
+	ExitCode        *int           `json:"exit_code"`
+	ExitSignal      *string        `json:"exit_signal"`
+	Stderr          string         `json:"stderr"`
+	ElapsedMs       int64          `json:"elapsed_ms"`
+	ParseError      *string        `json:"parse_error"`
+	Truncated       bool           `json:"truncated"`
+	StderrTruncated bool           `json:"stderr_truncated"`
+	SessionID       *string        `json:"session_id"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
 func NotFoundResult(backendName, model string) *Result {

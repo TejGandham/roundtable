@@ -91,6 +91,7 @@ func BuildResult(raw RawRunOutput, parsed ParsedOutput, fallbackModel string) *R
 		Truncated:       raw.Truncated,
 		StderrTruncated: raw.StderrTruncated,
 		SessionID:       parsed.SessionID,
+		Metadata:        parsed.Metadata,
 	}
 }
 
