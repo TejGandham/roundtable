@@ -29,8 +29,8 @@ func runStdio(logger *slog.Logger) {
 	defer stopBackends(backends, logger)
 
 	cfg := stdiomcp.Config{
-		RolesDir:        os.Getenv("ROUNDTABLE_ROLES_DIR"),
-		ProjectRolesDir: os.Getenv("ROUNDTABLE_PROJECT_ROLES_DIR"),
+		RolesDir:        rolesDirEnv(logger, "ROUNDTABLE_ROLES_DIR", "ROUNDTABLE_HTTP_ROLES_DIR"),
+		ProjectRolesDir: rolesDirEnv(logger, "ROUNDTABLE_PROJECT_ROLES_DIR", "ROUNDTABLE_HTTP_PROJECT_ROLES_DIR"),
 		ServerName:      "roundtable",
 		ServerVersion:   "0.8.0-dev",
 	}
@@ -94,6 +94,20 @@ func buildBackends(logger *slog.Logger, observe roundtable.ObserveFunc) (map[str
 	}
 
 	return backends, infos
+}
+
+// rolesDirEnv reads the new env var, falling back to the legacy HTTP-era
+// name with a one-shot deprecation log. Remove the fallback in v0.9.
+func rolesDirEnv(logger *slog.Logger, name, legacy string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	if v := os.Getenv(legacy); v != "" {
+		logger.Warn("deprecated env var; rename before v0.9",
+			"deprecated", legacy, "use", name)
+		return v
+	}
+	return ""
 }
 
 func stopBackends(backends map[string]roundtable.Backend, logger *slog.Logger) {
