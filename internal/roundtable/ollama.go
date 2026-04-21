@@ -68,6 +68,25 @@ func resolveOllamaMaxConcurrent() int64 {
 	return n
 }
 
+// resolveOllamaResponseHeaderTimeout reads OLLAMA_RESPONSE_HEADER_TIMEOUT
+// (any time.Duration string — "60s", "2m", "500ms"), falling back to
+// ollamaDefaultResponseHeaderTimeout on unset/invalid/non-positive values.
+// Construction-time only; the http.Transport freezes the value at
+// NewOllamaBackend.
+func resolveOllamaResponseHeaderTimeout() time.Duration {
+	v := os.Getenv("OLLAMA_RESPONSE_HEADER_TIMEOUT")
+	if v == "" {
+		return ollamaDefaultResponseHeaderTimeout
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		slog.Warn("OLLAMA_RESPONSE_HEADER_TIMEOUT invalid; using default",
+			"value", v, "default", ollamaDefaultResponseHeaderTimeout)
+		return ollamaDefaultResponseHeaderTimeout
+	}
+	return d
+}
+
 // ollamaMaxResponseBytes caps response bodies to protect against a
 // misconfigured upstream streaming unbounded garbage. 8 MiB is well over
 // the 16,384-token completion cap with headroom for JSON framing.
@@ -95,6 +114,14 @@ const ollamaDefaultMaxConcurrent int64 = 3
 // under Decision C's no-retry stance.
 const ollamaGateSlowLogThreshold = 100 * time.Millisecond
 
+// ollamaDefaultResponseHeaderTimeout caps how long we wait for Ollama
+// Cloud's /api/chat to return response headers. With stream=false (our
+// default), this is effectively the total-response time, so it needs to
+// accommodate slow big-model generation on Pro tier. 60s matches the tail
+// latency observed across kimi-k2.6/glm-5.1/qwen3.5 during stress testing.
+// Tunable via OLLAMA_RESPONSE_HEADER_TIMEOUT (any time.Duration string).
+const ollamaDefaultResponseHeaderTimeout = 60 * time.Second
+
 // NewOllamaBackend returns a backend configured with explicit timeouts on
 // every layer that can stall independently of context cancellation.
 // defaultModel is the fallback when neither AgentSpec.Model nor
@@ -118,12 +145,14 @@ func NewOllamaBackend(defaultModel string, observe ObserveFunc) *OllamaBackend {
 					Timeout:   10 * time.Second,
 					KeepAlive: 30 * time.Second,
 				}).DialContext,
-				TLSHandshakeTimeout:   10 * time.Second,
-				// 60s matches the tail latency of slow cloud models (qwen3.5,
-				// kimi-k2.6 under load) observed during initial stress tests.
-				// A lower value (e.g., 30s) starves slow-but-healthy models
-				// queued behind the §4.6 concurrency gate on Pro tier.
-				ResponseHeaderTimeout: 60 * time.Second,
+				TLSHandshakeTimeout: 10 * time.Second,
+				// With stream=false, this is effectively total-response time.
+				// Tunable via OLLAMA_RESPONSE_HEADER_TIMEOUT; see
+				// resolveOllamaResponseHeaderTimeout for defaults/parsing.
+				// Lower values starve slow-but-healthy big-model responses
+				// on Pro tier; higher values hold resources on truly dead
+				// connections longer.
+				ResponseHeaderTimeout: resolveOllamaResponseHeaderTimeout(),
 				IdleConnTimeout:       90 * time.Second,
 				MaxIdleConnsPerHost:   4,
 			},

@@ -178,6 +178,7 @@ CLI binary — requests go directly to Ollama's REST API.
 | `OLLAMA_BASE_URL` | no | `https://ollama.com` | Override for self-hosted Ollama or for tests. |
 | `OLLAMA_DEFAULT_MODEL` | no | — | Fallback model used when an agent spec doesn't set `model`. Recommended: `kimi-k2.6:cloud` or `gpt-oss:120b-cloud`. |
 | `OLLAMA_MAX_CONCURRENT_REQUESTS` | no | `3` | Per-process bulkhead on concurrent `/api/chat` calls. Match your Ollama account tier: **Free=`1`**, **Pro=`3`** (default), **Max=`10`**. Calls above the cap block until a slot frees instead of getting a 429 from Ollama's edge. Read once at startup; restart to change. |
+| `OLLAMA_RESPONSE_HEADER_TIMEOUT` | no | `60s` | Max time to wait for Ollama's `/api/chat` to return response headers. With `stream=false` (our default) this is effectively the total-response time. Accepts any `time.Duration` string (`90s`, `2m`, `500ms`). Big-model generation on Pro tier can spike to 60s+ under upstream load; bump this if you hit `status=timeout` frequently. Read once at startup; restart to change. |
 
 ### Example: dispatching to one cloud model
 

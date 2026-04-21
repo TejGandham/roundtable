@@ -642,6 +642,74 @@ func TestOllamaRun_GateCancel_MapsToError(t *testing.T) {
 	}
 }
 
+func TestOllamaBackend_ResolveResponseHeaderTimeout(t *testing.T) {
+	cases := []struct {
+		env  string
+		want time.Duration
+	}{
+		{"", 60 * time.Second},           // default
+		{"30s", 30 * time.Second},        // valid short
+		{"2m", 2 * time.Minute},          // valid minutes
+		{"500ms", 500 * time.Millisecond}, // valid sub-second
+		{"bogus", 60 * time.Second},      // invalid → default
+		{"0s", 60 * time.Second},         // non-positive → default
+		{"-10s", 60 * time.Second},       // negative → default
+	}
+	for _, tc := range cases {
+		t.Run("env="+tc.env, func(t *testing.T) {
+			t.Setenv("OLLAMA_RESPONSE_HEADER_TIMEOUT", tc.env)
+			got := resolveOllamaResponseHeaderTimeout()
+			if got != tc.want {
+				t.Errorf("resolveOllamaResponseHeaderTimeout() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Behavioral test: a server that delays header write beyond the configured
+// timeout must produce status=timeout. Uses a deliberately short timeout
+// (100ms) so the test runs fast rather than waiting 60s.
+func TestOllamaRun_ResponseHeaderTimeoutFires(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Hold the connection open past the client's configured timeout
+		// before writing anything. WriteHeader would flush headers; we
+		// just sleep. The client's ResponseHeaderTimeout fires first.
+		select {
+		case <-r.Context().Done():
+		case <-time.After(500 * time.Millisecond):
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("OLLAMA_BASE_URL", srv.URL)
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	t.Setenv("OLLAMA_RESPONSE_HEADER_TIMEOUT", "100ms")
+	b := NewOllamaBackend("kimi-k2.6:cloud", nil)
+
+	start := time.Now()
+	res, err := b.Run(context.Background(), Request{Prompt: "hi", Model: "kimi-k2.6:cloud"})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// Transport-level ResponseHeaderTimeout wraps its error so
+	// errors.Is(err, context.DeadlineExceeded) returns true, which Run
+	// routes to BuildResult's timeout formatting. That's the right
+	// semantic mapping: "upstream didn't respond in the configured
+	// window" is a timeout, not a caller-side cancel.
+	if res.Status != "timeout" {
+		t.Errorf("status = %q, want timeout (transport-level ResponseHeaderTimeout)", res.Status)
+	}
+	if !strings.Contains(res.Stderr, "timeout awaiting response headers") {
+		t.Errorf("stderr = %q, want 'timeout awaiting response headers' (net/http message)", res.Stderr)
+	}
+	// The timeout should fire close to 100ms, not wait for the server's
+	// 500ms. Allow slack (scheduler, startup) up to 200ms.
+	if elapsed > 200*time.Millisecond {
+		t.Errorf("Run took %v; expected ResponseHeaderTimeout to fire at ~100ms", elapsed)
+	}
+}
+
 func TestOllamaBackend_ResolveMaxConcurrent(t *testing.T) {
 	cases := []struct {
 		env  string
