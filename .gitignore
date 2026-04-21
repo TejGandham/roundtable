@@ -3,8 +3,8 @@
 /deps/
 /roundtable
 
-# Track release binary (exception to above)
-!/release/roundtable
+# Release binaries uploaded to GitHub/Forgejo, not tracked in git
+/release/roundtable-http-mcp-*
 
 # Sisyphus evidence (noisy, not needed in git)
 .sisyphus/evidence/

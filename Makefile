@@ -17,6 +17,7 @@ vet:
 
 clean:
 	rm -f roundtable-http-mcp
+	rm -f release/roundtable-http-mcp-*
 
 run: build
 	./roundtable-http-mcp
@@ -24,9 +25,10 @@ run: build
 run-stdio: build
 	./roundtable-http-mcp stdio
 
-release: build
+release:
 	mkdir -p release
-	cp roundtable-http-mcp release/
-	chmod +x release/roundtable-http-mcp
+	$(GO_ENV) GOOS=linux GOARCH=amd64 $(GO) build -o release/roundtable-http-mcp-linux-amd64 ./cmd/roundtable-http-mcp
+	$(GO_ENV) GOOS=darwin GOARCH=arm64 $(GO) build -o release/roundtable-http-mcp-darwin-arm64 ./cmd/roundtable-http-mcp
+	chmod +x release/roundtable-http-mcp-*
 	@echo "Release artifacts in release/:"
 	@ls -la release/ 2>/dev/null || true
