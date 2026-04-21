@@ -2,43 +2,61 @@ package httpmcp
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
-func TestMetrics_BackendCounter(t *testing.T) {
+func TestMetrics_ObserveProvider(t *testing.T) {
 	m := &Metrics{}
-	m.ObserveBackend("ollama", "ok", 120)
-	m.ObserveBackend("ollama", "ok", 240)
-	m.ObserveBackend("ollama", "rate_limited", 50)
-	m.ObserveBackend("gemini", "ok", 300)
+	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "ok", 120)
+	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "ok", 240)
+	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "rate_limited", 50)
+	m.ObserveProvider("ollama", "kimi-k2.6:cloud", "ok", 300)
 
-	data := m.JSON()
-	var got map[string]any
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	raw := m.JSON()
+	var snap map[string]any
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
 	}
 
-	// roundtable_backend_requests_total{backend="ollama",status="ok"} == 2
-	bt, ok := got["roundtable_backend_requests_total"].(map[string]any)
+	reqs, ok := snap["roundtable_provider_requests_total"].(map[string]any)
 	if !ok {
-		t.Fatalf("roundtable_backend_requests_total missing or wrong type: %v", got)
+		t.Fatalf("missing roundtable_provider_requests_total; got: %v", snap)
 	}
-	if v, _ := bt["ollama/ok"].(float64); v != 2 {
-		t.Errorf("ollama/ok = %v, want 2", bt["ollama/ok"])
+	wantKeys := []string{
+		"moonshot/kimi-k2-0711-preview/ok",
+		"moonshot/kimi-k2-0711-preview/rate_limited",
+		"ollama/kimi-k2.6:cloud/ok",
 	}
-	if v, _ := bt["ollama/rate_limited"].(float64); v != 1 {
-		t.Errorf("ollama/rate_limited = %v, want 1", bt["ollama/rate_limited"])
+	for _, k := range wantKeys {
+		if _, ok := reqs[k]; !ok {
+			t.Errorf("missing request counter key %q; got: %v", k, reqs)
+		}
 	}
-	if v, _ := bt["gemini/ok"].(float64); v != 1 {
-		t.Errorf("gemini/ok = %v, want 1", bt["gemini/ok"])
+	if count, _ := reqs["moonshot/kimi-k2-0711-preview/ok"].(float64); count != 2 {
+		t.Errorf("moonshot ok count = %v, want 2", count)
 	}
 
-	// roundtable_backend_request_duration_ms_sum{backend="ollama"} == 410
-	ds, ok := got["roundtable_backend_request_duration_ms_sum"].(map[string]any)
+	durSum, ok := snap["roundtable_provider_request_duration_ms_sum"].(map[string]any)
 	if !ok {
-		t.Fatalf("duration_sum missing: %v", got)
+		t.Fatalf("missing roundtable_provider_request_duration_ms_sum")
 	}
-	if v, _ := ds["ollama"].(float64); v != 410 {
-		t.Errorf("ollama sum = %v, want 410", ds["ollama"])
+	if sum, _ := durSum["moonshot/kimi-k2-0711-preview"].(float64); sum != 410 {
+		t.Errorf("moonshot duration sum = %v, want 410", sum)
+	}
+}
+
+func TestMetrics_ProvidersRegisteredInSnapshot(t *testing.T) {
+	m := &Metrics{}
+	m.SetProviders([]ProviderInfoDTO{
+		{ID: "moonshot", BaseURL: "https://api.moonshot.cn/v1", DefaultModel: "kimi-k2-0711-preview"},
+		{ID: "ollama", BaseURL: "https://ollama.com/v1"},
+	})
+	raw := m.JSON()
+	if !strings.Contains(string(raw), `"roundtable_providers_registered"`) {
+		t.Errorf("missing providers_registered in output: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"moonshot"`) || !strings.Contains(string(raw), `"ollama"`) {
+		t.Errorf("missing provider ids: %s", raw)
 	}
 }

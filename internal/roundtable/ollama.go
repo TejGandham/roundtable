@@ -17,15 +17,6 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-// ObserveFunc is the optional metrics hook invoked once per Run() with the
-// backend name, the resulting Result.Status, and the wall-clock elapsed
-// time. Wired by cmd/roundtable-http-mcp/main.go to route into
-// httpmcp.Metrics.ObserveBackend at the composition root. Defined in
-// the roundtable package so OllamaBackend doesn't import httpmcp (which
-// would cycle, since httpmcp already imports roundtable). A func value
-// carries no package dependency, so there's no cycle.
-type ObserveFunc func(backend, status string, elapsedMs int64)
-
 // OllamaBackend implements Backend for Ollama Cloud (cloud-hosted :cloud
 // models accessed over HTTPS with a bearer token). Unlike the subprocess
 // backends (gemini/codex/claude), this one has no CLI harness — requests
@@ -116,7 +107,7 @@ const ollamaDefaultResponseHeaderTimeout = 60 * time.Second
 // (backend, status, elapsedMs); pass nil if metrics aren't needed.
 func NewOllamaBackend(defaultModel string, observe ObserveFunc) *OllamaBackend {
 	if observe == nil {
-		observe = func(string, string, int64) {}
+		observe = func(string, string, string, int64) {}
 	}
 	return &OllamaBackend{
 		defaultModel: defaultModel,
@@ -190,7 +181,7 @@ func (o *OllamaBackend) Run(ctx context.Context, req Request) (*Result, error) {
 	var result *Result
 	defer func() {
 		if result != nil {
-			o.observe("ollama", result.Status, time.Since(runStart).Milliseconds())
+			o.observe("ollama", model, result.Status, time.Since(runStart).Milliseconds())
 		}
 	}()
 

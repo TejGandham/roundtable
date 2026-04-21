@@ -6,48 +6,71 @@ import (
 	"sync/atomic"
 )
 
-// Metrics holds server-wide counters. Field names on the JSON output
-// follow Prometheus conventions (roundtable_backend_*) so a future
-// migration to client_golang needs only a transport swap, not a
-// rename.
+// Metrics holds server-wide counters. JSON output keys follow Prometheus
+// conventions (roundtable_provider_*) so a future migration to
+// client_golang needs only a transport swap, not a rename.
 type Metrics struct {
 	TotalRequests  atomic.Int64
 	DispatchErrors atomic.Int64
 
 	mu sync.Mutex
-	// backendRequests counts per (backend, status). Key format: "backend/status".
-	backendRequests map[string]*atomic.Int64
-	// backendDurationSum accumulates elapsed_ms per backend.
-	backendDurationSum map[string]*atomic.Int64
-	// backendDurationCount counts samples per backend (for computing mean).
-	backendDurationCount map[string]*atomic.Int64
+	// providerRequests counts per (provider, model, status). Key: "provider/model/status".
+	providerRequests map[string]*atomic.Int64
+	// providerDurationSum accumulates elapsed_ms per (provider, model). Key: "provider/model".
+	providerDurationSum map[string]*atomic.Int64
+	// providerDurationCount counts samples per (provider, model).
+	providerDurationCount map[string]*atomic.Int64
+
+	// providers is the snapshot of registered HTTP providers, set once at
+	// startup by SetProviders and surfaced on /metricsz.
+	providers []ProviderInfoDTO
 }
 
-// ObserveBackend records a single backend call's outcome.
-// `status` is the Result.Status string ("ok", "error", "rate_limited",
-// "timeout", etc.). `elapsedMs` is the wall-clock duration.
-func (m *Metrics) ObserveBackend(backend, status string, elapsedMs int64) {
-	key := backend + "/" + status
+// ProviderInfoDTO mirrors roundtable.ProviderInfo for JSON exposure on
+// /metricsz. Duplicated here so this package stays free of a dependency
+// on internal/roundtable for its metrics types.
+type ProviderInfoDTO struct {
+	ID           string `json:"id"`
+	BaseURL      string `json:"base_url"`
+	DefaultModel string `json:"default_model,omitempty"`
+}
+
+// SetProviders records the registered provider set for /metricsz. Called
+// once at startup by the composition root after all providers have been
+// built. Safe to call multiple times (each replaces the snapshot).
+func (m *Metrics) SetProviders(p []ProviderInfoDTO) {
 	m.mu.Lock()
-	if m.backendRequests == nil {
-		m.backendRequests = map[string]*atomic.Int64{}
-		m.backendDurationSum = map[string]*atomic.Int64{}
-		m.backendDurationCount = map[string]*atomic.Int64{}
+	defer m.mu.Unlock()
+	m.providers = append([]ProviderInfoDTO(nil), p...)
+}
+
+// ObserveProvider records a single backend call's outcome.
+// `provider` is the registered provider id. `model` is the resolved model id
+// used for the call. `status` is the Result.Status string. `elapsedMs` is
+// wall-clock duration.
+func (m *Metrics) ObserveProvider(provider, model, status string, elapsedMs int64) {
+	reqKey := provider + "/" + model + "/" + status
+	durKey := provider + "/" + model
+	m.mu.Lock()
+	if m.providerRequests == nil {
+		m.providerRequests = map[string]*atomic.Int64{}
+		m.providerDurationSum = map[string]*atomic.Int64{}
+		m.providerDurationCount = map[string]*atomic.Int64{}
 	}
-	c, ok := m.backendRequests[key]
+	c, ok := m.providerRequests[reqKey]
 	if !ok {
 		c = &atomic.Int64{}
-		m.backendRequests[key] = c
+		m.providerRequests[reqKey] = c
 	}
-	ds, ok := m.backendDurationSum[backend]
+	ds, ok := m.providerDurationSum[durKey]
 	if !ok {
 		ds = &atomic.Int64{}
-		m.backendDurationSum[backend] = ds
+		m.providerDurationSum[durKey] = ds
 	}
-	dc, ok := m.backendDurationCount[backend]
+	dc, ok := m.providerDurationCount[durKey]
 	if !ok {
 		dc = &atomic.Int64{}
-		m.backendDurationCount[backend] = dc
+		m.providerDurationCount[durKey] = dc
 	}
 	m.mu.Unlock()
 	c.Add(1)
@@ -59,29 +82,31 @@ type metricsSnapshot struct {
 	TotalRequests  int64 `json:"total_requests"`
 	DispatchErrors int64 `json:"dispatch_errors"`
 
-	BackendRequests      map[string]int64 `json:"roundtable_backend_requests_total"`
-	BackendDurationSum   map[string]int64 `json:"roundtable_backend_request_duration_ms_sum"`
-	BackendDurationCount map[string]int64 `json:"roundtable_backend_request_duration_ms_count"`
+	ProviderRequests      map[string]int64  `json:"roundtable_provider_requests_total"`
+	ProviderDurationSum   map[string]int64  `json:"roundtable_provider_request_duration_ms_sum"`
+	ProviderDurationCount map[string]int64  `json:"roundtable_provider_request_duration_ms_count"`
+	ProvidersRegistered   []ProviderInfoDTO `json:"roundtable_providers_registered"`
 }
 
 func (m *Metrics) Snapshot() metricsSnapshot {
 	snap := metricsSnapshot{
-		TotalRequests:        m.TotalRequests.Load(),
-		DispatchErrors:       m.DispatchErrors.Load(),
-		BackendRequests:      map[string]int64{},
-		BackendDurationSum:   map[string]int64{},
-		BackendDurationCount: map[string]int64{},
+		TotalRequests:         m.TotalRequests.Load(),
+		DispatchErrors:        m.DispatchErrors.Load(),
+		ProviderRequests:      map[string]int64{},
+		ProviderDurationSum:   map[string]int64{},
+		ProviderDurationCount: map[string]int64{},
 	}
 	m.mu.Lock()
-	for k, v := range m.backendRequests {
-		snap.BackendRequests[k] = v.Load()
+	for k, v := range m.providerRequests {
+		snap.ProviderRequests[k] = v.Load()
 	}
-	for k, v := range m.backendDurationSum {
-		snap.BackendDurationSum[k] = v.Load()
+	for k, v := range m.providerDurationSum {
+		snap.ProviderDurationSum[k] = v.Load()
 	}
-	for k, v := range m.backendDurationCount {
-		snap.BackendDurationCount[k] = v.Load()
+	for k, v := range m.providerDurationCount {
+		snap.ProviderDurationCount[k] = v.Load()
 	}
+	snap.ProvidersRegistered = append([]ProviderInfoDTO(nil), m.providers...)
 	m.mu.Unlock()
 	return snap
 }

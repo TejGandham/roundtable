@@ -101,7 +101,7 @@ func runHTTP(logger *slog.Logger) {
 	// NewApp share the same *Metrics (Task 8). Stdio never reaches this path.
 	metrics := &httpmcp.Metrics{}
 
-	backends := buildBackends(logger, metrics.ObserveBackend)
+	backends := buildBackends(logger, metrics.ObserveProvider)
 	defer stopBackends(backends, logger)
 
 	probes := make(map[string]httpmcp.BackendProbe, len(backends))
