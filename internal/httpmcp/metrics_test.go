@@ -2,6 +2,7 @@ package httpmcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -43,6 +44,69 @@ func TestMetrics_ObserveProvider(t *testing.T) {
 	}
 	if sum, _ := durSum["moonshot/kimi-k2-0711-preview"].(float64); sum != 410 {
 		t.Errorf("moonshot duration sum = %v, want 410", sum)
+	}
+}
+
+// Cardinality-DoS hardening: model strings are user-controllable via MCP
+// input (AgentSpec.Model → resolveModel → Run → observe). Without a bound,
+// a client sending N unique models allocates N *atomic.Int64 pointers for
+// the process lifetime. After maxModelsPerProvider distinct models, new
+// ones collapse to "_other".
+func TestMetrics_ObserveProvider_BoundsModelCardinality(t *testing.T) {
+	m := &Metrics{}
+	for i := 0; i < maxModelsPerProvider+50; i++ {
+		m.ObserveProvider("moonshot", fmt.Sprintf("model-%d", i), "ok", 10)
+	}
+	snap := m.Snapshot()
+
+	var distinctModels int
+	seenOther := false
+	for k := range snap.ProviderRequests {
+		if strings.HasPrefix(k, "moonshot/"+otherModelLabel+"/") {
+			seenOther = true
+			continue
+		}
+		if strings.HasPrefix(k, "moonshot/") {
+			distinctModels++
+		}
+	}
+	if distinctModels > maxModelsPerProvider {
+		t.Errorf("distinct model labels = %d, want <= %d", distinctModels, maxModelsPerProvider)
+	}
+	if !seenOther {
+		t.Errorf("expected overflow to be bucketed into %q; keys: %v", otherModelLabel, snap.ProviderRequests)
+	}
+	var otherCount float64
+	if v, ok := snap.ProviderRequests["moonshot/"+otherModelLabel+"/ok"]; ok {
+		otherCount = float64(v)
+	}
+	if otherCount < 50 {
+		t.Errorf("_other count = %v, want >= 50", otherCount)
+	}
+}
+
+func TestMetrics_ObserveProvider_RejectsOversizeLabel(t *testing.T) {
+	m := &Metrics{}
+	long := strings.Repeat("x", maxModelLabelLen+1)
+	m.ObserveProvider("moonshot", long, "ok", 10)
+	snap := m.Snapshot()
+	if _, ok := snap.ProviderRequests["moonshot/"+long+"/ok"]; ok {
+		t.Errorf("oversize label should not appear in keys: %v", snap.ProviderRequests)
+	}
+	if _, ok := snap.ProviderRequests["moonshot/"+otherModelLabel+"/ok"]; !ok {
+		t.Errorf("oversize label should be bucketed into %q; keys: %v", otherModelLabel, snap.ProviderRequests)
+	}
+}
+
+func TestMetrics_ObserveProvider_KnownLabelsStillCount(t *testing.T) {
+	// Regression guard: bounding must not dedup counts for legitimate repeat
+	// models. Same model seen twice still increments the counter.
+	m := &Metrics{}
+	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "ok", 10)
+	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "ok", 10)
+	snap := m.Snapshot()
+	if v := snap.ProviderRequests["moonshot/kimi-k2-0711-preview/ok"]; v != 2 {
+		t.Errorf("legit repeat count = %d, want 2", v)
 	}
 }
 
