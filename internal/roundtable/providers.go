@@ -3,6 +3,7 @@ package roundtable
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -49,6 +50,36 @@ type providerJSON struct {
 	GateSlowLogThreshold  string `json:"gate_slow_log_threshold"`
 }
 
+// validateBaseURL rejects base URLs that would either (a) misbehave at
+// request time or (b) leak credentials when logged at startup or exposed
+// on /metricsz. In particular, any userinfo (user:password@host), query
+// string, or fragment is refused outright — there is no legitimate reason
+// for a provider base URL to carry those, and accepting them risks
+// printing secrets to operator terminals and the providers_registered
+// enumeration surface.
+func validateBaseURL(s string) error {
+	u, err := url.Parse(s)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("scheme must be http or https, got %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("host is required")
+	}
+	if u.User != nil {
+		return fmt.Errorf("must not embed credentials (userinfo); store secrets in api_key_env")
+	}
+	if u.RawQuery != "" {
+		return fmt.Errorf("must not include a query string")
+	}
+	if u.Fragment != "" {
+		return fmt.Errorf("must not include a fragment")
+	}
+	return nil
+}
+
 // LoadProviderRegistry parses the ROUNDTABLE_PROVIDERS env var (via the
 // injected getenv function) and returns one ProviderConfig per entry.
 // Returns (nil, nil) when the var is unset or empty. Returns (nil, error)
@@ -84,6 +115,9 @@ func LoadProviderRegistry(getenv func(string) string) ([]ProviderConfig, error) 
 		seen[e.ID] = true
 		if e.BaseURL == "" {
 			return nil, fmt.Errorf("ROUNDTABLE_PROVIDERS[%d] (%s): base_url is required", i, e.ID)
+		}
+		if err := validateBaseURL(e.BaseURL); err != nil {
+			return nil, fmt.Errorf("ROUNDTABLE_PROVIDERS[%d] (%s): base_url: %w", i, e.ID, err)
 		}
 		if e.APIKeyEnv == "" {
 			return nil, fmt.Errorf("ROUNDTABLE_PROVIDERS[%d] (%s): api_key_env is required", i, e.ID)

@@ -107,6 +107,53 @@ func TestLoadProviderRegistry_RejectsBadDuration(t *testing.T) {
 	}
 }
 
+// Security guard: a base_url containing userinfo (https://user:secret@host)
+// would leak the secret via startup logs and /metricsz. Reject at load.
+func TestLoadProviderRegistry_RejectsBaseURLWithUserinfo(t *testing.T) {
+	js := `[{"id":"x","base_url":"https://user:secret@example.com/v1","api_key_env":"X"}]`
+	_, err := LoadProviderRegistry(fakeEnv(map[string]string{"ROUNDTABLE_PROVIDERS": js}))
+	if err == nil || !strings.Contains(err.Error(), "credentials") {
+		t.Errorf("expected userinfo rejection, got: %v", err)
+	}
+}
+
+func TestLoadProviderRegistry_RejectsBaseURLWithQueryOrFragment(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		js   string
+		want string
+	}{
+		{"query", `[{"id":"x","base_url":"https://example.com/v1?token=leak","api_key_env":"X"}]`, "query"},
+		{"fragment", `[{"id":"x","base_url":"https://example.com/v1#leak","api_key_env":"X"}]`, "fragment"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadProviderRegistry(fakeEnv(map[string]string{"ROUNDTABLE_PROVIDERS": tc.js}))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("expected %s rejection, got: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestLoadProviderRegistry_RejectsBadScheme(t *testing.T) {
+	js := `[{"id":"x","base_url":"file:///etc/passwd","api_key_env":"X"}]`
+	_, err := LoadProviderRegistry(fakeEnv(map[string]string{"ROUNDTABLE_PROVIDERS": js}))
+	if err == nil || !strings.Contains(err.Error(), "scheme") {
+		t.Errorf("expected scheme rejection, got: %v", err)
+	}
+}
+
+func TestLoadProviderRegistry_AcceptsCleanURL(t *testing.T) {
+	js := `[{"id":"x","base_url":"https://api.moonshot.cn/v1","api_key_env":"X"}]`
+	cfgs, err := LoadProviderRegistry(fakeEnv(map[string]string{"ROUNDTABLE_PROVIDERS": js}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfgs[0].BaseURL != "https://api.moonshot.cn/v1" {
+		t.Errorf("BaseURL = %q, want https://api.moonshot.cn/v1", cfgs[0].BaseURL)
+	}
+}
+
 func TestLoadProviderRegistry_AppliesDefaults(t *testing.T) {
 	js := `[{"id":"x","base_url":"https://x","api_key_env":"X"}]`
 	cfgs, err := LoadProviderRegistry(fakeEnv(map[string]string{"ROUNDTABLE_PROVIDERS": js}))
