@@ -481,6 +481,29 @@ func TestParseAgents_AcceptsOllama(t *testing.T) {
 	}
 }
 
+// Invariant: ollama backends must be opt-in, never default. See the
+// docstring on defaultAgents() in run.go for the rationale (fragile Pro-tier
+// reliability + higher hallucination rate on review-class tasks than the
+// frontier CLI backends).
+func TestDefaultAgents_ExcludesOllama(t *testing.T) {
+	got := defaultAgents()
+	for _, a := range got {
+		if a.CLI == "ollama" {
+			t.Fatalf("defaultAgents() contains ollama agent %+v; ollama must be opt-in only", a)
+		}
+	}
+	// Positive guard: defaults remain the three frontier CLIs.
+	wantCLIs := map[string]bool{"gemini": true, "codex": true, "claude": true}
+	if len(got) != len(wantCLIs) {
+		t.Errorf("defaultAgents() len = %d, want %d", len(got), len(wantCLIs))
+	}
+	for _, a := range got {
+		if !wantCLIs[a.CLI] {
+			t.Errorf("unexpected CLI %q in defaults", a.CLI)
+		}
+	}
+}
+
 // Regression guard for run.go:348/354 — NotFoundResult and ProbeFailedResult
 // now receive cfg.spec.CLI (the backend identifier) instead of cfg.spec.Name
 // (the agent display name). For an agent {"cli":"ollama","name":"kimi"} the

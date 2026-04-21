@@ -180,6 +180,10 @@ CLI binary — requests go directly to Ollama's REST API.
 | `OLLAMA_MAX_CONCURRENT_REQUESTS` | no | `3` | Per-process bulkhead on concurrent `/api/chat` calls. Match your Ollama account tier: **Free=`1`**, **Pro=`3`** (default), **Max=`10`**. Calls above the cap block until a slot frees instead of getting a 429 from Ollama's edge. Read once at startup; restart to change. |
 | `OLLAMA_RESPONSE_HEADER_TIMEOUT` | no | `60s` | Max time to wait for Ollama's `/api/chat` to return response headers. With `stream=false` (our default) this is effectively the total-response time. Accepts any `time.Duration` string (`90s`, `2m`, `500ms`). Big-model generation on Pro tier can spike to 60s+ under upstream load; bump this if you hit `status=timeout` frequently. Read once at startup; restart to change. |
 
+### Opt-in: ollama agents must be listed explicitly
+
+**Ollama backends are never in the default agent set** (which remains `gemini + codex + claude`). To use them, include them in an explicit `agents` JSON on the request, or override `ROUNDTABLE_DEFAULT_AGENTS` at the operator level. This is deliberate — Ollama Cloud's Pro-tier reliability is preview-grade, and open-weight models have shown higher hallucination rates than the frontier CLIs on review-class tasks. Use them when their specific strengths (long context, cost, privacy) matter.
+
 ### Example: dispatching to one cloud model
 
 ```json

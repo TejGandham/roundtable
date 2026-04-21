@@ -127,6 +127,20 @@ func ParseAgents(agentsJSON string) ([]AgentSpec, error) {
 	return specs, nil
 }
 
+// defaultAgents is the fan-out set for dispatches without explicit agents
+// or ROUNDTABLE_DEFAULT_AGENTS override.
+//
+// Invariant: ONLY frontier CLI-backed models (gemini/codex/claude) are in
+// the default set. HTTP-native providers (ollama) must be opted into
+// explicitly via the agents JSON or via ROUNDTABLE_DEFAULT_AGENTS. This is
+// deliberate: ollama cloud models (kimi/qwen/glm/minimax/gpt-oss) have
+// fragile Pro-tier reliability and have shown materially higher
+// hallucination rates than the frontier models on review-class tasks. Use
+// them when their specific strengths are wanted (long context, cost, etc.)
+// but don't promote them to default status.
+//
+// Codified as TestDefaultAgents_ExcludesOllama; do not add ollama to this
+// list without first revisiting the reliability + capability evidence.
 func defaultAgents() []AgentSpec {
 	return []AgentSpec{
 		{Name: "gemini", CLI: "gemini"},
