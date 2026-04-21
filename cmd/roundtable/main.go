@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -16,16 +17,46 @@ import (
 // at build time. Defaults to "dev" for ad-hoc `go build` / `go run`.
 var version = "dev"
 
+const usage = `roundtable — multi-model consensus MCP server
+
+Usage:
+  roundtable stdio          Run the MCP server on stdin/stdout (used by Claude Code)
+  roundtable version        Print version and exit
+  roundtable help           Print this help
+
+Environment:
+  ROUNDTABLE_GEMINI_PATH        Absolute path to gemini binary (optional)
+  ROUNDTABLE_CODEX_PATH         Absolute path to codex binary (optional)
+  ROUNDTABLE_CLAUDE_PATH        Absolute path to claude binary (optional)
+  ROUNDTABLE_ROLES_DIR          Override global roles directory
+  ROUNDTABLE_PROJECT_ROLES_DIR  Per-project role overrides
+  ROUNDTABLE_PROVIDERS          JSON array of OpenAI-compatible HTTP providers
+
+Installation:
+  curl -sSL https://raw.githubusercontent.com/TejGandham/roundtable/main/install.sh | sh
+`
+
 func main() {
 	// MUST be first. See internal/stdiomcp.InitStdioDiscipline docs.
 	logger := stdiomcp.InitStdioDiscipline()
 
 	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "stdio" {
-		runStdio(logger)
-		return
+	if len(args) == 0 {
+		fmt.Fprint(os.Stderr, usage)
+		os.Exit(0)
 	}
-	runStdio(logger)
+
+	switch args[0] {
+	case "stdio":
+		runStdio(logger)
+	case "version", "--version", "-v":
+		fmt.Fprintln(os.Stderr, "roundtable", version)
+	case "help", "--help", "-h":
+		fmt.Fprint(os.Stderr, usage)
+	default:
+		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n\n%s", args[0], usage)
+		os.Exit(2)
+	}
 }
 
 func runStdio(logger *slog.Logger) {
