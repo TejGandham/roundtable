@@ -146,8 +146,11 @@ func runHTTP(logger *slog.Logger) {
 	}
 }
 
-// buildBackends constructs the three model backends. Shared between the
-// stdio and HTTP entry points.
+// buildBackends constructs the model backends. Shared between the
+// stdio and HTTP entry points. An ollama backend is registered only
+// when OLLAMA_API_KEY is set; absence means the "ollama" key is simply
+// not in the map, and the dispatcher emits a not_found result if an
+// agent requests it.
 func buildBackends(logger *slog.Logger) map[string]roundtable.Backend {
 	var codexBackend roundtable.Backend
 	codexPath := roundtable.ResolveExecutable("codex")
@@ -158,11 +161,32 @@ func buildBackends(logger *slog.Logger) map[string]roundtable.Backend {
 		logger.Warn("codex binary not found, using CodexFallback")
 		codexBackend = roundtable.NewCodexFallbackBackend("", "")
 	}
-	return map[string]roundtable.Backend{
+
+	backends := map[string]roundtable.Backend{
 		"gemini": roundtable.NewGeminiBackend(""),
 		"codex":  codexBackend,
 		"claude": roundtable.NewClaudeBackend(""),
 	}
+
+	if os.Getenv("OLLAMA_API_KEY") != "" {
+		defaultModel := os.Getenv("OLLAMA_DEFAULT_MODEL")
+		// observe=nil here; Task 8 replaces this with metrics.ObserveBackend
+		// once the metrics object exists at this scope. Constructor
+		// normalizes nil to a no-op so the backend works correctly in the
+		// interim.
+		backends["ollama"] = roundtable.NewOllamaBackend(defaultModel, nil)
+		baseURL := os.Getenv("OLLAMA_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://ollama.com"
+		}
+		logger.Info("ollama backend configured",
+			"default_model", defaultModel,
+			"base_url", baseURL)
+	} else {
+		logger.Debug("ollama backend not configured (OLLAMA_API_KEY unset)")
+	}
+
+	return backends
 }
 
 func stopBackends(backends map[string]roundtable.Backend, logger *slog.Logger) {

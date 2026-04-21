@@ -345,13 +345,13 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 		if !probeResults[i].healthy {
 			// Record probe failure or not_found
 			if cfg.backend == nil {
-				results[cfg.spec.Name] = NotFoundResult(cfg.spec.Name, cfg.request.Model)
+				results[cfg.spec.Name] = NotFoundResult(cfg.spec.CLI, cfg.request.Model)
 			} else {
 				reason := "unknown"
 				if probeResults[i].err != nil {
 					reason = probeResults[i].err.Error()
 				}
-				results[cfg.spec.Name] = ProbeFailedResult(cfg.spec.Name, cfg.request.Model, reason, nil)
+				results[cfg.spec.Name] = ProbeFailedResult(cfg.spec.CLI, cfg.request.Model, reason, nil)
 			}
 			continue
 		}
