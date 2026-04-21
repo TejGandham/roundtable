@@ -105,7 +105,7 @@ Set `ROUNDTABLE_DEFAULT_AGENTS` at registration time:
 
 ```bash
 claude mcp add -s user roundtable \
-  -e ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"codex"},{"cli":"claude"}]' \
+  -e ROUNDTABLE_DEFAULT_AGENTS='[{"provider":"codex"},{"provider":"claude"}]' \
   -- ~/.local/share/roundtable/roundtable-http-mcp stdio
 ```
 
@@ -151,7 +151,12 @@ claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
 curl -s http://127.0.0.1:4040/metricsz
 ```
 
-Returns JSON with `total_requests` and `dispatch_errors` atomic counters.
+Returns JSON with scalar counters (`total_requests`, `dispatch_errors`),
+per-provider-per-model request counters (`roundtable_provider_requests_total`
+keyed as `provider/model/status`), duration histograms
+(`roundtable_provider_request_duration_ms_sum`,
+`roundtable_provider_request_duration_ms_count` keyed as `provider/model`),
+and the registered provider list (`roundtable_providers_registered`).
 
 ### HTTP troubleshooting
 
@@ -163,52 +168,115 @@ If `/readyz` returns 503:
 - Confirm at least one CLI (`gemini`, `codex`, or `claude`) is installed and on PATH
 - Check logs for per-backend health messages
 
-## Ollama Cloud provider
+## Providers (HTTP)
 
-Roundtable v0.8+ supports Ollama's cloud-hosted `:cloud` models
-(kimi-k2.6, qwen3.5, glm-5.1, minimax-m2.7, gpt-oss, etc.) over HTTPS.
-Unlike the subprocess backends (claude/codex/gemini), this one has no
-CLI binary — requests go directly to Ollama's REST API.
+Roundtable dispatches to OpenAI-compatible HTTP providers declared in the
+`ROUNDTABLE_PROVIDERS` environment variable — a JSON array where each
+entry names one provider (Ollama Cloud, Moonshot, z.ai, DeepSeek, Groq,
+etc.). Ollama is one of those providers, not a special case.
 
-### Environment
+### Minimal example
 
-| Variable | Required | Default | Purpose |
-|-|-|-|-|
-| `OLLAMA_API_KEY` | yes | — | Bearer token from https://ollama.com/settings/keys. If unset, the ollama backend is simply not registered. |
-| `OLLAMA_BASE_URL` | no | `https://ollama.com` | Override for self-hosted Ollama or for tests. |
-| `OLLAMA_DEFAULT_MODEL` | no | — | Fallback model used when an agent spec doesn't set `model`. Recommended: `kimi-k2.6:cloud` or `gpt-oss:120b-cloud`. |
-| `OLLAMA_MAX_CONCURRENT_REQUESTS` | no | `3` | Per-process bulkhead on concurrent `/api/chat` calls. Match your Ollama account tier: **Free=`1`**, **Pro=`3`** (default), **Max=`10`**. Calls above the cap block until a slot frees instead of getting a 429 from Ollama's edge. Read once at startup; restart to change. |
-| `OLLAMA_RESPONSE_HEADER_TIMEOUT` | no | `60s` | Max time to wait for Ollama's `/api/chat` to return response headers. With `stream=false` (our default) this is effectively the total-response time. Accepts any `time.Duration` string (`90s`, `2m`, `500ms`). Big-model generation on Pro tier can spike to 60s+ under upstream load; bump this if you hit `status=timeout` frequently. Read once at startup; restart to change. |
+Set both the provider-specific secret env vars **and** the
+`ROUNDTABLE_PROVIDERS` JSON blob in your MCP server env:
 
-### Opt-in: ollama agents must be listed explicitly
-
-**Ollama backends are never in the default agent set** (which remains `gemini + codex + claude`). To use them, include them in an explicit `agents` JSON on the request, or override `ROUNDTABLE_DEFAULT_AGENTS` at the operator level. This is deliberate — Ollama Cloud's Pro-tier reliability is preview-grade, and open-weight models have shown higher hallucination rates than the frontier CLIs on review-class tasks. Use them when their specific strengths (long context, cost, privacy) matter.
-
-### Example: dispatching to one cloud model
-
-```json
-{
-  "prompt": "Explain context-free grammars with a concrete example.",
-  "agents": "[{\"cli\":\"ollama\",\"name\":\"kimi\",\"model\":\"kimi-k2.6:cloud\"}]"
-}
+```bash
+claude mcp add -s user roundtable \
+  -e MOONSHOT_API_KEY="sk-..." \
+  -e ZAI_API_KEY="sk-..." \
+  -e OLLAMA_API_KEY="sk-..." \
+  -e ROUNDTABLE_PROVIDERS='[{"id":"moonshot","base_url":"https://api.moonshot.cn/v1","api_key_env":"MOONSHOT_API_KEY","default_model":"kimi-k2-0711-preview","max_concurrent":5},{"id":"zai","base_url":"https://api.z.ai/v1","api_key_env":"ZAI_API_KEY","default_model":"glm-4.6","max_concurrent":3},{"id":"ollama","base_url":"https://ollama.com/v1","api_key_env":"OLLAMA_API_KEY","default_model":"kimi-k2.6:cloud","max_concurrent":3}]' \
+  -- ~/.local/share/roundtable/roundtable-http-mcp stdio
 ```
 
-### Example: `hivemind` with mixed providers
+### Fields
+
+| Field | Required | Description |
+|-|-|-|
+| `id` | yes | Operator-chosen identifier. Must not collide with the built-in subprocess ids `gemini`, `codex`, or `claude`. Also cannot duplicate another `id` within the same array. |
+| `base_url` | yes | Root URL; `/chat/completions` is appended at request time. |
+| `api_key_env` | yes | Name of the env var holding the secret. The secret itself is **not** in this JSON — this indirection lets you rotate a key by updating the secret env var without re-encoding `ROUNDTABLE_PROVIDERS`, and keeps the blob safe to paste in bug reports. |
+| `default_model` | no | Used when `AgentSpec.Model` is empty. |
+| `max_concurrent` | no (default `3`) | Per-process concurrency cap (semaphore). Size this to match the provider's tier: Ollama Cloud Free=`1`, Pro=`3`, Max=`10`; Moonshot varies by account; etc. |
+| `response_header_timeout` | no (default `"60s"`) | `http.Transport.ResponseHeaderTimeout`. With `stream: false` (always, for now) this effectively caps **total** response time — raise for slow providers running long-context deepdives. Accepts any `time.Duration` string (`90s`, `2m`, `500ms`). |
+| `gate_slow_log_threshold` | no (default `"100ms"`) | Wait above which the concurrency-gate `Acquire` emits a debug log. Useful for operators tuning `max_concurrent`. |
+
+### Agent-spec JSON examples
+
+Target one registered provider:
 
 ```json
-{
-  "prompt": "Review this design doc and flag risks.",
-  "files": "docs/design.md",
-  "agents": "[{\"cli\":\"claude\"},{\"cli\":\"gemini\"},{\"cli\":\"ollama\",\"name\":\"kimi\",\"model\":\"kimi-k2.6:cloud\"},{\"cli\":\"ollama\",\"name\":\"glm\",\"model\":\"glm-5.1:cloud\"}]"
-}
+[{"name":"kimi-moonshot","provider":"moonshot","model":"kimi-k2-0711-preview"}]
 ```
+
+Fan out across multiple providers in one dispatch (e.g., compare kimi on Moonshot vs kimi on Ollama side by side):
+
+```json
+[
+  {"provider":"gemini"},
+  {"provider":"codex"},
+  {"provider":"claude"},
+  {"provider":"moonshot","model":"kimi-k2-0711-preview","name":"kimi-moonshot"},
+  {"provider":"ollama","model":"kimi-k2.6:cloud","name":"kimi-ollama"}
+]
+```
+
+### Defaults
+
+**HTTP providers are never in the default agent set** (which remains
+`gemini + codex + claude`). To use them, either include an explicit
+`agents` JSON on the request, or override the defaults at the operator
+level via `ROUNDTABLE_DEFAULT_AGENTS`. The invariant is codified as
+`TestDefaultAgents_ExcludesAllHTTPProviders` — adding an HTTP provider
+to the default set breaks the build.
+
+### Fail-loud parsing
+
+A single missing comma in `ROUNDTABLE_PROVIDERS` disables **every**
+HTTP provider for that process. This is deliberate: silent partial
+registration (some providers succeed, one is dropped on parse failure)
+would be worse because a subsequent dispatch against the missing
+provider would return `not_found` with no indication that a config
+parse failure caused the absence. The startup logs tell you what
+happened:
+
+- `INFO provider registered id=... base_url=... default_model=... max_concurrent=...` — one line per successfully registered provider.
+- `WARN provider skipped — credential env var unset id=... api_key_env=...` — credentials missing; FR-3 skip. Callers see `not_found` per-agent; `/readyz` stays green.
+- `ERROR ROUNDTABLE_PROVIDERS parse failed; no HTTP providers registered error=...` — JSON-level issue. Only subprocess backends register.
+
+### Secret rotation
+
+Because `api_key_env` names an env var (rather than embedding the
+secret in the blob), rotating a key means updating a single env var.
+The value is read via `os.Getenv` at request time, so the new key
+takes effect immediately without restarting Roundtable.
+
+### Enumerating registered providers
+
+`/metricsz` (HTTP mode only) includes a `roundtable_providers_registered`
+field listing each registered provider's `id`, `base_url`, and
+`default_model` — a machine-readable enumeration surface for operators
+writing dashboards or deploy checks.
+
+### What happened to `OLLAMA_API_KEY`?
+
+In roundtable v0.7 and earlier, setting `OLLAMA_API_KEY` (plus
+optional `OLLAMA_BASE_URL`, `OLLAMA_DEFAULT_MODEL`,
+`OLLAMA_MAX_CONCURRENT_REQUESTS`, `OLLAMA_RESPONSE_HEADER_TIMEOUT`)
+auto-registered a special Ollama-native provider. As of v0.8,
+**Ollama is just one registered provider** in `ROUNDTABLE_PROVIDERS`
+and speaks the OpenAI-compat `/v1/chat/completions` endpoint. The
+auto-registration is gone.
+
+If your deployment previously set only `OLLAMA_API_KEY`, add a
+`ROUNDTABLE_PROVIDERS` entry with `"api_key_env":"OLLAMA_API_KEY"` —
+the secret stays in the same env var; only the structural config is new.
 
 ### Known limitations (Apr 2026)
 
-- **Concurrency cap**: Free tier allows 1 concurrent cloud model call, Pro $20/mo allows 3, Max $100/mo allows 10. Roundtable holds a per-process bulkhead sized by `OLLAMA_MAX_CONCURRENT_REQUESTS` (default 3) so a `hivemind` with more ollama agents than slots queues locally instead of getting silent 429s from Ollama's edge. If multiple `roundtable-http-mcp` processes share an API key, they can still collectively exceed the cap — run a single instance, or set each process's cap to a fraction of the tier total.
-- **Output cap**: All `:cloud` models are capped at 16,384 completion tokens. When truncated, `done_reason=length` is surfaced in `metadata`.
-- **503 storms**: Ollama Cloud is a preview service; 503s are treated as `rate_limited`. No `Retry-After` is currently published, and Roundtable does not auto-retry (but surfaces `Retry-After` on `metadata.retry_after` when present).
-- **US-only inference**: not suitable for EU/GDPR-sensitive deployments.
+- **Ollama 503 storms**: Ollama Cloud is preview-grade; 503s are treated as `rate_limited` with `Retry-After` surfaced on `metadata.retry_after` when present. No auto-retry. Steer traffic to direct providers (Moonshot, z.ai, etc.) for production reliability.
+- **Output truncation**: When a response's `finish_reason` is `length`, `output_truncated: true` is set on `metadata` along with the raw `finish_reason`. Callers can check this generically without knowing any provider's conventions.
+- **US-only inference** for Ollama Cloud: not suitable for EU/GDPR-sensitive deployments. Moonshot (CN), z.ai (CN), and others have their own jurisdictional profiles — read the provider's terms.
 
 ## Development (Building from Source)
 
