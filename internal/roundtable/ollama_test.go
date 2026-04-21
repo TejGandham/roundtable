@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -536,5 +537,130 @@ func TestOllamaRun_NoFilesNoInlining(t *testing.T) {
 	}
 	if strings.Contains(string(gotBody), "<file ") {
 		t.Errorf("unexpected <file> tag in request with no req.Files: %s", string(gotBody))
+	}
+}
+
+// -----------------------------------------------------------------------
+// Task 5a: Concurrency gate tests
+// -----------------------------------------------------------------------
+
+func TestOllamaRun_SerializesOverCap(t *testing.T) {
+	// With OLLAMA_MAX_CONCURRENT_REQUESTS=1 and two concurrent Runs against
+	// a server that holds each request for 50ms, the second call must start
+	// ≥40ms after the first (allowing scheduler slack). Without the gate,
+	// both calls hit the server within milliseconds.
+	var (
+		mu   sync.Mutex
+		seen []time.Time
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		seen = append(seen, time.Now())
+		mu.Unlock()
+		time.Sleep(50 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ok"},"done_reason":"stop"}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("OLLAMA_BASE_URL", srv.URL)
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	t.Setenv("OLLAMA_MAX_CONCURRENT_REQUESTS", "1")
+	b := NewOllamaBackend("kimi-k2.6:cloud", nil)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			defer wg.Done()
+			_, _ = b.Run(context.Background(), Request{Prompt: "hi", Model: "kimi-k2.6:cloud"})
+		}()
+	}
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 2 {
+		t.Fatalf("server saw %d requests, want 2", len(seen))
+	}
+	if gap := seen[1].Sub(seen[0]); gap < 40*time.Millisecond {
+		t.Errorf("calls not serialized: gap = %v, want >= 40ms", gap)
+	}
+}
+
+func TestOllamaRun_GateDeadline_MapsToTimeout(t *testing.T) {
+	// Slot-holder takes forever; waiter has a tight deadline. Waiter must
+	// return status=timeout with stderr mentioning the concurrency slot.
+	hold := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-hold
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ok"},"done_reason":"stop"}`))
+	}))
+	defer srv.Close()
+	defer close(hold)
+
+	t.Setenv("OLLAMA_BASE_URL", srv.URL)
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	t.Setenv("OLLAMA_MAX_CONCURRENT_REQUESTS", "1")
+	b := NewOllamaBackend("kimi-k2.6:cloud", nil)
+
+	go func() { _, _ = b.Run(context.Background(), Request{Prompt: "holder", Model: "kimi-k2.6:cloud"}) }()
+	time.Sleep(20 * time.Millisecond) // let the holder Acquire
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	res, _ := b.Run(ctx, Request{Prompt: "waiter", Model: "kimi-k2.6:cloud"})
+	if res.Status != "timeout" {
+		t.Errorf("status = %q, want timeout (gate deadline)", res.Status)
+	}
+	if !strings.Contains(res.Stderr, "concurrency") {
+		t.Errorf("stderr = %q, want mention of concurrency slot", res.Stderr)
+	}
+}
+
+func TestOllamaRun_GateCancel_MapsToError(t *testing.T) {
+	hold := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-hold
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ok"},"done_reason":"stop"}`))
+	}))
+	defer srv.Close()
+	defer close(hold)
+
+	t.Setenv("OLLAMA_BASE_URL", srv.URL)
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	t.Setenv("OLLAMA_MAX_CONCURRENT_REQUESTS", "1")
+	b := NewOllamaBackend("kimi-k2.6:cloud", nil)
+
+	go func() { _, _ = b.Run(context.Background(), Request{Prompt: "holder", Model: "kimi-k2.6:cloud"}) }()
+	time.Sleep(20 * time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
+	res, _ := b.Run(ctx, Request{Prompt: "waiter", Model: "kimi-k2.6:cloud"})
+	if res.Status != "error" {
+		t.Errorf("status = %q, want error (ctx canceled, not deadlined)", res.Status)
+	}
+}
+
+func TestOllamaBackend_ResolveMaxConcurrent(t *testing.T) {
+	cases := []struct {
+		env  string
+		want int64
+	}{
+		{"", 3},           // default
+		{"1", 1},          // free tier
+		{"10", 10},        // max tier
+		{"notanumber", 3}, // invalid → default
+		{"0", 3},          // zero invalid → default
+		{"-2", 3},         // negative invalid → default
+	}
+	for _, tc := range cases {
+		t.Run("env="+tc.env, func(t *testing.T) {
+			t.Setenv("OLLAMA_MAX_CONCURRENT_REQUESTS", tc.env)
+			got := resolveOllamaMaxConcurrent()
+			if got != tc.want {
+				t.Errorf("resolveOllamaMaxConcurrent() = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

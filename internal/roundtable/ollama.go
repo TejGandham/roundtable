@@ -7,11 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/semaphore"
 )
 
 // ObserveFunc is the optional metrics hook invoked once per Run() with the
@@ -44,6 +48,24 @@ type OllamaBackend struct {
 	httpClient   *http.Client
 	defaultModel string
 	observe      ObserveFunc
+	sem          *semaphore.Weighted // per-process bulkhead — see §4.6
+}
+
+// resolveOllamaMaxConcurrent reads OLLAMA_MAX_CONCURRENT_REQUESTS, falling
+// back to ollamaDefaultMaxConcurrent on unset/invalid values. Construction-
+// time only; the semaphore's capacity is immutable after NewWeighted.
+func resolveOllamaMaxConcurrent() int64 {
+	v := os.Getenv("OLLAMA_MAX_CONCURRENT_REQUESTS")
+	if v == "" {
+		return ollamaDefaultMaxConcurrent
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		slog.Warn("OLLAMA_MAX_CONCURRENT_REQUESTS invalid; using default",
+			"value", v, "default", ollamaDefaultMaxConcurrent)
+		return ollamaDefaultMaxConcurrent
+	}
+	return n
 }
 
 // ollamaMaxResponseBytes caps response bodies to protect against a
@@ -63,6 +85,16 @@ const ollamaMaxFileBytes = 128 * 1024
 // they existed.
 const ollamaMaxTotalFileBytes = 512 * 1024
 
+// ollamaDefaultMaxConcurrent matches the Ollama Cloud Pro tier ceiling.
+// Free-tier users must set OLLAMA_MAX_CONCURRENT_REQUESTS=1; Max-tier
+// users set =10. Documented in INSTALL.md.
+const ollamaDefaultMaxConcurrent int64 = 3
+
+// ollamaGateSlowLogThreshold is the wait time above which we emit a debug
+// log on Acquire. Without this signal the gate becomes invisible latency
+// under Decision C's no-retry stance.
+const ollamaGateSlowLogThreshold = 100 * time.Millisecond
+
 // NewOllamaBackend returns a backend configured with explicit timeouts on
 // every layer that can stall independently of context cancellation.
 // defaultModel is the fallback when neither AgentSpec.Model nor
@@ -75,6 +107,7 @@ func NewOllamaBackend(defaultModel string, observe ObserveFunc) *OllamaBackend {
 	return &OllamaBackend{
 		defaultModel: defaultModel,
 		observe:      observe,
+		sem:          semaphore.NewWeighted(resolveOllamaMaxConcurrent()),
 		httpClient: &http.Client{
 			// No Client.Timeout: we rely on the dispatcher's context deadline.
 			// But Transport needs explicit timeouts because context
@@ -167,6 +200,39 @@ func (o *OllamaBackend) Run(ctx context.Context, req Request) (*Result, error) {
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
+
+	// Bulkhead: block until a concurrency slot is available or the ctx
+	// fires. Placement is after prompt assembly and request construction
+	// so we don't hold a slot during local CPU work. Deadline vs cancel:
+	// callers and dashboards treat these differently. Deadline → "your
+	// hivemind took too long" (timeout). Cancel → "the caller walked away"
+	// (error). Don't collapse them. See §4.6.
+	acquireStart := time.Now()
+	if err := o.sem.Acquire(ctx, 1); err != nil {
+		waited := time.Since(acquireStart).Milliseconds()
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) ||
+			errors.Is(err, context.DeadlineExceeded) {
+			return BuildResult(
+				RawRunOutput{
+					TimedOut:  true,
+					ElapsedMs: waited,
+					Stderr:    fmt.Sprintf("deadline exceeded waiting for ollama concurrency slot after %dms (OLLAMA_MAX_CONCURRENT_REQUESTS gates in-flight calls)", waited),
+				},
+				ParsedOutput{},
+				model,
+			), nil
+		}
+		return &Result{
+			Model:     model,
+			Status:    "error",
+			Stderr:    "ollama gate acquire failed: " + err.Error(),
+			ElapsedMs: waited,
+		}, nil
+	}
+	defer o.sem.Release(1)
+	if waited := time.Since(acquireStart); waited > ollamaGateSlowLogThreshold {
+		slog.Debug("ollama concurrency gate wait", "wait_ms", waited.Milliseconds())
+	}
 
 	// NOTE: do NOT log bodyBytes or the response body at any level — they
 	// contain user prompts and model output (PII/secret surface). Log

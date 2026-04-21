@@ -315,9 +315,25 @@ No new role file needed. `default.txt` / `planner.txt` / `codereviewer.txt` appl
 - Unit test the parser with canned `/api/chat` success, error, 429, 503, malformed-JSON bodies (mirror `claude_test.go`).
 - Use `httptest.Server` for end-to-end — the HTTP indirection is enough that a mock is simpler than intercepting at the `Backend` level.
 
-### 4.6 Docs
+### 4.6 Client-side concurrency gate (added 2026-04-21 after third-pass review)
 
-- `INSTALL.md` — env vars (`OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_DEFAULT_MODEL`).
+**Problem.** Ollama Cloud enforces 1/3/10 concurrent upstream calls (free/pro/max). A `hivemind` fanout with 4+ ollama agents on Pro will silently rate-limit one call per dispatch, and *which* call loses is a race. Decision C ("surface rate limits; no retry") is the right stance for isolated failures but is hostile to this specific fanout pattern.
+
+**Design.** `OllamaBackend` holds a `*semaphore.Weighted` (from `golang.org/x/sync/semaphore`) sized from `OLLAMA_MAX_CONCURRENT_REQUESTS` (default 3, matching Pro tier). `Run()` calls `Acquire(ctx, 1)` immediately before `httpClient.Do` and `Release(1)` via `defer`. Placement is after prompt assembly and request construction so slots aren't held during local CPU work.
+
+**Softening Decision C.** Burst 429s that would have surfaced at the upstream edge now become local queueing — added latency, not an error. This is intentional for hivemind UX: the caller wants all 4 agents to return useful responses, not 3 `ok` + 1 `rate_limited`. A debug log fires when `Acquire` waits >100ms so gate latency stays observable.
+
+**ctx error branching.** If the dispatcher's ctx expires while we're in the gate, the user-facing failure is "your hivemind timed out" (`status: "timeout"` via `BuildResult`, matching subprocess backends' timeout response text) not "Ollama rate-limited us". Cancellation is classified separately (`status: "error"`) because "the caller walked away" and "the system is overloaded" are different failure modes with different remediations.
+
+**Scope.** Per-process only. Two `roundtable-http-mcp` instances sharing an API key will collectively exceed the cap; single-instance dogfood is the supported deployment. Distributed limiting (Redis-backed) is out of scope.
+
+**Capacity is construction-time.** `OLLAMA_MAX_CONCURRENT_REQUESTS` is read once in `NewOllamaBackend`. This is an analogue of `defaultModel` (also startup-only) and does NOT violate Decision F, which is scoped to `API_KEY`/`BASE_URL` rotation. Capacity changes only when you change tier, which warrants a restart.
+
+**Library rationale (buy vs build).** `chan struct{}` + `select` is defensible for weight-1 use (5 LOC, zero deps) but the ctx-select release-on-cancel pattern is fiddly; `semaphore.Weighted.Acquire(ctx, 1)` is 1 call that handles it atomically. `failsafe-go` / `eapache/go-resiliency` / `slok/goresilience` all offer this plus retry/CB, but Decision C forbids retry today. Smallest official primitive wins.
+
+### 4.7 Docs
+
+- `INSTALL.md` — env vars (`OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_DEFAULT_MODEL`, `OLLAMA_MAX_CONCURRENT_REQUESTS`).
 - `docs/ARCHITECTURE.md` — add the fourth provider under the backend table.
 
 ## 5. Shortcomings of Ollama Cloud (the honest section)
