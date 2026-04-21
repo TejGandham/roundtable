@@ -163,6 +163,48 @@ If `/readyz` returns 503:
 - Confirm at least one CLI (`gemini`, `codex`, or `claude`) is installed and on PATH
 - Check logs for per-backend health messages
 
+## Ollama Cloud provider
+
+Roundtable v0.8+ supports Ollama's cloud-hosted `:cloud` models
+(kimi-k2.6, qwen3.5, glm-5.1, minimax-m2.7, gpt-oss, etc.) over HTTPS.
+Unlike the subprocess backends (claude/codex/gemini), this one has no
+CLI binary — requests go directly to Ollama's REST API.
+
+### Environment
+
+| Variable | Required | Default | Purpose |
+|-|-|-|-|
+| `OLLAMA_API_KEY` | yes | — | Bearer token from https://ollama.com/settings/keys. If unset, the ollama backend is simply not registered. |
+| `OLLAMA_BASE_URL` | no | `https://ollama.com` | Override for self-hosted Ollama or for tests. |
+| `OLLAMA_DEFAULT_MODEL` | no | — | Fallback model used when an agent spec doesn't set `model`. Recommended: `kimi-k2.6:cloud` or `gpt-oss:120b-cloud`. |
+| `OLLAMA_MAX_CONCURRENT_REQUESTS` | no | `3` | Per-process bulkhead on concurrent `/api/chat` calls. Match your Ollama account tier: **Free=`1`**, **Pro=`3`** (default), **Max=`10`**. Calls above the cap block until a slot frees instead of getting a 429 from Ollama's edge. Read once at startup; restart to change. |
+
+### Example: dispatching to one cloud model
+
+```json
+{
+  "prompt": "Explain context-free grammars with a concrete example.",
+  "agents": "[{\"cli\":\"ollama\",\"name\":\"kimi\",\"model\":\"kimi-k2.6:cloud\"}]"
+}
+```
+
+### Example: `hivemind` with mixed providers
+
+```json
+{
+  "prompt": "Review this design doc and flag risks.",
+  "files": "docs/design.md",
+  "agents": "[{\"cli\":\"claude\"},{\"cli\":\"gemini\"},{\"cli\":\"ollama\",\"name\":\"kimi\",\"model\":\"kimi-k2.6:cloud\"},{\"cli\":\"ollama\",\"name\":\"glm\",\"model\":\"glm-5.1:cloud\"}]"
+}
+```
+
+### Known limitations (Apr 2026)
+
+- **Concurrency cap**: Free tier allows 1 concurrent cloud model call, Pro $20/mo allows 3, Max $100/mo allows 10. Roundtable holds a per-process bulkhead sized by `OLLAMA_MAX_CONCURRENT_REQUESTS` (default 3) so a `hivemind` with more ollama agents than slots queues locally instead of getting silent 429s from Ollama's edge. If multiple `roundtable-http-mcp` processes share an API key, they can still collectively exceed the cap — run a single instance, or set each process's cap to a fraction of the tier total.
+- **Output cap**: All `:cloud` models are capped at 16,384 completion tokens. When truncated, `done_reason=length` is surfaced in `metadata`.
+- **503 storms**: Ollama Cloud is a preview service; 503s are treated as `rate_limited`. No `Retry-After` is currently published, and Roundtable does not auto-retry (but surfaces `Retry-After` on `metadata.retry_after` when present).
+- **US-only inference**: not suitable for EU/GDPR-sensitive deployments.
+
 ## Development (Building from Source)
 
 ```bash
