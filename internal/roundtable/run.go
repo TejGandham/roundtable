@@ -19,67 +19,81 @@ const (
 
 // AgentSpec describes a single agent to dispatch to.
 type AgentSpec struct {
-	Name   string // display name, defaults to CLI name
-	CLI    string // "gemini", "codex", or "claude"
-	Model  string // per-agent model override
-	Role   string // per-agent role override
-	Resume string // per-agent resume/session ID
+	Name     string
+	Provider string
+	Model    string
+	Role     string
+	Resume   string
 }
 
 // ToolRequest is the structured input from the MCP tool handler.
 // Maps to the Elixir args map that Roundtable.run/1 receives.
 type ToolRequest struct {
 	Prompt       string
-	PromptSuffix string // tool-specific suffix (deepdive, architect, challenge)
+	PromptSuffix string
 	Files        []string
 	Timeout      int
 
-	// Default role for all backends (from ToolSpec.Role)
 	Role string
 
-	// Per-CLI role overrides (from ToolSpec, e.g. xray)
 	GeminiRole string
 	CodexRole  string
 	ClaudeRole string
 
-	// Per-CLI model overrides (from ToolInput)
 	GeminiModel string
 	CodexModel  string
 	ClaudeModel string
 
-	// Per-CLI resume session IDs (from ToolInput)
 	GeminiResume string
 	CodexResume  string
 	ClaudeResume string
 
-	// Custom agents (parsed from ToolInput.Agents JSON)
 	Agents []AgentSpec
 
-	// Role directories
 	RolesDir        string
 	ProjectRolesDir string
 }
 
-var validCLIs = map[string]bool{"gemini": true, "codex": true, "claude": true, "ollama": true}
 var reservedNames = map[string]bool{"meta": true}
+
+// agentSpecJSON is the wire shape for one entry in the agents JSON array.
+// DisallowUnknownFields on the decoder rejects legacy keys (like "cli") and
+// typos at decode time.
+type agentSpecJSON struct {
+	Name     string `json:"name,omitempty"`
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+	Role     string `json:"role,omitempty"`
+	Resume   string `json:"resume,omitempty"`
+}
 
 // ParseAgents parses and validates a JSON string of agent specs.
 // Returns nil, nil for empty/nil input (use defaults).
-// Matches common.ex parse_agents/1 + validate_agents/1.
 func ParseAgents(agentsJSON string) ([]AgentSpec, error) {
 	agentsJSON = strings.TrimSpace(agentsJSON)
 	if agentsJSON == "" {
 		return nil, nil
 	}
 
-	var raw []map[string]any
-	if err := json.Unmarshal([]byte(agentsJSON), &raw); err != nil {
-		// Check if it parsed as non-array
+	dec := json.NewDecoder(strings.NewReader(agentsJSON))
+	dec.DisallowUnknownFields()
+
+	var raw []agentSpecJSON
+	if err := dec.Decode(&raw); err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, `"cli"`) {
+			return nil, fmt.Errorf(`agents: unknown field "cli"; use "provider"`)
+		}
+		if strings.Contains(msg, "unknown field") {
+			return nil, fmt.Errorf("agents: %s", msg)
+		}
 		var single any
 		if json.Unmarshal([]byte(agentsJSON), &single) == nil {
-			return nil, fmt.Errorf("agents must be a JSON array")
+			if _, isArr := single.([]any); !isArr {
+				return nil, fmt.Errorf("agents must be a JSON array")
+			}
 		}
-		return nil, fmt.Errorf("agents is not valid JSON")
+		return nil, fmt.Errorf("agents is not valid JSON: %w", err)
 	}
 
 	if len(raw) == 0 {
@@ -90,19 +104,14 @@ func ParseAgents(agentsJSON string) ([]AgentSpec, error) {
 	names := make(map[string]bool, len(raw))
 
 	for _, entry := range raw {
-		cli, _ := entry["cli"].(string)
-		if cli == "" {
-			return nil, fmt.Errorf("each agent must specify a \"cli\" field")
-		}
-		if !validCLIs[cli] {
-			return nil, fmt.Errorf("unknown CLI type: %s. Valid types: gemini, codex, claude", cli)
+		if entry.Provider == "" {
+			return nil, fmt.Errorf(`each agent must specify a "provider" field`)
 		}
 
-		name, _ := entry["name"].(string)
+		name := entry.Name
 		if name == "" {
-			name = cli
+			name = entry.Provider
 		}
-
 		if reservedNames[name] {
 			return nil, fmt.Errorf("agent name %q is reserved", name)
 		}
@@ -111,16 +120,12 @@ func ParseAgents(agentsJSON string) ([]AgentSpec, error) {
 		}
 		names[name] = true
 
-		model, _ := entry["model"].(string)
-		role, _ := entry["role"].(string)
-		resume, _ := entry["resume"].(string)
-
 		specs = append(specs, AgentSpec{
-			Name:   name,
-			CLI:    cli,
-			Model:  model,
-			Role:   role,
-			Resume: resume,
+			Name:     name,
+			Provider: entry.Provider,
+			Model:    entry.Model,
+			Role:     entry.Role,
+			Resume:   entry.Resume,
 		})
 	}
 
@@ -130,22 +135,16 @@ func ParseAgents(agentsJSON string) ([]AgentSpec, error) {
 // defaultAgents is the fan-out set for dispatches without explicit agents
 // or ROUNDTABLE_DEFAULT_AGENTS override.
 //
-// Invariant: ONLY frontier CLI-backed models (gemini/codex/claude) are in
-// the default set. HTTP-native providers (ollama) must be opted into
-// explicitly via the agents JSON or via ROUNDTABLE_DEFAULT_AGENTS. This is
-// deliberate: ollama cloud models (kimi/qwen/glm/minimax/gpt-oss) have
-// fragile Pro-tier reliability and have shown materially higher
-// hallucination rates than the frontier models on review-class tasks. Use
-// them when their specific strengths are wanted (long context, cost, etc.)
-// but don't promote them to default status.
-//
-// Codified as TestDefaultAgents_ExcludesOllama; do not add ollama to this
-// list without first revisiting the reliability + capability evidence.
+// Invariant: ONLY built-in subprocess backends (gemini/codex/claude) appear
+// here. No HTTP-native provider (anything registered via ROUNDTABLE_PROVIDERS)
+// is ever a default — callers must opt in explicitly via the agents JSON
+// or ROUNDTABLE_DEFAULT_AGENTS. Codified as
+// TestDefaultAgents_ExcludesAllHTTPProviders.
 func defaultAgents() []AgentSpec {
 	return []AgentSpec{
-		{Name: "gemini", CLI: "gemini"},
-		{Name: "codex", CLI: "codex"},
-		{Name: "claude", CLI: "claude"},
+		{Name: "gemini", Provider: "gemini"},
+		{Name: "codex", Provider: "codex"},
+		{Name: "claude", Provider: "claude"},
 	}
 }
 
@@ -162,7 +161,6 @@ func resolveAgents(req ToolRequest) []AgentSpec {
 		if err == nil && len(specs) > 0 {
 			return specs
 		}
-		// Invalid env value: fall through to defaults (matches Elixir behavior)
 	}
 
 	return defaultAgents()
@@ -175,7 +173,7 @@ func resolveRole(agent AgentSpec, req ToolRequest) string {
 		return agent.Role
 	}
 
-	switch agent.CLI {
+	switch agent.Provider {
 	case "gemini":
 		if req.GeminiRole != "" {
 			return req.GeminiRole
@@ -204,7 +202,7 @@ func resolveModel(agent AgentSpec, req ToolRequest) string {
 		return agent.Model
 	}
 
-	switch agent.CLI {
+	switch agent.Provider {
 	case "gemini":
 		return req.GeminiModel
 	case "codex":
@@ -223,7 +221,7 @@ func resolveResume(agent AgentSpec, req ToolRequest) string {
 		return agent.Resume
 	}
 
-	switch agent.CLI {
+	switch agent.Provider {
 	case "gemini":
 		return req.GeminiResume
 	case "codex":
@@ -235,25 +233,24 @@ func resolveResume(agent AgentSpec, req ToolRequest) string {
 	return ""
 }
 
-// Run executes a full roundtable dispatch cycle. This is the native Go
-// replacement for the roundtable-cli escript.
+// Run executes a full roundtable dispatch cycle.
 //
 // It resolves agents, loads roles, assembles per-agent prompts, probes
 // backends for health, dispatches in parallel, and returns the JSON-encoded
 // DispatchResult.
 //
-// The backends map is keyed by CLI name ("gemini", "codex", "claude").
-// If a requested CLI has no matching backend, it gets a not_found result.
+// The backends map is keyed by provider id (subprocess: "gemini", "codex",
+// "claude"; HTTP providers: operator-chosen ids from ROUNDTABLE_PROVIDERS).
+// If a requested provider has no matching backend, the agent gets a
+// not_found result.
 func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]byte, error) {
 	agents := resolveAgents(req)
 
-	// Build the effective prompt (with suffix applied)
 	basePrompt := req.Prompt
 	if req.PromptSuffix != "" {
 		basePrompt += req.PromptSuffix
 	}
 
-	// Build per-agent configs: resolve role, load prompt, create Request
 	type agentConfig struct {
 		spec    AgentSpec
 		request Request
@@ -273,19 +270,15 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 		model := resolveModel(agent, req)
 		resume := resolveResume(agent, req)
 
-		// Load role prompt
 		rolePrompt, err := LoadRolePrompt(role, req.RolesDir, req.ProjectRolesDir)
 		if err != nil {
 			return nil, fmt.Errorf("role %q for agent %q: %w", role, agent.Name, err)
 		}
 
-		// Assemble full prompt
 		assembledPrompt := AssemblePrompt(rolePrompt, basePrompt, req.Files)
 
-		// Find backend for this agent's CLI
-		backend, ok := backends[agent.CLI]
+		backend, ok := backends[agent.Provider]
 		if !ok {
-			// No backend registered for this CLI — will get not_found result
 			backend = nil
 		}
 
@@ -313,7 +306,6 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 		roles[agent.Name+"_role"] = role
 	}
 
-	// Phase 1: Parallel health probes
 	type probeResult struct {
 		index   int
 		healthy bool
@@ -324,7 +316,7 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 	for i, cfg := range configs {
 		go func(idx int, c agentConfig) {
 			if c.backend == nil {
-				probeCh <- probeResult{index: idx, healthy: false, err: fmt.Errorf("no backend for CLI %q", c.spec.CLI)}
+				probeCh <- probeResult{index: idx, healthy: false, err: fmt.Errorf("no backend for provider %q", c.spec.Provider)}
 				return
 			}
 			probeCtx, cancel := context.WithTimeout(ctx, ProbeTimeout)
@@ -340,7 +332,6 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 		probeResults[pr.index] = pr
 	}
 
-	// Phase 2: Parallel Run for healthy backends
 	results := make(map[string]*Result, len(configs))
 
 	runDeadline := time.Duration(configs[0].request.Timeout)*time.Second + RunGrace
@@ -357,15 +348,14 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 
 	for i, cfg := range configs {
 		if !probeResults[i].healthy {
-			// Record probe failure or not_found
 			if cfg.backend == nil {
-				results[cfg.spec.Name] = NotFoundResult(cfg.spec.CLI, cfg.request.Model)
+				results[cfg.spec.Name] = NotFoundResult(cfg.spec.Provider, cfg.request.Model)
 			} else {
 				reason := "unknown"
 				if probeResults[i].err != nil {
 					reason = probeResults[i].err.Error()
 				}
-				results[cfg.spec.Name] = ProbeFailedResult(cfg.spec.CLI, cfg.request.Model, reason, nil)
+				results[cfg.spec.Name] = ProbeFailedResult(cfg.spec.Provider, cfg.request.Model, reason, nil)
 			}
 			continue
 		}
@@ -401,7 +391,6 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 		results[rr.name] = rr.result
 	}
 
-	// Build dispatch result
 	dr := &DispatchResult{
 		Results: results,
 		Meta:    BuildMeta(results, req.Files, roles),

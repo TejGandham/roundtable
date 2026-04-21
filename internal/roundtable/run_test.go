@@ -18,7 +18,7 @@ func TestParseAgentsEmpty(t *testing.T) {
 }
 
 func TestParseAgentsValid(t *testing.T) {
-	input := `[{"cli":"gemini","model":"pro"},{"cli":"codex","name":"my-codex","role":"planner"}]`
+	input := `[{"provider":"gemini","model":"pro"},{"provider":"codex","name":"my-codex","role":"planner"}]`
 	specs, err := ParseAgents(input)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -26,10 +26,10 @@ func TestParseAgentsValid(t *testing.T) {
 	if len(specs) != 2 {
 		t.Fatalf("expected 2 specs, got %d", len(specs))
 	}
-	if specs[0].Name != "gemini" || specs[0].CLI != "gemini" || specs[0].Model != "pro" {
+	if specs[0].Name != "gemini" || specs[0].Provider != "gemini" || specs[0].Model != "pro" {
 		t.Errorf("spec[0] = %+v", specs[0])
 	}
-	if specs[1].Name != "my-codex" || specs[1].CLI != "codex" || specs[1].Role != "planner" {
+	if specs[1].Name != "my-codex" || specs[1].Provider != "codex" || specs[1].Role != "planner" {
 		t.Errorf("spec[1] = %+v", specs[1])
 	}
 }
@@ -42,8 +42,8 @@ func TestParseAgentsInvalidJSON(t *testing.T) {
 }
 
 func TestParseAgentsNotArray(t *testing.T) {
-	_, err := ParseAgents(`{"cli":"gemini"}`)
-	if err == nil || err.Error() != "agents must be a JSON array" {
+	_, err := ParseAgents(`{"provider":"gemini"}`)
+	if err == nil || !strings.Contains(err.Error(), "JSON array") {
 		t.Fatalf("expected 'agents must be a JSON array', got %v", err)
 	}
 }
@@ -55,36 +55,55 @@ func TestParseAgentsEmptyArray(t *testing.T) {
 	}
 }
 
-func TestParseAgentsMissingCLI(t *testing.T) {
+func TestParseAgentsMissingProvider(t *testing.T) {
 	_, err := ParseAgents(`[{"name":"foo"}]`)
 	if err == nil {
-		t.Fatal("expected error for missing cli")
+		t.Fatal("expected error for missing provider")
 	}
 }
 
-func TestParseAgentsUnknownCLI(t *testing.T) {
-	_, err := ParseAgents(`[{"cli":"gpt"}]`)
-	if err == nil {
-		t.Fatal("expected error for unknown CLI")
+// Unknown provider ids go through the dispatcher's not_found path (FR-10);
+// ParseAgents must not reject them.
+func TestParseAgents_AcceptsUnknownProvider(t *testing.T) {
+	specs, err := ParseAgents(`[{"provider":"my-custom-one","model":"x"}]`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(specs) != 1 || specs[0].Provider != "my-custom-one" {
+		t.Errorf("specs = %+v", specs)
+	}
+}
+
+func TestParseAgents_RejectsCLIField(t *testing.T) {
+	_, err := ParseAgents(`[{"cli":"gemini"}]`)
+	if err == nil || !strings.Contains(err.Error(), "cli") {
+		t.Errorf("expected error mentioning cli, got: %v", err)
+	}
+}
+
+func TestParseAgents_RejectsUnknownField(t *testing.T) {
+	_, err := ParseAgents(`[{"provider":"x","bogus":"1"}]`)
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Errorf("expected unknown-field error, got: %v", err)
 	}
 }
 
 func TestParseAgentsDuplicateNames(t *testing.T) {
-	_, err := ParseAgents(`[{"cli":"gemini"},{"cli":"gemini"}]`)
+	_, err := ParseAgents(`[{"provider":"gemini"},{"provider":"gemini"}]`)
 	if err == nil {
 		t.Fatal("expected error for duplicate names")
 	}
 }
 
 func TestParseAgentsReservedName(t *testing.T) {
-	_, err := ParseAgents(`[{"cli":"gemini","name":"meta"}]`)
+	_, err := ParseAgents(`[{"provider":"gemini","name":"meta"}]`)
 	if err == nil {
 		t.Fatal("expected error for reserved name")
 	}
 }
 
 func TestResolveRoleAgentOverride(t *testing.T) {
-	agent := AgentSpec{CLI: "gemini", Role: "codereviewer"}
+	agent := AgentSpec{Provider: "gemini", Role: "codereviewer"}
 	req := ToolRequest{Role: "default", GeminiRole: "planner"}
 	got := resolveRole(agent, req)
 	if got != "codereviewer" {
@@ -93,7 +112,7 @@ func TestResolveRoleAgentOverride(t *testing.T) {
 }
 
 func TestResolveRolePerCLI(t *testing.T) {
-	agent := AgentSpec{CLI: "gemini"}
+	agent := AgentSpec{Provider: "gemini"}
 	req := ToolRequest{Role: "default", GeminiRole: "planner"}
 	got := resolveRole(agent, req)
 	if got != "planner" {
@@ -102,7 +121,7 @@ func TestResolveRolePerCLI(t *testing.T) {
 }
 
 func TestResolveRoleToolDefault(t *testing.T) {
-	agent := AgentSpec{CLI: "gemini"}
+	agent := AgentSpec{Provider: "gemini"}
 	req := ToolRequest{Role: "codereviewer"}
 	got := resolveRole(agent, req)
 	if got != "codereviewer" {
@@ -111,7 +130,7 @@ func TestResolveRoleToolDefault(t *testing.T) {
 }
 
 func TestResolveRoleFallbackDefault(t *testing.T) {
-	agent := AgentSpec{CLI: "gemini"}
+	agent := AgentSpec{Provider: "gemini"}
 	req := ToolRequest{}
 	got := resolveRole(agent, req)
 	if got != "default" {
@@ -120,7 +139,7 @@ func TestResolveRoleFallbackDefault(t *testing.T) {
 }
 
 func TestResolveModelAgentOverride(t *testing.T) {
-	agent := AgentSpec{CLI: "gemini", Model: "pro-exp"}
+	agent := AgentSpec{Provider: "gemini", Model: "pro-exp"}
 	req := ToolRequest{GeminiModel: "pro"}
 	got := resolveModel(agent, req)
 	if got != "pro-exp" {
@@ -129,7 +148,7 @@ func TestResolveModelAgentOverride(t *testing.T) {
 }
 
 func TestResolveModelPerCLI(t *testing.T) {
-	agent := AgentSpec{CLI: "codex"}
+	agent := AgentSpec{Provider: "codex"}
 	req := ToolRequest{CodexModel: "gpt-5.4"}
 	got := resolveModel(agent, req)
 	if got != "gpt-5.4" {
@@ -138,7 +157,7 @@ func TestResolveModelPerCLI(t *testing.T) {
 }
 
 func TestResolveResumeAgentOverride(t *testing.T) {
-	agent := AgentSpec{CLI: "claude", Resume: "sess_abc"}
+	agent := AgentSpec{Provider: "claude", Resume: "sess_abc"}
 	req := ToolRequest{ClaudeResume: "sess_old"}
 	got := resolveResume(agent, req)
 	if got != "sess_abc" {
@@ -182,14 +201,12 @@ func TestRunDefaultAgents(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// Should have gemini, codex, claude, and meta
 	for _, name := range []string{"gemini", "codex", "claude", "meta"} {
 		if _, ok := result[name]; !ok {
 			t.Errorf("missing key %q in result", name)
 		}
 	}
 
-	// Verify each backend was called
 	if gemini.runCalls.Load() != 1 {
 		t.Errorf("gemini run calls = %d, want 1", gemini.runCalls.Load())
 	}
@@ -218,7 +235,7 @@ func TestRunCustomAgents(t *testing.T) {
 		Role:    "default",
 		Timeout: 10,
 		Agents: []AgentSpec{
-			{Name: "gemini", CLI: "gemini"},
+			{Name: "gemini", Provider: "gemini"},
 		},
 	}
 
@@ -232,7 +249,6 @@ func TestRunCustomAgents(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// Should only have gemini + meta (not codex, claude)
 	if _, ok := result["gemini"]; !ok {
 		t.Error("missing gemini in result")
 	}
@@ -251,7 +267,6 @@ func TestRunPromptSuffix(t *testing.T) {
 		runResult: &Result{Status: "ok"},
 	}
 
-	// Override Run to capture the prompt
 	captureBackend := &promptCaptureBackend{
 		Backend:  gemini,
 		captured: &capturedPrompt,
@@ -268,7 +283,7 @@ func TestRunPromptSuffix(t *testing.T) {
 		PromptSuffix: "\n\nProvide conclusions.",
 		Role:         "default",
 		Timeout:      10,
-		Agents:       []AgentSpec{{Name: "gemini", CLI: "gemini"}},
+		Agents:       []AgentSpec{{Name: "gemini", Provider: "gemini"}},
 	}
 
 	_, err := Run(context.Background(), req, backends)
@@ -284,7 +299,6 @@ func TestRunPromptSuffix(t *testing.T) {
 	}
 }
 
-// promptCaptureBackend wraps a Backend and captures the prompt from Run.
 type promptCaptureBackend struct {
 	Backend
 	captured *string
@@ -304,7 +318,6 @@ func (p *promptCaptureBackend) Name() string {
 }
 
 func TestRunMissingBackend(t *testing.T) {
-	// Only gemini backend registered, but default agents include codex and claude
 	backends := map[string]Backend{
 		"gemini": &mockBackend{
 			name:      "gemini",
@@ -328,7 +341,6 @@ func TestRunMissingBackend(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// codex and claude should have not_found status
 	for _, name := range []string{"codex", "claude"} {
 		var r Result
 		if err := json.Unmarshal(result[name], &r); err != nil {
@@ -341,7 +353,7 @@ func TestRunMissingBackend(t *testing.T) {
 }
 
 func TestRunDefaultAgentsEnv(t *testing.T) {
-	t.Setenv("ROUNDTABLE_DEFAULT_AGENTS", `[{"cli":"gemini"}]`)
+	t.Setenv("ROUNDTABLE_DEFAULT_AGENTS", `[{"provider":"gemini"}]`)
 
 	gemini := &mockBackend{
 		name:      "gemini",
@@ -377,7 +389,6 @@ func TestRunDefaultAgentsEnv(t *testing.T) {
 	if _, ok := result["gemini"]; !ok {
 		t.Error("missing gemini")
 	}
-	// codex should NOT be present since env only specifies gemini
 	if _, ok := result["codex"]; ok {
 		t.Error("unexpected codex — env agents should only include gemini")
 	}
@@ -412,7 +423,6 @@ func TestRunXrayRoles(t *testing.T) {
 		"claude": claude,
 	}
 
-	// xray tool spec: gemini=planner, codex=codereviewer, claude=default
 	req := ToolRequest{
 		Prompt:     "Inspect this",
 		GeminiRole: "planner",
@@ -426,9 +436,6 @@ func TestRunXrayRoles(t *testing.T) {
 		t.Fatalf("Run error: %v", err)
 	}
 
-	// Each backend should have received a different assembled prompt
-	// (because different roles have different role prompts)
-	// We just verify that prompts were captured and contain the request
 	for name, prompt := range map[string]string{
 		"gemini": geminiPrompt,
 		"codex":  codexPrompt,
@@ -444,7 +451,6 @@ func TestRunXrayRoles(t *testing.T) {
 	}
 }
 
-// Verify that resolveAgents falls through to defaults when env is set but invalid.
 func TestResolveAgentsInvalidEnvFallsThrough(t *testing.T) {
 	t.Setenv("ROUNDTABLE_DEFAULT_AGENTS", "not valid json")
 	agents := resolveAgents(ToolRequest{})
@@ -453,69 +459,44 @@ func TestResolveAgentsInvalidEnvFallsThrough(t *testing.T) {
 	}
 }
 
-// Verify that resolveAgents uses explicit agents over env.
 func TestResolveAgentsExplicitOverEnv(t *testing.T) {
-	t.Setenv("ROUNDTABLE_DEFAULT_AGENTS", `[{"cli":"codex"}]`)
+	t.Setenv("ROUNDTABLE_DEFAULT_AGENTS", `[{"provider":"codex"}]`)
 	req := ToolRequest{
-		Agents: []AgentSpec{{Name: "gemini", CLI: "gemini"}},
+		Agents: []AgentSpec{{Name: "gemini", Provider: "gemini"}},
 	}
 	agents := resolveAgents(req)
-	if len(agents) != 1 || agents[0].CLI != "gemini" {
+	if len(agents) != 1 || agents[0].Provider != "gemini" {
 		t.Fatalf("expected explicit gemini agent, got %v", agents)
 	}
 }
 
-func TestParseAgents_AcceptsOllama(t *testing.T) {
-	specs, err := ParseAgents(`[{"cli":"ollama","name":"kimi","model":"kimi-k2.6:cloud"}]`)
-	if err != nil {
-		t.Fatalf("ParseAgents: %v", err)
-	}
-	if len(specs) != 1 {
-		t.Fatalf("got %d specs, want 1", len(specs))
-	}
-	if specs[0].CLI != "ollama" {
-		t.Errorf("cli = %q, want ollama", specs[0].CLI)
-	}
-	if specs[0].Model != "kimi-k2.6:cloud" {
-		t.Errorf("model = %q, want kimi-k2.6:cloud", specs[0].Model)
-	}
-}
-
-// Invariant: ollama backends must be opt-in, never default. See the
-// docstring on defaultAgents() in run.go for the rationale (fragile Pro-tier
-// reliability + higher hallucination rate on review-class tasks than the
-// frontier CLI backends).
-func TestDefaultAgents_ExcludesOllama(t *testing.T) {
+// Invariant: HTTP-native providers (any id registered via
+// ROUNDTABLE_PROVIDERS) must be opt-in, never default. The default set
+// contains only the three built-in subprocess backends. See the docstring
+// on defaultAgents() in run.go for rationale. (FR-22)
+func TestDefaultAgents_ExcludesAllHTTPProviders(t *testing.T) {
+	builtins := map[string]bool{"gemini": true, "codex": true, "claude": true}
 	got := defaultAgents()
-	for _, a := range got {
-		if a.CLI == "ollama" {
-			t.Fatalf("defaultAgents() contains ollama agent %+v; ollama must be opt-in only", a)
-		}
-	}
-	// Positive guard: defaults remain the three frontier CLIs.
-	wantCLIs := map[string]bool{"gemini": true, "codex": true, "claude": true}
-	if len(got) != len(wantCLIs) {
-		t.Errorf("defaultAgents() len = %d, want %d", len(got), len(wantCLIs))
+	if len(got) != len(builtins) {
+		t.Errorf("defaultAgents() len = %d, want %d", len(got), len(builtins))
 	}
 	for _, a := range got {
-		if !wantCLIs[a.CLI] {
-			t.Errorf("unexpected CLI %q in defaults", a.CLI)
+		if !builtins[a.Provider] {
+			t.Errorf("defaultAgents() includes non-subprocess provider %q — invariant broken", a.Provider)
 		}
 	}
 }
 
-// Regression guard for run.go:348/354 — NotFoundResult and ProbeFailedResult
-// now receive cfg.spec.CLI (the backend identifier) instead of cfg.spec.Name
-// (the agent display name). For an agent {"cli":"ollama","name":"kimi"} the
-// Stderr should read "ollama CLI not found in PATH", not "kimi CLI not
-// found in PATH" — because "kimi" is the agent label, not a CLI name.
-func TestRunMissingBackend_StderrMentionsCLINotName(t *testing.T) {
+// NotFoundResult receives cfg.spec.Provider (the backend identifier), not
+// cfg.spec.Name (the agent display name). For an agent
+// {"provider":"ollama","name":"kimi"} the Stderr must name "ollama", not
+// "kimi".
+func TestRunMissingBackend_StderrMentionsProviderNotName(t *testing.T) {
 	backends := map[string]Backend{
 		"gemini": &mockBackend{
 			name:      "gemini",
 			runResult: &Result{Model: "pro", Status: "ok", Response: "hello"},
 		},
-		// No ollama backend registered.
 	}
 
 	req := ToolRequest{
@@ -523,7 +504,7 @@ func TestRunMissingBackend_StderrMentionsCLINotName(t *testing.T) {
 		Role:    "default",
 		Timeout: 10,
 		Agents: []AgentSpec{
-			{CLI: "ollama", Name: "kimi", Model: "kimi-k2.6:cloud"},
+			{Provider: "ollama", Name: "kimi", Model: "kimi-k2.6:cloud"},
 		},
 	}
 
@@ -545,9 +526,9 @@ func TestRunMissingBackend_StderrMentionsCLINotName(t *testing.T) {
 		t.Errorf("status = %q, want not_found", r.Status)
 	}
 	if !strings.Contains(r.Stderr, "ollama") {
-		t.Errorf("stderr = %q, want mention of 'ollama' (CLI)", r.Stderr)
+		t.Errorf("stderr = %q, want mention of 'ollama' (provider)", r.Stderr)
 	}
 	if strings.Contains(r.Stderr, "kimi") {
-		t.Errorf("stderr = %q, should NOT mention 'kimi' (agent name, not CLI)", r.Stderr)
+		t.Errorf("stderr = %q, should NOT mention 'kimi' (agent name, not provider)", r.Stderr)
 	}
 }
