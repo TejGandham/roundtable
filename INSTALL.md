@@ -172,8 +172,7 @@ If `/readyz` returns 503:
 
 Roundtable dispatches to OpenAI-compatible HTTP providers declared in the
 `ROUNDTABLE_PROVIDERS` environment variable — a JSON array where each
-entry names one provider (Ollama Cloud, Moonshot, z.ai, DeepSeek, Groq,
-etc.). Ollama is one of those providers, not a special case.
+entry names one provider (Fireworks, Moonshot, z.ai, DeepSeek, Groq, etc.).
 
 ### Minimal example
 
@@ -182,12 +181,17 @@ Set both the provider-specific secret env vars **and** the
 
 ```bash
 claude mcp add -s user roundtable \
+  -e FIREWORKS_API_KEY="fw_..." \
   -e MOONSHOT_API_KEY="sk-..." \
   -e ZAI_API_KEY="sk-..." \
-  -e OLLAMA_API_KEY="sk-..." \
-  -e ROUNDTABLE_PROVIDERS='[{"id":"moonshot","base_url":"https://api.moonshot.cn/v1","api_key_env":"MOONSHOT_API_KEY","default_model":"kimi-k2-0711-preview","max_concurrent":5},{"id":"zai","base_url":"https://api.z.ai/v1","api_key_env":"ZAI_API_KEY","default_model":"glm-4.6","max_concurrent":3},{"id":"ollama","base_url":"https://ollama.com/v1","api_key_env":"OLLAMA_API_KEY","default_model":"kimi-k2.6:cloud","max_concurrent":3}]' \
+  -e ROUNDTABLE_PROVIDERS='[{"id":"fireworks","base_url":"https://api.fireworks.ai/inference/v1","api_key_env":"FIREWORKS_API_KEY","default_model":"accounts/fireworks/models/kimi-k2p6","max_concurrent":5},{"id":"moonshot","base_url":"https://api.moonshot.cn/v1","api_key_env":"MOONSHOT_API_KEY","default_model":"kimi-k2-0711-preview","max_concurrent":5},{"id":"zai","base_url":"https://api.z.ai/v1","api_key_env":"ZAI_API_KEY","default_model":"glm-4.6","max_concurrent":3}]' \
   -- ~/.local/share/roundtable/roundtable-http-mcp stdio
 ```
+
+For the canonical kimi-k2.6 deployment use **Fireworks**, not Ollama Cloud:
+in benchmark (Apr 2026) Fireworks returned the same answer ~17x faster
+(~4s vs ~73s) and with cleaner output. Ollama Cloud is preview-tier and
+still 503-prone — not recommended for production dispatch.
 
 ### Fields
 
@@ -197,7 +201,7 @@ claude mcp add -s user roundtable \
 | `base_url` | yes | Root URL; `/chat/completions` is appended at request time. |
 | `api_key_env` | yes | Name of the env var holding the secret. The secret itself is **not** in this JSON — this indirection lets you rotate a key by updating the secret env var without re-encoding `ROUNDTABLE_PROVIDERS`, and keeps the blob safe to paste in bug reports. |
 | `default_model` | no | Used when `AgentSpec.Model` is empty. |
-| `max_concurrent` | no (default `3`) | Per-process concurrency cap (semaphore). Size this to match the provider's tier: Ollama Cloud Free=`1`, Pro=`3`, Max=`10`; Moonshot varies by account; etc. |
+| `max_concurrent` | no (default `3`) | Per-process concurrency cap (semaphore). Size this to match the provider's tier: Fireworks defaults to generous rate limits, Moonshot varies by account, etc. Check your provider's dashboard. |
 | `response_header_timeout` | no (default `"60s"`) | `http.Transport.ResponseHeaderTimeout`. With `stream: false` (always, for now) this effectively caps **total** response time — raise for slow providers running long-context deepdives. Accepts any `time.Duration` string (`90s`, `2m`, `500ms`). |
 | `gate_slow_log_threshold` | no (default `"100ms"`) | Wait above which the concurrency-gate `Acquire` emits a debug log. Useful for operators tuning `max_concurrent`. |
 
@@ -209,15 +213,15 @@ Target one registered provider:
 [{"name":"kimi-moonshot","provider":"moonshot","model":"kimi-k2-0711-preview"}]
 ```
 
-Fan out across multiple providers in one dispatch (e.g., compare kimi on Moonshot vs kimi on Ollama side by side):
+Fan out across multiple providers in one dispatch (e.g., compare kimi on Fireworks vs kimi on Moonshot side by side):
 
 ```json
 [
   {"provider":"gemini"},
   {"provider":"codex"},
   {"provider":"claude"},
-  {"provider":"moonshot","model":"kimi-k2-0711-preview","name":"kimi-moonshot"},
-  {"provider":"ollama","model":"kimi-k2.6:cloud","name":"kimi-ollama"}
+  {"provider":"fireworks","model":"accounts/fireworks/models/kimi-k2p6","name":"kimi-fireworks"},
+  {"provider":"moonshot","model":"kimi-k2-0711-preview","name":"kimi-moonshot"}
 ]
 ```
 
@@ -264,19 +268,22 @@ In roundtable v0.7 and earlier, setting `OLLAMA_API_KEY` (plus
 optional `OLLAMA_BASE_URL`, `OLLAMA_DEFAULT_MODEL`,
 `OLLAMA_MAX_CONCURRENT_REQUESTS`, `OLLAMA_RESPONSE_HEADER_TIMEOUT`)
 auto-registered a special Ollama-native provider. As of v0.8,
-**Ollama is just one registered provider** in `ROUNDTABLE_PROVIDERS`
-and speaks the OpenAI-compat `/v1/chat/completions` endpoint. The
-auto-registration is gone.
+**no provider is special** — every HTTP provider lives in
+`ROUNDTABLE_PROVIDERS` and speaks the OpenAI-compat
+`/v1/chat/completions` endpoint. The auto-registration is gone.
 
-If your deployment previously set only `OLLAMA_API_KEY`, add a
-`ROUNDTABLE_PROVIDERS` entry with `"api_key_env":"OLLAMA_API_KEY"` —
-the secret stays in the same env var; only the structural config is new.
+Ollama Cloud itself is no longer in the canonical example config
+because benchmark (Apr 2026) showed it consistently 10–17x slower than
+Fireworks for the same kimi-k2.6 workload, plus recurring 503 storms.
+If you still want it, add an entry with
+`"base_url":"https://ollama.com/v1"` and `"api_key_env":"OLLAMA_API_KEY"` —
+the generic OpenAI-compat backend handles it like any other provider.
 
 ### Known limitations (Apr 2026)
 
-- **Ollama 503 storms**: Ollama Cloud is preview-grade; 503s are treated as `rate_limited` with `Retry-After` surfaced on `metadata.retry_after` when present. No auto-retry. Steer traffic to direct providers (Moonshot, z.ai, etc.) for production reliability.
 - **Output truncation**: When a response's `finish_reason` is `length`, `output_truncated: true` is set on `metadata` along with the raw `finish_reason`. Callers can check this generically without knowing any provider's conventions.
-- **US-only inference** for Ollama Cloud: not suitable for EU/GDPR-sensitive deployments. Moonshot (CN), z.ai (CN), and others have their own jurisdictional profiles — read the provider's terms.
+- **Jurisdictional note**: Fireworks is US-hosted; Moonshot (CN), z.ai (CN), Ollama Cloud (US) each have their own terms and jurisdictional profiles. Read the provider's terms before sending regulated data.
+- **Rate limits surface as `rate_limited`**: 429 and 503 from any provider map to `status: "rate_limited"` with `Retry-After` surfaced on `metadata.retry_after` when the header is present. No auto-retry is performed.
 
 ## Development (Building from Source)
 
