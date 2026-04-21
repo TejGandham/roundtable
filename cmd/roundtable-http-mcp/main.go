@@ -69,9 +69,9 @@ func runCrash(logger *slog.Logger) {
 }
 
 func runStdio(logger *slog.Logger) {
-	// Stdio has no metrics; pass nil observe (OllamaBackend's constructor
-	// normalizes to a no-op).
-	backends := buildBackends(logger, nil)
+	// Stdio has no metrics endpoint; pass nil observe (each backend's
+	// constructor normalizes nil to a no-op) and discard provider infos.
+	backends, _ := buildBackends(logger, nil)
 	defer stopBackends(backends, logger)
 
 	cfg := stdiomcp.Config{
@@ -101,8 +101,18 @@ func runHTTP(logger *slog.Logger) {
 	// NewApp share the same *Metrics (Task 8). Stdio never reaches this path.
 	metrics := &httpmcp.Metrics{}
 
-	backends := buildBackends(logger, metrics.ObserveBackend)
+	backends, providerInfos := buildBackends(logger, metrics.ObserveProvider)
 	defer stopBackends(backends, logger)
+
+	providerDTOs := make([]httpmcp.ProviderInfoDTO, len(providerInfos))
+	for i, p := range providerInfos {
+		providerDTOs[i] = httpmcp.ProviderInfoDTO{
+			ID:           p.ID,
+			BaseURL:      p.BaseURL,
+			DefaultModel: p.DefaultModel,
+		}
+	}
+	metrics.SetProviders(providerDTOs)
 
 	probes := make(map[string]httpmcp.BackendProbe, len(backends))
 	for name, b := range backends {
@@ -152,12 +162,12 @@ func runHTTP(logger *slog.Logger) {
 	}
 }
 
-// buildBackends constructs the model backends. Shared between the
-// stdio and HTTP entry points. An ollama backend is registered only
-// when OLLAMA_API_KEY is set; absence means the "ollama" key is simply
-// not in the map, and the dispatcher emits a not_found result if an
-// agent requests it.
-func buildBackends(logger *slog.Logger, observe roundtable.ObserveFunc) map[string]roundtable.Backend {
+// buildBackends constructs the model backends shared between the stdio
+// and HTTP entry points. Subprocess backends (gemini/codex/claude) are
+// always registered. HTTP providers come from ROUNDTABLE_PROVIDERS
+// (see internal/roundtable/providers.go). Providers whose api_key_env
+// is empty are silently skipped — FR-3.
+func buildBackends(logger *slog.Logger, observe roundtable.ObserveFunc) (map[string]roundtable.Backend, []roundtable.ProviderInfo) {
 	var codexBackend roundtable.Backend
 	codexPath := roundtable.ResolveExecutable("codex")
 	if codexPath != "" {
@@ -174,21 +184,32 @@ func buildBackends(logger *slog.Logger, observe roundtable.ObserveFunc) map[stri
 		"claude": roundtable.NewClaudeBackend(""),
 	}
 
-	if os.Getenv("OLLAMA_API_KEY") != "" {
-		defaultModel := os.Getenv("OLLAMA_DEFAULT_MODEL")
-		backends["ollama"] = roundtable.NewOllamaBackend(defaultModel, observe)
-		baseURL := os.Getenv("OLLAMA_BASE_URL")
-		if baseURL == "" {
-			baseURL = "https://ollama.com"
-		}
-		logger.Info("ollama backend configured",
-			"default_model", defaultModel,
-			"base_url", baseURL)
-	} else {
-		logger.Debug("ollama backend not configured (OLLAMA_API_KEY unset)")
+	var infos []roundtable.ProviderInfo
+
+	configs, err := roundtable.LoadProviderRegistry(os.Getenv)
+	if err != nil {
+		logger.Error("ROUNDTABLE_PROVIDERS parse failed; no HTTP providers registered", "error", err)
+		return backends, infos
 	}
 
-	return backends
+	for _, c := range configs {
+		if os.Getenv(c.APIKeyEnv) == "" {
+			logger.Warn("provider skipped — credential env var unset",
+				"id", c.ID, "api_key_env", c.APIKeyEnv)
+			continue
+		}
+		backends[c.ID] = roundtable.NewOpenAIHTTPBackend(c, observe)
+		infos = append(infos, roundtable.ProviderInfo{
+			ID: c.ID, BaseURL: c.BaseURL, DefaultModel: c.DefaultModel,
+		})
+		logger.Info("provider registered",
+			"id", c.ID,
+			"base_url", c.BaseURL,
+			"default_model", c.DefaultModel,
+			"max_concurrent", c.MaxConcurrent)
+	}
+
+	return backends, infos
 }
 
 func stopBackends(backends map[string]roundtable.Backend, logger *slog.Logger) {

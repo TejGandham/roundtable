@@ -52,7 +52,7 @@ Selective dispatch controls cost. Route architecture decisions to the heavy mode
 
 ```bash
 # Only use Claude and Gemini by default
-ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"claude"},{"cli":"gemini"}]'
+ROUNDTABLE_DEFAULT_AGENTS='[{"provider":"claude"},{"provider":"gemini"}]'
 ```
 
 ## Quick start

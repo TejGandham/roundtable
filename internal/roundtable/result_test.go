@@ -24,7 +24,7 @@ func TestResultJSON(t *testing.T) {
 }
 
 func TestResultJSONNilPointers(t *testing.T) {
-	r := &Result{Model: "cli-default", Status: "not_found", Stderr: "codex CLI not found in PATH"}
+	r := &Result{Model: "cli-default", Status: "not_found", Stderr: `provider "codex" not registered`}
 	data, err := json.Marshal(r)
 	if err != nil { t.Fatalf("marshal: %v", err) }
 	var raw map[string]any
@@ -80,24 +80,54 @@ func TestProbeFailedResult(t *testing.T) {
 	if r.ExitCode == nil || *r.ExitCode != 1 { t.Errorf("exit_code = %v, want 1", r.ExitCode) }
 }
 
+// Regression guard: NotFoundResult's stderr must not mention PATH — meaningless
+// for HTTP providers addressed by operator-chosen ids (e.g., "moonshot").
+func TestNotFoundResult_ProviderAgnosticMessage(t *testing.T) {
+	r := NotFoundResult("moonshot", "kimi-k2-0711-preview")
+	if r.Status != "not_found" {
+		t.Errorf("status = %q", r.Status)
+	}
+	if strings.Contains(r.Stderr, "PATH") {
+		t.Errorf("stderr = %q; must not mention PATH for HTTP providers", r.Stderr)
+	}
+	if !strings.Contains(r.Stderr, "moonshot") {
+		t.Errorf("stderr = %q; must name the provider", r.Stderr)
+	}
+}
+
+// ProbeFailedResult's stderr must not suggest subprocess-flavored diagnostics
+// (like "--version") — meaningless for HTTP providers.
+func TestProbeFailedResult_ProviderAgnosticMessage(t *testing.T) {
+	r := ProbeFailedResult("moonshot", "m1", "api_key missing", nil)
+	if r.Status != "probe_failed" {
+		t.Errorf("status = %q", r.Status)
+	}
+	if strings.Contains(r.Stderr, "--version") {
+		t.Errorf("stderr = %q; must not suggest CLI-specific diagnostics", r.Stderr)
+	}
+	if !strings.Contains(r.Stderr, "moonshot") || !strings.Contains(r.Stderr, "api_key missing") {
+		t.Errorf("stderr = %q", r.Stderr)
+	}
+}
+
 func TestConfigErrorResult(t *testing.T) {
-	r := ConfigErrorResult("ollama", "kimi-k2.6:cloud", "OLLAMA_API_KEY not set")
+	r := ConfigErrorResult("fireworks", "accounts/fireworks/models/kimi-k2p6", "FIREWORKS_API_KEY not set")
 	if r.Status != "error" {
 		t.Errorf("status = %q, want error", r.Status)
 	}
-	if r.Model != "kimi-k2.6:cloud" {
-		t.Errorf("model = %q, want kimi-k2.6:cloud", r.Model)
+	if r.Model != "accounts/fireworks/models/kimi-k2p6" {
+		t.Errorf("model = %q, want accounts/fireworks/models/kimi-k2p6", r.Model)
 	}
-	if !strings.Contains(r.Stderr, "OLLAMA_API_KEY not set") {
-		t.Errorf("stderr = %q, want substring 'OLLAMA_API_KEY not set'", r.Stderr)
+	if !strings.Contains(r.Stderr, "FIREWORKS_API_KEY not set") {
+		t.Errorf("stderr = %q, want substring 'FIREWORKS_API_KEY not set'", r.Stderr)
 	}
-	if !strings.Contains(r.Response, "ollama") {
-		t.Errorf("response = %q, want substring 'ollama'", r.Response)
+	if !strings.Contains(r.Response, "fireworks") {
+		t.Errorf("response = %q, want substring 'fireworks'", r.Response)
 	}
 }
 
 func TestConfigErrorResult_DefaultModel(t *testing.T) {
-	r := ConfigErrorResult("ollama", "", "no model configured")
+	r := ConfigErrorResult("fireworks", "", "no model configured")
 	if r.Model != "cli-default" {
 		t.Errorf("model = %q, want cli-default", r.Model)
 	}

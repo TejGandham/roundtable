@@ -105,7 +105,7 @@ Set `ROUNDTABLE_DEFAULT_AGENTS` at registration time:
 
 ```bash
 claude mcp add -s user roundtable \
-  -e ROUNDTABLE_DEFAULT_AGENTS='[{"cli":"codex"},{"cli":"claude"}]' \
+  -e ROUNDTABLE_DEFAULT_AGENTS='[{"provider":"codex"},{"provider":"claude"}]' \
   -- ~/.local/share/roundtable/roundtable-http-mcp stdio
 ```
 
@@ -151,7 +151,12 @@ claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
 curl -s http://127.0.0.1:4040/metricsz
 ```
 
-Returns JSON with `total_requests` and `dispatch_errors` atomic counters.
+Returns JSON with scalar counters (`total_requests`, `dispatch_errors`),
+per-provider-per-model request counters (`roundtable_provider_requests_total`
+keyed as `provider/model/status`), duration histograms
+(`roundtable_provider_request_duration_ms_sum`,
+`roundtable_provider_request_duration_ms_count` keyed as `provider/model`),
+and the registered provider list (`roundtable_providers_registered`).
 
 ### HTTP troubleshooting
 
@@ -163,52 +168,120 @@ If `/readyz` returns 503:
 - Confirm at least one CLI (`gemini`, `codex`, or `claude`) is installed and on PATH
 - Check logs for per-backend health messages
 
-## Ollama Cloud provider
+## Providers (HTTP)
 
-Roundtable v0.8+ supports Ollama's cloud-hosted `:cloud` models
-(kimi-k2.6, qwen3.5, glm-5.1, minimax-m2.7, gpt-oss, etc.) over HTTPS.
-Unlike the subprocess backends (claude/codex/gemini), this one has no
-CLI binary — requests go directly to Ollama's REST API.
+Roundtable dispatches to OpenAI-compatible HTTP providers declared in the
+`ROUNDTABLE_PROVIDERS` environment variable — a JSON array where each
+entry names one provider (Fireworks, Moonshot, z.ai, DeepSeek, Groq, etc.).
 
-### Environment
+### Minimal example
 
-| Variable | Required | Default | Purpose |
-|-|-|-|-|
-| `OLLAMA_API_KEY` | yes | — | Bearer token from https://ollama.com/settings/keys. If unset, the ollama backend is simply not registered. |
-| `OLLAMA_BASE_URL` | no | `https://ollama.com` | Override for self-hosted Ollama or for tests. |
-| `OLLAMA_DEFAULT_MODEL` | no | — | Fallback model used when an agent spec doesn't set `model`. Recommended: `kimi-k2.6:cloud` or `gpt-oss:120b-cloud`. |
-| `OLLAMA_MAX_CONCURRENT_REQUESTS` | no | `3` | Per-process bulkhead on concurrent `/api/chat` calls. Match your Ollama account tier: **Free=`1`**, **Pro=`3`** (default), **Max=`10`**. Calls above the cap block until a slot frees instead of getting a 429 from Ollama's edge. Read once at startup; restart to change. |
-| `OLLAMA_RESPONSE_HEADER_TIMEOUT` | no | `60s` | Max time to wait for Ollama's `/api/chat` to return response headers. With `stream=false` (our default) this is effectively the total-response time. Accepts any `time.Duration` string (`90s`, `2m`, `500ms`). Big-model generation on Pro tier can spike to 60s+ under upstream load; bump this if you hit `status=timeout` frequently. Read once at startup; restart to change. |
+Set both the provider-specific secret env vars **and** the
+`ROUNDTABLE_PROVIDERS` JSON blob in your MCP server env:
 
-### Opt-in: ollama agents must be listed explicitly
-
-**Ollama backends are never in the default agent set** (which remains `gemini + codex + claude`). To use them, include them in an explicit `agents` JSON on the request, or override `ROUNDTABLE_DEFAULT_AGENTS` at the operator level. This is deliberate — Ollama Cloud's Pro-tier reliability is preview-grade, and open-weight models have shown higher hallucination rates than the frontier CLIs on review-class tasks. Use them when their specific strengths (long context, cost, privacy) matter.
-
-### Example: dispatching to one cloud model
-
-```json
-{
-  "prompt": "Explain context-free grammars with a concrete example.",
-  "agents": "[{\"cli\":\"ollama\",\"name\":\"kimi\",\"model\":\"kimi-k2.6:cloud\"}]"
-}
+```bash
+claude mcp add -s user roundtable \
+  -e FIREWORKS_API_KEY="fw_..." \
+  -e MOONSHOT_API_KEY="sk-..." \
+  -e ZAI_API_KEY="sk-..." \
+  -e ROUNDTABLE_PROVIDERS='[{"id":"fireworks-kimi","base_url":"https://api.fireworks.ai/inference/v1","api_key_env":"FIREWORKS_API_KEY","default_model":"accounts/fireworks/models/kimi-k2p6","max_concurrent":5},{"id":"fireworks-minimax","base_url":"https://api.fireworks.ai/inference/v1","api_key_env":"FIREWORKS_API_KEY","default_model":"accounts/fireworks/models/minimax-m2p7","max_concurrent":5},{"id":"moonshot","base_url":"https://api.moonshot.cn/v1","api_key_env":"MOONSHOT_API_KEY","default_model":"kimi-k2-0711-preview","max_concurrent":5},{"id":"zai","base_url":"https://api.z.ai/v1","api_key_env":"ZAI_API_KEY","default_model":"glm-4.6","max_concurrent":3}]' \
+  -- ~/.local/share/roundtable/roundtable-http-mcp stdio
 ```
 
-### Example: `hivemind` with mixed providers
+Two Fireworks entries share a single `FIREWORKS_API_KEY` but are
+registered under distinct ids (`fireworks-kimi`, `fireworks-minimax`)
+because Fireworks multiplexes many open-weight models under one API —
+splitting by provider id gives independent concurrency budgets and
+per-model metric labels.
+
+### Fields
+
+| Field | Required | Description |
+|-|-|-|
+| `id` | yes | Operator-chosen identifier. Must not collide with the built-in subprocess ids `gemini`, `codex`, or `claude`. Also cannot duplicate another `id` within the same array. |
+| `base_url` | yes | Root URL; `/chat/completions` is appended at request time. |
+| `api_key_env` | yes | Name of the env var holding the secret. The secret itself is **not** in this JSON — this indirection lets you rotate a key by updating the secret env var without re-encoding `ROUNDTABLE_PROVIDERS`, and keeps the blob safe to paste in bug reports. |
+| `default_model` | no | Used when `AgentSpec.Model` is empty. |
+| `max_concurrent` | no (default `3`) | Per-process concurrency cap (semaphore). Size this to match the provider's tier: Fireworks defaults to generous rate limits, Moonshot varies by account, etc. Check your provider's dashboard. |
+| `response_header_timeout` | no (default `"60s"`) | `http.Transport.ResponseHeaderTimeout`. With `stream: false` (always, for now) this effectively caps **total** response time — raise for slow providers running long-context deepdives. Accepts any `time.Duration` string (`90s`, `2m`, `500ms`). |
+| `gate_slow_log_threshold` | no (default `"100ms"`) | Wait above which the concurrency-gate `Acquire` emits a debug log. Useful for operators tuning `max_concurrent`. |
+
+### Agent-spec JSON examples
+
+Target one registered provider:
 
 ```json
-{
-  "prompt": "Review this design doc and flag risks.",
-  "files": "docs/design.md",
-  "agents": "[{\"cli\":\"claude\"},{\"cli\":\"gemini\"},{\"cli\":\"ollama\",\"name\":\"kimi\",\"model\":\"kimi-k2.6:cloud\"},{\"cli\":\"ollama\",\"name\":\"glm\",\"model\":\"glm-5.1:cloud\"}]"
-}
+[{"name":"kimi-moonshot","provider":"moonshot","model":"kimi-k2-0711-preview"}]
 ```
+
+Fan out across multiple providers in one dispatch (e.g., compare kimi vs minimax on Fireworks, plus moonshot):
+
+```json
+[
+  {"provider":"gemini"},
+  {"provider":"codex"},
+  {"provider":"claude"},
+  {"provider":"fireworks-kimi","name":"kimi"},
+  {"provider":"fireworks-minimax","name":"minimax"},
+  {"provider":"moonshot","model":"kimi-k2-0711-preview","name":"kimi-moonshot"}
+]
+```
+
+### Defaults
+
+**HTTP providers are never in the default agent set** (which remains
+`gemini + codex + claude`). To use them, either include an explicit
+`agents` JSON on the request, or override the defaults at the operator
+level via `ROUNDTABLE_DEFAULT_AGENTS`. The invariant is codified as
+`TestDefaultAgents_ExcludesAllHTTPProviders` — adding an HTTP provider
+to the default set breaks the build.
+
+### Fail-loud parsing
+
+A single missing comma in `ROUNDTABLE_PROVIDERS` disables **every**
+HTTP provider for that process. This is deliberate: silent partial
+registration (some providers succeed, one is dropped on parse failure)
+would be worse because a subsequent dispatch against the missing
+provider would return `not_found` with no indication that a config
+parse failure caused the absence. The startup logs tell you what
+happened:
+
+- `INFO provider registered id=... base_url=... default_model=... max_concurrent=...` — one line per successfully registered provider.
+- `WARN provider skipped — credential env var unset id=... api_key_env=...` — credentials missing; FR-3 skip. Callers see `not_found` per-agent; `/readyz` stays green.
+- `ERROR ROUNDTABLE_PROVIDERS parse failed; no HTTP providers registered error=...` — JSON-level issue. Only subprocess backends register.
+
+### Secret rotation
+
+Because `api_key_env` names an env var (rather than embedding the
+secret in the blob), rotating a key means updating a single env var.
+The value is read via `os.Getenv` at request time, so the new key
+takes effect immediately without restarting Roundtable.
+
+### Enumerating registered providers
+
+`/metricsz` (HTTP mode only) includes a `roundtable_providers_registered`
+field listing each registered provider's `id`, `base_url`, and
+`default_model` — a machine-readable enumeration surface for operators
+writing dashboards or deploy checks.
+
+Metric keys use `|` as the tuple delimiter:
+`roundtable_provider_requests_total` is keyed `provider|model|status`
+and `roundtable_provider_request_duration_ms_sum` is keyed
+`provider|model`. Slashes are not used because real model ids (e.g.
+`accounts/fireworks/models/kimi-k2p6`) contain them. Provider ids
+containing `/`, `|`, or whitespace are rejected at load time.
+
+A special model label, **`_other`**, appears when a provider's observed
+distinct-model count exceeds an internal cap (32) or when a client
+sends a model label longer than 128 characters. This is a
+cardinality-DoS guard — see FR-28. Dashboards should treat keys like
+`provider|_other|status` as a bucket containing the overflow.
 
 ### Known limitations (Apr 2026)
 
-- **Concurrency cap**: Free tier allows 1 concurrent cloud model call, Pro $20/mo allows 3, Max $100/mo allows 10. Roundtable holds a per-process bulkhead sized by `OLLAMA_MAX_CONCURRENT_REQUESTS` (default 3) so a `hivemind` with more ollama agents than slots queues locally instead of getting silent 429s from Ollama's edge. If multiple `roundtable-http-mcp` processes share an API key, they can still collectively exceed the cap — run a single instance, or set each process's cap to a fraction of the tier total.
-- **Output cap**: All `:cloud` models are capped at 16,384 completion tokens. When truncated, `done_reason=length` is surfaced in `metadata`.
-- **503 storms**: Ollama Cloud is a preview service; 503s are treated as `rate_limited`. No `Retry-After` is currently published, and Roundtable does not auto-retry (but surfaces `Retry-After` on `metadata.retry_after` when present).
-- **US-only inference**: not suitable for EU/GDPR-sensitive deployments.
+- **Output truncation**: When a response's `finish_reason` is `length`, `output_truncated: true` is set on `metadata` along with the raw `finish_reason`. Callers can check this generically without knowing any provider's conventions.
+- **Jurisdictional note**: Fireworks is US-hosted; Moonshot (CN) and z.ai (CN) have their own terms and jurisdictional profiles. Read the provider's terms before sending regulated data.
+- **Rate limits surface as `rate_limited`**: 429 and 503 from any provider map to `status: "rate_limited"` with `Retry-After` surfaced on `metadata.retry_after` when the header is present. No auto-retry is performed.
 
 ## Development (Building from Source)
 
