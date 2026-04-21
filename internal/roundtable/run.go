@@ -60,7 +60,7 @@ type ToolRequest struct {
 	ProjectRolesDir string
 }
 
-var validCLIs = map[string]bool{"gemini": true, "codex": true, "claude": true}
+var validCLIs = map[string]bool{"gemini": true, "codex": true, "claude": true, "ollama": true}
 var reservedNames = map[string]bool{"meta": true}
 
 // ParseAgents parses and validates a JSON string of agent specs.

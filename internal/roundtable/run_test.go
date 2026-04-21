@@ -464,3 +464,19 @@ func TestResolveAgentsExplicitOverEnv(t *testing.T) {
 		t.Fatalf("expected explicit gemini agent, got %v", agents)
 	}
 }
+
+func TestParseAgents_AcceptsOllama(t *testing.T) {
+	specs, err := ParseAgents(`[{"cli":"ollama","name":"kimi","model":"kimi-k2.6:cloud"}]`)
+	if err != nil {
+		t.Fatalf("ParseAgents: %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("got %d specs, want 1", len(specs))
+	}
+	if specs[0].CLI != "ollama" {
+		t.Errorf("cli = %q, want ollama", specs[0].CLI)
+	}
+	if specs[0].Model != "kimi-k2.6:cloud" {
+		t.Errorf("model = %q, want kimi-k2.6:cloud", specs[0].Model)
+	}
+}
