@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-11
 **Branch:** `go-phase3-stdio`
-**Status:** draft
+**Status:** Phases A and B landed (stdio subcommand shipping alongside HTTP, assumptions verified). Phases C–E still pending: HTTP deletion + binary rename, goreleaser/install.sh, and docs rewrite.
 **Owner:** Tej
 
 ## Goal
@@ -11,13 +11,15 @@ Go from "HTTP MCP on 127.0.0.1:4040 with manual daemon start" to: **one `curl | 
 
 No HTTP. No Homebrew. No asset directories. No supervisor. No README paragraphs the user has to read before the tool works.
 
-## Smallest shippable increment
+## Remaining work
 
-Phase A alone (stdio subcommand alongside the existing HTTP server, no default change) is dogfoodable inside Claude Code in 1-2 days of focused work. That's the minimum useful milestone: it lets Tej run `claude mcp add -s user roundtable -- /abs/path/to/roundtable stdio` against a hand-built binary and test the full Claude Code -> stdio -> roundtable -> gemini/codex/claude path end-to-end.
+Phases C–E are what lets **other** people install Roundtable with one command. Phase D is where real users benefit.
 
-Phase B verifies two assumptions that, if wrong, force a rethink (lazy codex cost, Claude Code crash recovery).
+- **Phase C** — delete `internal/httpmcp`, rename `cmd/roundtable-http-mcp` → `cmd/roundtable`, flip no-arg default to stdio, drop HTTP config fields and tests, update Makefile.
+- **Phase D** — goreleaser config, Forgejo release workflow with GitHub mirror push, install.sh with cosign-signed checksums, Forgejo CI workflow, cut v0.8.0.
+- **Phase E** — rewrite INSTALL.md for the single-binary stdio flow; update README / SKILL / ARCHITECTURE / RELEASING.
 
-Phases C-E are the work that lets **other** people install it with one command. Phase D is where real users benefit. Don't skip A/B to get there faster — Phase A shakes out the stdio discipline bugs (stdout pollution, panics, zombie codex children) in an environment you can debug without install-script variables in the way.
+Phase A (stdio discipline, subcommand, lazy Codex, orphan supervision, e2e tests) and Phase B (codex cold-start p95 = 109 ms, Claude Code crash-recovery contract documented) landed on 2026-04-11; see `2026-04-11-phase-a-dogfood-results.md` and `2026-04-11-phase-b-verification-results.md`.
 
 ## Architecture
 
@@ -1187,27 +1189,7 @@ p99:
 
 ### Task B2: Claude Code stdio crash recovery
 
-**Why**
-If the roundtable binary crashes mid-session (say an unhandled panic or an `os.Exit(1)` from a bug), does Claude Code auto-restart it, show an error, or silently wedge the session until the user restarts Claude Code itself? The answer determines whether INSTALL.md troubleshooting needs a "if roundtable gets in a bad state, run `/mcp reload`" section and whether we need an external supervisor.
-
-**Method**
-- [ ] Add a hidden `__crash` subcommand to the Phase A binary that calls `os.Exit(42)` after receiving one tool call. Remove before Phase C.
-- [ ] Register it separately: `claude mcp add -s user roundtable-crash -- $HOME/.local/bin/roundtable __crash`
-- [ ] In Claude Code, call the `hivemind` tool on `roundtable-crash`. Observe.
-- [ ] Try calling it again in the same session. Observe.
-- [ ] Record results:
-
-```
-(paste results here)
-First call after crash:
-Second call in same session:
-After /mcp reload:
-After Claude Code restart:
-```
-
-- [ ] Remove `__crash` code before the Phase C commit sweep.
-
-**No commit** — results live here and feed into Phase E1 troubleshooting.
+**Status: complete.** Results in `2026-04-11-phase-b-verification-results.md`. A hidden `__crash` subcommand and `scripts/register_crash_mcp.sh` were added to observe Claude Code's reaction to an abrupt `os.Exit(42)`, then removed once the contract was recorded: Claude Code does not auto-restart stdio MCPs mid-session; after one crash the tools are dropped from the catalog and recovery requires a full Claude Code restart. That finding drives the INSTALL.md troubleshooting language in Task E1.
 
 ---
 

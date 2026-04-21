@@ -167,14 +167,6 @@ Binary tested:       /home/dev/.local/bin/roundtable __crash
 >
 > If the crash reproduces, file an issue with the roundtable binary version (`roundtable --version`, coming in Phase C) and the stderr log captured from Claude Code's log directory.
 
-### Cleanup before Phase C
+### Cleanup
 
-The plan requires removing `__crash` before the Phase C commit sweep. The temporary code lives in `cmd/roundtable-http-mcp/main.go` with a clear `// PHASE B2 TEMPORARY — remove in Phase C` comment block. Phase C1 (delete httpmcp) is the natural place to do the removal.
-
-```bash
-# After Phase B2 results are recorded:
-git grep -n "PHASE B2 TEMPORARY" cmd/
-# Delete the marked block.
-rm scripts/register_crash_mcp.sh
-claude mcp remove roundtable-crash
-```
+Done on 2026-04-21: the `__crash` subcommand, its temporary block in `cmd/roundtable-http-mcp/main.go`, and `scripts/register_crash_mcp.sh` were all removed once this contract was recorded. Any residual `roundtable-crash` Claude Code registration from dogfood testing can be dropped with `claude mcp remove roundtable-crash`.

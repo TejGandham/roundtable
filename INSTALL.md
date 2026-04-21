@@ -24,7 +24,6 @@ Missing CLIs are skipped gracefully at runtime (`status: "not_found"`).
 pkill -f 'roundtable-http-mcp' 2>/dev/null || true
 rm -rf ~/.local/share/roundtable
 claude mcp remove roundtable 2>/dev/null || true
-claude mcp remove roundtable-crash 2>/dev/null || true
 ```
 
 ## 3. Install
