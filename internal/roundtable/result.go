@@ -36,6 +36,23 @@ func ProbeFailedResult(backendName, model, reason string, exitCode *int) *Result
 	return &Result{Model: model, Status: "probe_failed", ExitCode: exitCode, Stderr: stderr}
 }
 
+// ConfigErrorResult is the HTTP-native analogue of NotFoundResult/ProbeFailedResult.
+// Use it when a backend cannot run due to missing/invalid configuration
+// (e.g., missing API key, unresolvable model) rather than a missing binary
+// or a failed probe. Status is "error" so callers treat it as a normal
+// per-agent failure, not a dispatch-wide fault.
+func ConfigErrorResult(backendName, model, reason string) *Result {
+	if model == "" {
+		model = "cli-default"
+	}
+	return &Result{
+		Model:    model,
+		Status:   "error",
+		Response: backendName + " backend misconfigured: " + reason,
+		Stderr:   reason,
+	}
+}
+
 type Meta struct {
 	TotalElapsedMs  int64             `json:"total_elapsed_ms"`
 	FilesReferenced []string          `json:"files_referenced"`
