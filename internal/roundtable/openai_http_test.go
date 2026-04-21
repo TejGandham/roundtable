@@ -509,6 +509,34 @@ func TestNewHTTPTransport_IdlePoolScalesWithConcurrent(t *testing.T) {
 	}
 }
 
+// A trailing slash on base_url would concatenate into "/v1//chat/completions"
+// and hit 404 on strict upstreams. Normalize by trimming before append.
+func TestOpenAIHTTPBackend_Run_TrailingSlashBaseURL(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+
+	cfg := testConfig()
+	cfg.BaseURL = srv.URL + "/"
+	cfg.APIKeyEnv = "MOONSHOT_API_KEY_TRAILING"
+	t.Setenv("MOONSHOT_API_KEY_TRAILING", "sk-test")
+	b := NewOpenAIHTTPBackend(cfg, nil)
+
+	res, err := b.Run(context.Background(), Request{Prompt: "x", Timeout: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != "ok" {
+		t.Errorf("status = %q, want ok (trailing slash must be normalized)", res.Status)
+	}
+	if gotPath != "/chat/completions" {
+		t.Errorf("request path = %q, want /chat/completions (no double slash)", gotPath)
+	}
+}
+
 func TestOpenAIHTTPBackend_Run_InlinesFiles(t *testing.T) {
 	dir := t.TempDir()
 	fp := filepath.Join(dir, "note.txt")

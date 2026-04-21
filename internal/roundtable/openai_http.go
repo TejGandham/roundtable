@@ -157,7 +157,7 @@ func (o *OpenAIHTTPBackend) Run(ctx context.Context, req Request) (*Result, erro
 	bodyBytes := bodyBuf.Bytes()
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		o.baseURL+"/chat/completions", bytes.NewReader(bodyBytes))
+		strings.TrimSuffix(o.baseURL, "/")+"/chat/completions", bytes.NewReader(bodyBytes))
 	if err != nil {
 		result = ConfigErrorResult(o.id, model, "request build: "+err.Error())
 		return result, nil
