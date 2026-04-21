@@ -26,7 +26,7 @@ const defaultMaxResponseBytes = 8 * 1024 * 1024
 // OpenAIHTTPBackend implements Backend for any provider speaking the
 // OpenAI /v1/chat/completions contract.
 //
-// Design invariants (carried over from OllamaBackend):
+// Design invariants:
 //   - Healthy() is offline: it only checks whether os.Getenv(apiKeyEnv) is
 //     non-empty. The dispatcher runs Healthy concurrently per-agent; a
 //     network probe would burn the provider's concurrency quota before
@@ -71,8 +71,8 @@ func NewOpenAIHTTPBackend(cfg ProviderConfig, observe ObserveFunc) *OpenAIHTTPBa
 }
 
 // newHTTPTransport scales MaxIdleConnsPerHost with MaxConcurrent so a
-// provider configured for (e.g.) Ollama Max-tier's 10 concurrent calls
-// doesn't churn TCP/TLS on every other request. Minimum floor of 4 keeps
+// provider configured for, say, 10 concurrent calls doesn't churn TCP/TLS
+// on every other request under burst traffic. Minimum floor of 4 keeps
 // behavior unchanged for small configs.
 func newHTTPTransport(responseHeaderTimeout time.Duration, maxConcurrent int) *http.Transport {
 	idlePool := maxConcurrent
@@ -343,11 +343,11 @@ func openAIParseResponse(body []byte, statusCode int, retryAfter, providerLabel 
 }
 
 // extractOpenAIContent accepts the OpenAI-compat message.content field as
-// either a plain string (classic shape used by Ollama, DeepSeek, Groq,
-// most legacy deployments) or an array of content parts (the
-// OpenAI-current shape used for multi-modal, tool-use, and some provider
-// refusal payloads). Text parts are concatenated; other part types are
-// skipped. Returns an error when neither shape parses — that signals a
+// either a plain string (classic shape used by DeepSeek, Groq, most
+// legacy deployments) or an array of content parts (the OpenAI-current
+// shape used for multi-modal, tool-use, and some provider refusal
+// payloads). Text parts are concatenated; other part types are skipped.
+// Returns an error when neither shape parses — that signals a
 // non-compliant upstream, not an empty assistant message (an assistant
 // that legitimately replies with "" still parses fine).
 func extractOpenAIContent(raw json.RawMessage) (string, error) {

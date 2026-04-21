@@ -111,23 +111,23 @@ func TestProbeFailedResult_ProviderAgnosticMessage(t *testing.T) {
 }
 
 func TestConfigErrorResult(t *testing.T) {
-	r := ConfigErrorResult("ollama", "kimi-k2.6:cloud", "OLLAMA_API_KEY not set")
+	r := ConfigErrorResult("fireworks", "accounts/fireworks/models/kimi-k2p6", "FIREWORKS_API_KEY not set")
 	if r.Status != "error" {
 		t.Errorf("status = %q, want error", r.Status)
 	}
-	if r.Model != "kimi-k2.6:cloud" {
-		t.Errorf("model = %q, want kimi-k2.6:cloud", r.Model)
+	if r.Model != "accounts/fireworks/models/kimi-k2p6" {
+		t.Errorf("model = %q, want accounts/fireworks/models/kimi-k2p6", r.Model)
 	}
-	if !strings.Contains(r.Stderr, "OLLAMA_API_KEY not set") {
-		t.Errorf("stderr = %q, want substring 'OLLAMA_API_KEY not set'", r.Stderr)
+	if !strings.Contains(r.Stderr, "FIREWORKS_API_KEY not set") {
+		t.Errorf("stderr = %q, want substring 'FIREWORKS_API_KEY not set'", r.Stderr)
 	}
-	if !strings.Contains(r.Response, "ollama") {
-		t.Errorf("response = %q, want substring 'ollama'", r.Response)
+	if !strings.Contains(r.Response, "fireworks") {
+		t.Errorf("response = %q, want substring 'fireworks'", r.Response)
 	}
 }
 
 func TestConfigErrorResult_DefaultModel(t *testing.T) {
-	r := ConfigErrorResult("ollama", "", "no model configured")
+	r := ConfigErrorResult("fireworks", "", "no model configured")
 	if r.Model != "cli-default" {
 		t.Errorf("model = %q, want cli-default", r.Model)
 	}

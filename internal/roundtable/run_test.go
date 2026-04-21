@@ -489,8 +489,8 @@ func TestDefaultAgents_ExcludesAllHTTPProviders(t *testing.T) {
 
 // NotFoundResult receives cfg.spec.Provider (the backend identifier), not
 // cfg.spec.Name (the agent display name). For an agent
-// {"provider":"ollama","name":"kimi"} the Stderr must name "ollama", not
-// "kimi".
+// {"provider":"fireworks","name":"kimi"} the Stderr must name "fireworks",
+// not "kimi".
 func TestRunMissingBackend_StderrMentionsProviderNotName(t *testing.T) {
 	backends := map[string]Backend{
 		"gemini": &mockBackend{
@@ -504,7 +504,7 @@ func TestRunMissingBackend_StderrMentionsProviderNotName(t *testing.T) {
 		Role:    "default",
 		Timeout: 10,
 		Agents: []AgentSpec{
-			{Provider: "ollama", Name: "kimi", Model: "kimi-k2.6:cloud"},
+			{Provider: "fireworks", Name: "kimi", Model: "accounts/fireworks/models/kimi-k2p6"},
 		},
 	}
 
@@ -525,8 +525,8 @@ func TestRunMissingBackend_StderrMentionsProviderNotName(t *testing.T) {
 	if r.Status != "not_found" {
 		t.Errorf("status = %q, want not_found", r.Status)
 	}
-	if !strings.Contains(r.Stderr, "ollama") {
-		t.Errorf("stderr = %q, want mention of 'ollama' (provider)", r.Stderr)
+	if !strings.Contains(r.Stderr, "fireworks") {
+		t.Errorf("stderr = %q, want mention of 'fireworks' (provider)", r.Stderr)
 	}
 	if strings.Contains(r.Stderr, "kimi") {
 		t.Errorf("stderr = %q, should NOT mention 'kimi' (agent name, not provider)", r.Stderr)

@@ -305,7 +305,7 @@ func TestMetricsEndpoint_SurfacesProvidersRegistered(t *testing.T) {
 	metrics := &Metrics{}
 	metrics.SetProviders([]ProviderInfoDTO{
 		{ID: "moonshot", BaseURL: "https://api.moonshot.cn/v1", DefaultModel: "kimi-k2-0711-preview"},
-		{ID: "ollama", BaseURL: "https://ollama.com/v1", DefaultModel: "kimi-k2.6:cloud"},
+		{ID: "fireworks", BaseURL: "https://api.fireworks.ai/inference/v1", DefaultModel: "accounts/fireworks/models/kimi-k2p6"},
 	})
 	ts, _ := newTestAppWithMetrics(t, successDispatch("ok"), nil, metrics)
 
@@ -323,11 +323,11 @@ func TestMetricsEndpoint_SurfacesProvidersRegistered(t *testing.T) {
 	if !strings.Contains(bodyStr, `"moonshot"`) {
 		t.Errorf("missing moonshot id: %s", bodyStr)
 	}
-	if !strings.Contains(bodyStr, `"ollama"`) {
-		t.Errorf("missing ollama id: %s", bodyStr)
+	if !strings.Contains(bodyStr, `"fireworks"`) {
+		t.Errorf("missing fireworks id: %s", bodyStr)
 	}
-	if !strings.Contains(bodyStr, `"kimi-k2.6:cloud"`) {
-		t.Errorf("missing ollama default_model: %s", bodyStr)
+	if !strings.Contains(bodyStr, `"accounts/fireworks/models/kimi-k2p6"`) {
+		t.Errorf("missing fireworks default_model: %s", bodyStr)
 	}
 }
 

@@ -12,7 +12,7 @@ func TestMetrics_ObserveProvider(t *testing.T) {
 	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "ok", 120)
 	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "ok", 240)
 	m.ObserveProvider("moonshot", "kimi-k2-0711-preview", "rate_limited", 50)
-	m.ObserveProvider("ollama", "kimi-k2.6:cloud", "ok", 300)
+	m.ObserveProvider("fireworks", "accounts/fireworks/models/kimi-k2p6", "ok", 300)
 
 	raw := m.JSON()
 	var snap map[string]any
@@ -27,7 +27,7 @@ func TestMetrics_ObserveProvider(t *testing.T) {
 	wantKeys := []string{
 		"moonshot|kimi-k2-0711-preview|ok",
 		"moonshot|kimi-k2-0711-preview|rate_limited",
-		"ollama|kimi-k2.6:cloud|ok",
+		"fireworks|accounts/fireworks/models/kimi-k2p6|ok",
 	}
 	for _, k := range wantKeys {
 		if _, ok := reqs[k]; !ok {
@@ -131,13 +131,13 @@ func TestMetrics_ProvidersRegisteredInSnapshot(t *testing.T) {
 	m := &Metrics{}
 	m.SetProviders([]ProviderInfoDTO{
 		{ID: "moonshot", BaseURL: "https://api.moonshot.cn/v1", DefaultModel: "kimi-k2-0711-preview"},
-		{ID: "ollama", BaseURL: "https://ollama.com/v1"},
+		{ID: "fireworks", BaseURL: "https://api.fireworks.ai/inference/v1"},
 	})
 	raw := m.JSON()
 	if !strings.Contains(string(raw), `"roundtable_providers_registered"`) {
 		t.Errorf("missing providers_registered in output: %s", raw)
 	}
-	if !strings.Contains(string(raw), `"moonshot"`) || !strings.Contains(string(raw), `"ollama"`) {
+	if !strings.Contains(string(raw), `"moonshot"`) || !strings.Contains(string(raw), `"fireworks"`) {
 		t.Errorf("missing provider ids: %s", raw)
 	}
 }

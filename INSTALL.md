@@ -184,14 +184,15 @@ claude mcp add -s user roundtable \
   -e FIREWORKS_API_KEY="fw_..." \
   -e MOONSHOT_API_KEY="sk-..." \
   -e ZAI_API_KEY="sk-..." \
-  -e ROUNDTABLE_PROVIDERS='[{"id":"fireworks","base_url":"https://api.fireworks.ai/inference/v1","api_key_env":"FIREWORKS_API_KEY","default_model":"accounts/fireworks/models/kimi-k2p6","max_concurrent":5},{"id":"moonshot","base_url":"https://api.moonshot.cn/v1","api_key_env":"MOONSHOT_API_KEY","default_model":"kimi-k2-0711-preview","max_concurrent":5},{"id":"zai","base_url":"https://api.z.ai/v1","api_key_env":"ZAI_API_KEY","default_model":"glm-4.6","max_concurrent":3}]' \
+  -e ROUNDTABLE_PROVIDERS='[{"id":"fireworks-kimi","base_url":"https://api.fireworks.ai/inference/v1","api_key_env":"FIREWORKS_API_KEY","default_model":"accounts/fireworks/models/kimi-k2p6","max_concurrent":5},{"id":"fireworks-minimax","base_url":"https://api.fireworks.ai/inference/v1","api_key_env":"FIREWORKS_API_KEY","default_model":"accounts/fireworks/models/minimax-m2p7","max_concurrent":5},{"id":"moonshot","base_url":"https://api.moonshot.cn/v1","api_key_env":"MOONSHOT_API_KEY","default_model":"kimi-k2-0711-preview","max_concurrent":5},{"id":"zai","base_url":"https://api.z.ai/v1","api_key_env":"ZAI_API_KEY","default_model":"glm-4.6","max_concurrent":3}]' \
   -- ~/.local/share/roundtable/roundtable-http-mcp stdio
 ```
 
-For the canonical kimi-k2.6 deployment use **Fireworks**, not Ollama Cloud:
-in benchmark (Apr 2026) Fireworks returned the same answer ~17x faster
-(~4s vs ~73s) and with cleaner output. Ollama Cloud is preview-tier and
-still 503-prone — not recommended for production dispatch.
+Two Fireworks entries share a single `FIREWORKS_API_KEY` but are
+registered under distinct ids (`fireworks-kimi`, `fireworks-minimax`)
+because Fireworks multiplexes many open-weight models under one API —
+splitting by provider id gives independent concurrency budgets and
+per-model metric labels.
 
 ### Fields
 
@@ -213,14 +214,15 @@ Target one registered provider:
 [{"name":"kimi-moonshot","provider":"moonshot","model":"kimi-k2-0711-preview"}]
 ```
 
-Fan out across multiple providers in one dispatch (e.g., compare kimi on Fireworks vs kimi on Moonshot side by side):
+Fan out across multiple providers in one dispatch (e.g., compare kimi vs minimax on Fireworks, plus moonshot):
 
 ```json
 [
   {"provider":"gemini"},
   {"provider":"codex"},
   {"provider":"claude"},
-  {"provider":"fireworks","model":"accounts/fireworks/models/kimi-k2p6","name":"kimi-fireworks"},
+  {"provider":"fireworks-kimi","name":"kimi"},
+  {"provider":"fireworks-minimax","name":"minimax"},
   {"provider":"moonshot","model":"kimi-k2-0711-preview","name":"kimi-moonshot"}
 ]
 ```
@@ -262,27 +264,10 @@ field listing each registered provider's `id`, `base_url`, and
 `default_model` — a machine-readable enumeration surface for operators
 writing dashboards or deploy checks.
 
-### What happened to `OLLAMA_API_KEY`?
-
-In roundtable v0.7 and earlier, setting `OLLAMA_API_KEY` (plus
-optional `OLLAMA_BASE_URL`, `OLLAMA_DEFAULT_MODEL`,
-`OLLAMA_MAX_CONCURRENT_REQUESTS`, `OLLAMA_RESPONSE_HEADER_TIMEOUT`)
-auto-registered a special Ollama-native provider. As of v0.8,
-**no provider is special** — every HTTP provider lives in
-`ROUNDTABLE_PROVIDERS` and speaks the OpenAI-compat
-`/v1/chat/completions` endpoint. The auto-registration is gone.
-
-Ollama Cloud itself is no longer in the canonical example config
-because benchmark (Apr 2026) showed it consistently 10–17x slower than
-Fireworks for the same kimi-k2.6 workload, plus recurring 503 storms.
-If you still want it, add an entry with
-`"base_url":"https://ollama.com/v1"` and `"api_key_env":"OLLAMA_API_KEY"` —
-the generic OpenAI-compat backend handles it like any other provider.
-
 ### Known limitations (Apr 2026)
 
 - **Output truncation**: When a response's `finish_reason` is `length`, `output_truncated: true` is set on `metadata` along with the raw `finish_reason`. Callers can check this generically without knowing any provider's conventions.
-- **Jurisdictional note**: Fireworks is US-hosted; Moonshot (CN), z.ai (CN), Ollama Cloud (US) each have their own terms and jurisdictional profiles. Read the provider's terms before sending regulated data.
+- **Jurisdictional note**: Fireworks is US-hosted; Moonshot (CN) and z.ai (CN) have their own terms and jurisdictional profiles. Read the provider's terms before sending regulated data.
 - **Rate limits surface as `rate_limited`**: 429 and 503 from any provider map to `status: "rate_limited"` with `Retry-After` surfaced on `metadata.retry_after` when the header is present. No auto-retry is performed.
 
 ## Development (Building from Source)

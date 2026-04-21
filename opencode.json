@@ -1,12 +1,4 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "roundtable": {
-      "type": "local",
-      "command": ["/home/dev/.nix-profile/bin/mix", "run", "--no-halt"],
-      "environment": {
-        "ROUNDTABLE_MCP": "1"
-      }
-    }
-  }
+  "mcp": {}
 }
