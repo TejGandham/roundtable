@@ -10,7 +10,7 @@
 
 Roundtable currently dispatches to three CLI-harness-backed providers (`gemini`, `codex`, `claude`) via subprocess. The user wants to add Ollama's cloud-hosted `:cloud` models:
 
-- `kimi-k2.5:cloud` — reasoning, multimodal, subagent-friendly
+- `kimi-k2.6:cloud` — reasoning, multimodal, subagent-friendly
 - `qwen3.5:cloud` — reasoning + coding + agentic tool use
 - `glm-5.1:cloud` — reasoning + code generation (top SWE-Bench Pro in April 2026)
 - `minimax-m2.7:cloud` — fast coding / productivity
@@ -51,7 +51,7 @@ Two shapes are possible:
 ```json
 {
   "agents": "[
-    {\"cli\":\"ollama\",\"name\":\"kimi\",\"model\":\"kimi-k2.5:cloud\"},
+    {\"cli\":\"ollama\",\"name\":\"kimi\",\"model\":\"kimi-k2.6:cloud\"},
     {\"cli\":\"ollama\",\"name\":\"glm\", \"model\":\"glm-5.1:cloud\"},
     {\"cli\":\"claude\",\"name\":\"claude\"}
   ]"
@@ -64,7 +64,7 @@ Two shapes are possible:
 ### Option B — One backend key per model (thin wrappers)
 
 ```go
-"kimi":     NewOllamaCloudBackend("kimi-k2.5:cloud"),
+"kimi":     NewOllamaCloudBackend("kimi-k2.6:cloud"),
 "qwen":     NewOllamaCloudBackend("qwen3.5:cloud"),
 "glm":      NewOllamaCloudBackend("glm-5.1:cloud"),
 "minimax":  NewOllamaCloudBackend("minimax-m2.7:cloud"),
@@ -82,7 +82,7 @@ Rationale:
 3. Per-model preferences are naturally expressed through the existing `AgentSpec.Model` field — no new concept.
 4. Default model lives in env (`OLLAMA_DEFAULT_MODEL`), keeping it out of code.
 
-If we ever want named shortcuts (`cli: "kimi"`), they can be a thin alias map (`"kimi" → {cli: "ollama", model: "kimi-k2.5:cloud"}`) later. Start without it.
+If we ever want named shortcuts (`cli: "kimi"`), they can be a thin alias map (`"kimi" → {cli: "ollama", model: "kimi-k2.6:cloud"}`) later. Start without it.
 
 ## 4. Concrete insertion plan
 
@@ -216,6 +216,43 @@ Endpoint choice: **native `/api/chat`** over `/v1/chat/completions`. Concrete re
 3. Ollama's OpenAI-compat tool-call path is flakier than native; irrelevant today (we don't plumb tool use) but a latent risk.
 
 **Tradeoff acknowledged:** this parser is NOT reusable for OpenRouter (which is `/v1`-only). §6 updated to reflect that Phase 3 OpenRouter work needs a second parser. We're trading reuse for correctness on the four target models.
+
+**File content inlining (locked 2026-04-20 after review).** Roundtable's existing prompt assembler (`internal/roundtable/prompt.go:22-39`) only *names* the files — it emits a list like `- main.go (1234 bytes)` followed by "Review the files listed above using your own tools to read their contents." The subprocess CLI backends (claude/codex/gemini) succeed because they are themselves coding agents with filesystem tool-calling baked in; they receive the file-name list and open the files via their own tool loop.
+
+An HTTP-only Ollama backend has no such loop. Without intervention, the model sees the file-name list, finds no tools available, and either hallucinates file contents or punts ("I can't read files"). This is a real correctness gap and the existing prompt text does not work out of the box for HTTP providers.
+
+**Resolution: `OllamaBackend.Run()` eagerly reads `req.Files` and inlines contents into the user message, before calling `/api/chat`.** Rationale:
+
+- Roundtable's role is parallel fan-out with one-shot prompts, not interactive coding agents. Inlining is the idiomatic match for that pattern.
+- Input context on the target models is generous (128K+ tokens on kimi-k2.6 etc.) — well over what a handful of source files demand. The 16K cap is on output tokens, not input.
+- An in-backend agent loop (Ollama native `/api/chat` tool-calling with a `read_file` tool) is the alternative; rejected for Phase 1 because it adds ~150 LOC of loop/orchestration, tool-call reliability varies across cloud models, and the simpler inlining solution is deterministic and sufficient for typical Roundtable usage.
+- Third-party library path (`pi-mono/agent`): rejected — TypeScript-only, would require spawning a Node subprocess (reintroducing the CLI-harness pattern we're replacing) and treats Ollama as generic OpenAI-compat rather than native `/api/chat`.
+
+**Format.** XML-tag style (robust against collisions with backtick code fences in file contents):
+
+```
+<file path="internal/roundtable/run.go">
+<...contents...>
+</file>
+
+<file path="internal/roundtable/backend.go">
+<...contents...>
+</file>
+
+<original-prompt>
+<req.Prompt as assembled by AssemblePrompt — still includes the file-name list text from the existing prompt assembler; harmless redundancy>
+</original-prompt>
+```
+
+**Caps.**
+
+- Per-file: **128 KiB** (≈32K tokens for code). Files larger than this are truncated at the cap with a trailing `<truncated-at-128KiB />` marker inside the `<file>` block.
+- Total across all inlined files: **512 KiB** (≈128K tokens). After the budget is exhausted, remaining files are listed by path only, inside a `<skipped-files>` block at the end, so the model at least knows they existed.
+- Unreadable files (stat fails / permission denied): emit `<file path="X" error="<reason>" />` as an empty element. No silent skipping — the model sees the failure.
+
+These caps are constants in `ollama.go` for now (`ollamaMaxFileBytes`, `ollamaMaxTotalFileBytes`); move to env vars if a user hits the limit.
+
+**Leaky-abstraction note.** The existing `AssemblePrompt` embeds a file-name list + "use your own tools" instruction directly into `req.Prompt`. When the Ollama backend also inlines file contents, the resulting message contains both — roughly 100 redundant tokens per dispatch. We accept this for Phase 1; the proper fix (having Roundtable own file-content resolution for all backends, not just HTTP ones) is a larger refactor that touches the CLI backends' prompt shape and is out of scope.
 
 **Config-error result type.** `NotFoundResult` returns `ollama CLI not found in PATH` — semantically wrong for an HTTP backend where the failure is missing env, not missing binary. Introduce:
 
