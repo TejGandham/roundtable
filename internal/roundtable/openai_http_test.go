@@ -439,6 +439,25 @@ func TestOpenAIParse_ContentUnknownShape(t *testing.T) {
 	}
 }
 
+// Documenting current behavior: OpenAI-compat servers occasionally emit
+// {"content": null} for tool-call-only responses. json.Unmarshal treats
+// JSON null as the zero value for *string, so we get status=ok with an
+// empty response string — not a parse error. finish_reason is still
+// surfaced so callers can distinguish empty-answer from tool-only-turn.
+func TestOpenAIParse_ContentNull(t *testing.T) {
+	body := []byte(`{"model":"x","choices":[{"message":{"content":null},"finish_reason":"tool_calls"}]}`)
+	parsed := openAIParseResponse(body, 200, "", "p")
+	if parsed.Status != "ok" {
+		t.Errorf("status = %q, want ok (null content is legitimate)", parsed.Status)
+	}
+	if parsed.Response != "" {
+		t.Errorf("response = %q, want empty string", parsed.Response)
+	}
+	if parsed.Metadata["finish_reason"] != "tool_calls" {
+		t.Errorf("finish_reason must still be surfaced: %v", parsed.Metadata)
+	}
+}
+
 // TOCTOU guard: Healthy() checked the env var, then something (rotation,
 // ops error, test reset) cleared it. The dispatcher reaches Run() before
 // a re-probe. We must fail fast with ConfigError, not burn a semaphore

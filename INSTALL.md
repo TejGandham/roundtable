@@ -264,6 +264,19 @@ field listing each registered provider's `id`, `base_url`, and
 `default_model` — a machine-readable enumeration surface for operators
 writing dashboards or deploy checks.
 
+Metric keys use `|` as the tuple delimiter:
+`roundtable_provider_requests_total` is keyed `provider|model|status`
+and `roundtable_provider_request_duration_ms_sum` is keyed
+`provider|model`. Slashes are not used because real model ids (e.g.
+`accounts/fireworks/models/kimi-k2p6`) contain them. Provider ids
+containing `/`, `|`, or whitespace are rejected at load time.
+
+A special model label, **`_other`**, appears when a provider's observed
+distinct-model count exceeds an internal cap (32) or when a client
+sends a model label longer than 128 characters. This is a
+cardinality-DoS guard — see FR-28. Dashboards should treat keys like
+`provider|_other|status` as a bucket containing the overflow.
+
 ### Known limitations (Apr 2026)
 
 - **Output truncation**: When a response's `finish_reason` is `length`, `output_truncated: true` is set on `metadata` along with the raw `finish_reason`. Callers can check this generically without knowing any provider's conventions.
