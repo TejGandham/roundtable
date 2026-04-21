@@ -146,9 +146,7 @@ These are acknowledged as valuable but will not be solved by this work:
 
 ## 8. Migration Requirements
 
-- **MR-1.** Existing Roundtable deployments that use only `OLLAMA_API_KEY` SHALL continue to function after upgrade without any configuration change, OR the upgrade release notes SHALL document the exact env-var mapping required.
-- **MR-2.** Existing agent-spec JSON that uses `{"cli":"ollama","model":"<model>:cloud"}` SHALL either continue to dispatch identically or SHALL fail with a migration message that points the caller at the new agent-spec shape. Silent behavior changes are not acceptable.
-- **MR-3.** All tests from PR #11 that verify Ollama-specific behavior SHALL either pass unchanged or be re-expressed as provider-agnostic equivalents covering the same property.
+*This section intentionally left blank. Per product-owner decision 2026-04-21 (captured in the companion design document's amendments note), Roundtable has a single operator at this time and backward compatibility with the PR-#11 Ollama-specific configuration is explicitly waived. The refactor is a clean switch: operators reconfigure via `ROUNDTABLE_PROVIDERS` and update any agent-spec JSON that referenced `cli`-style entries. MR-1, MR-2, and MR-3 (originally: legacy env-var compat, silent compat of existing agent specs, and test preservation) are retired.*
 
 ## 9. Acceptance Criteria
 
