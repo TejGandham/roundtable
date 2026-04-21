@@ -64,12 +64,20 @@ func NewOpenAIHTTPBackend(cfg ProviderConfig, observe ObserveFunc) *OpenAIHTTPBa
 			// But Transport needs explicit timeouts because context
 			// cancellation only reaches net/http AFTER the request is in
 			// flight; a stalled TLS handshake can otherwise hang.
-			Transport: newHTTPTransport(cfg.ResponseHeaderTimeout),
+			Transport: newHTTPTransport(cfg.ResponseHeaderTimeout, cfg.MaxConcurrent),
 		},
 	}
 }
 
-func newHTTPTransport(responseHeaderTimeout time.Duration) *http.Transport {
+// newHTTPTransport scales MaxIdleConnsPerHost with MaxConcurrent so a
+// provider configured for (e.g.) Ollama Max-tier's 10 concurrent calls
+// doesn't churn TCP/TLS on every other request. Minimum floor of 4 keeps
+// behavior unchanged for small configs.
+func newHTTPTransport(responseHeaderTimeout time.Duration, maxConcurrent int) *http.Transport {
+	idlePool := maxConcurrent
+	if idlePool < 4 {
+		idlePool = 4
+	}
 	return &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   10 * time.Second,
@@ -78,7 +86,7 @@ func newHTTPTransport(responseHeaderTimeout time.Duration) *http.Transport {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: responseHeaderTimeout,
 		IdleConnTimeout:       90 * time.Second,
-		MaxIdleConnsPerHost:   4,
+		MaxIdleConnsPerHost:   idlePool,
 	}
 }
 
@@ -119,6 +127,16 @@ func (o *OpenAIHTTPBackend) Run(ctx context.Context, req Request) (*Result, erro
 	if model == "" {
 		result = ConfigErrorResult(o.id, "",
 			"no model resolved: set provider default_model or AgentSpec.Model")
+		return result, nil
+	}
+
+	// Fail fast on an empty credential at dispatch time, before we burn a
+	// semaphore slot and a network round-trip on a guaranteed 401. Healthy()
+	// validates the same env var, but it's checked once per probe cycle and
+	// can drift (rotate/unset) between probe and Run.
+	if apiKey == "" {
+		result = ConfigErrorResult(o.id, model,
+			o.apiKeyEnv+" not set at dispatch time")
 		return result, nil
 	}
 
@@ -205,6 +223,15 @@ func (o *OpenAIHTTPBackend) Run(ctx context.Context, req Request) (*Result, erro
 
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, defaultMaxResponseBytes))
 	if readErr != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) ||
+			errors.Is(readErr, context.DeadlineExceeded) {
+			result = BuildResult(
+				RawRunOutput{TimedOut: true, ElapsedMs: elapsed, Stderr: "read body: " + readErr.Error()},
+				ParsedOutput{},
+				model,
+			)
+			return result, nil
+		}
 		result = &Result{
 			Model:     model,
 			Status:    "error",

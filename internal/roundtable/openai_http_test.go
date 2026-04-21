@@ -329,6 +329,76 @@ func TestOpenAIHTTPBackend_Run_ConcurrencyGate_Deadline(t *testing.T) {
 	}
 }
 
+// TOCTOU guard: Healthy() checked the env var, then something (rotation,
+// ops error, test reset) cleared it. The dispatcher reaches Run() before
+// a re-probe. We must fail fast with ConfigError, not burn a semaphore
+// slot firing a guaranteed-401 request.
+func TestOpenAIHTTPBackend_Run_EmptyKeyAtDispatchTime(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	cfg := testConfig()
+	cfg.BaseURL = srv.URL
+	cfg.APIKeyEnv = "MOONSHOT_API_KEY_UNSET_TEST"
+	t.Setenv("MOONSHOT_API_KEY_UNSET_TEST", "")
+	b := NewOpenAIHTTPBackend(cfg, nil)
+
+	res, _ := b.Run(context.Background(), Request{Prompt: "x", Timeout: 10})
+	if res.Status != "error" {
+		t.Errorf("status = %q, want error", res.Status)
+	}
+	if !strings.Contains(res.Stderr, "MOONSHOT_API_KEY_UNSET_TEST") {
+		t.Errorf("stderr = %q; should name the unset env var", res.Stderr)
+	}
+	if called {
+		t.Error("handler was called; Run should have fast-failed before any network I/O")
+	}
+}
+
+// Regression guard: if the dispatcher deadline fires during io.ReadAll of
+// a slow body (not during the initial request), the status must still
+// map to "timeout", matching the request-phase deadline path and FR-21.
+func TestOpenAIHTTPBackend_Run_CtxDeadlineDuringBodyRead(t *testing.T) {
+	b, srv := newTestBackend(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		// Headers sent; now stall the body. ctx deadline fires here.
+		select {
+		case <-r.Context().Done():
+		case <-time.After(3 * time.Second):
+		}
+	})
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	res, _ := b.Run(ctx, Request{Prompt: "x", Timeout: 10})
+	if res.Status != "timeout" {
+		t.Errorf("status = %q, want timeout (body-phase deadline)", res.Status)
+	}
+}
+
+// Regression guard: MaxIdleConnsPerHost scales with MaxConcurrent so a
+// max_concurrent=10 provider doesn't thrash its connection pool under
+// burst traffic.
+func TestNewHTTPTransport_IdlePoolScalesWithConcurrent(t *testing.T) {
+	for _, tc := range []struct {
+		maxConc  int
+		wantIdle int
+	}{
+		{1, 4}, {3, 4}, {4, 4}, {10, 10}, {32, 32},
+	} {
+		tr := newHTTPTransport(60*time.Second, tc.maxConc)
+		if tr.MaxIdleConnsPerHost != tc.wantIdle {
+			t.Errorf("MaxConcurrent=%d: MaxIdleConnsPerHost = %d, want %d", tc.maxConc, tr.MaxIdleConnsPerHost, tc.wantIdle)
+		}
+	}
+}
+
 func TestOpenAIHTTPBackend_Run_InlinesFiles(t *testing.T) {
 	dir := t.TempDir()
 	fp := filepath.Join(dir, "note.txt")
