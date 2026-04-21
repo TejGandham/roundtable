@@ -119,7 +119,11 @@ func NewOllamaBackend(defaultModel string, observe ObserveFunc) *OllamaBackend {
 					KeepAlive: 30 * time.Second,
 				}).DialContext,
 				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 30 * time.Second,
+				// 60s matches the tail latency of slow cloud models (qwen3.5,
+				// kimi-k2.6 under load) observed during initial stress tests.
+				// A lower value (e.g., 30s) starves slow-but-healthy models
+				// queued behind the §4.6 concurrency gate on Pro tier.
+				ResponseHeaderTimeout: 60 * time.Second,
 				IdleConnTimeout:       90 * time.Second,
 				MaxIdleConnsPerHost:   4,
 			},
