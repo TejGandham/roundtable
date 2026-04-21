@@ -1,6 +1,7 @@
 package roundtable
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -279,5 +280,48 @@ func TestBuildMeta_EmptyResults(t *testing.T) {
 	meta := BuildMeta(map[string]*Result{}, []string{}, map[string]string{})
 	if meta.TotalElapsedMs != 0 {
 		t.Errorf("total_elapsed_ms = %d, want 0", meta.TotalElapsedMs)
+	}
+}
+
+func TestBuildResult_PropagatesMetadata(t *testing.T) {
+	raw := RawRunOutput{ExitCode: intPtr(0)}
+	parsed := ParsedOutput{
+		Status: "ok",
+		Metadata: map[string]any{
+			"model_used":  "kimi-k2.6:cloud",
+			"done_reason": "length",
+			"tokens":      map[string]any{"prompt_eval_count": 42, "eval_count": 8},
+		},
+	}
+	r := BuildResult(raw, parsed, "fallback")
+
+	if r.Metadata == nil {
+		t.Fatal("Metadata = nil, want propagated map")
+	}
+	if got := r.Metadata["done_reason"]; got != "length" {
+		t.Errorf("done_reason = %v, want length", got)
+	}
+	if r.Metadata["tokens"] == nil {
+		t.Error("tokens missing from propagated metadata")
+	}
+	// model_used precedence still works (existing behavior, regression guard)
+	if r.Model != "kimi-k2.6:cloud" {
+		t.Errorf("model = %q, want kimi-k2.6:cloud (parsed metadata wins)", r.Model)
+	}
+}
+
+func TestBuildResult_NilMetadata_OmittedFromJSON(t *testing.T) {
+	raw := RawRunOutput{ExitCode: intPtr(0)}
+	r := BuildResult(raw, ParsedOutput{Status: "ok"}, "model")
+	if r.Metadata != nil {
+		t.Errorf("Metadata = %v, want nil when parser provided none", r.Metadata)
+	}
+	// Belt-and-suspenders: confirm omitempty keeps it out of JSON.
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(data), `"metadata"`) {
+		t.Errorf("JSON contains metadata key for nil map: %s", string(data))
 	}
 }

@@ -464,3 +464,90 @@ func TestResolveAgentsExplicitOverEnv(t *testing.T) {
 		t.Fatalf("expected explicit gemini agent, got %v", agents)
 	}
 }
+
+func TestParseAgents_AcceptsOllama(t *testing.T) {
+	specs, err := ParseAgents(`[{"cli":"ollama","name":"kimi","model":"kimi-k2.6:cloud"}]`)
+	if err != nil {
+		t.Fatalf("ParseAgents: %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("got %d specs, want 1", len(specs))
+	}
+	if specs[0].CLI != "ollama" {
+		t.Errorf("cli = %q, want ollama", specs[0].CLI)
+	}
+	if specs[0].Model != "kimi-k2.6:cloud" {
+		t.Errorf("model = %q, want kimi-k2.6:cloud", specs[0].Model)
+	}
+}
+
+// Invariant: ollama backends must be opt-in, never default. See the
+// docstring on defaultAgents() in run.go for the rationale (fragile Pro-tier
+// reliability + higher hallucination rate on review-class tasks than the
+// frontier CLI backends).
+func TestDefaultAgents_ExcludesOllama(t *testing.T) {
+	got := defaultAgents()
+	for _, a := range got {
+		if a.CLI == "ollama" {
+			t.Fatalf("defaultAgents() contains ollama agent %+v; ollama must be opt-in only", a)
+		}
+	}
+	// Positive guard: defaults remain the three frontier CLIs.
+	wantCLIs := map[string]bool{"gemini": true, "codex": true, "claude": true}
+	if len(got) != len(wantCLIs) {
+		t.Errorf("defaultAgents() len = %d, want %d", len(got), len(wantCLIs))
+	}
+	for _, a := range got {
+		if !wantCLIs[a.CLI] {
+			t.Errorf("unexpected CLI %q in defaults", a.CLI)
+		}
+	}
+}
+
+// Regression guard for run.go:348/354 — NotFoundResult and ProbeFailedResult
+// now receive cfg.spec.CLI (the backend identifier) instead of cfg.spec.Name
+// (the agent display name). For an agent {"cli":"ollama","name":"kimi"} the
+// Stderr should read "ollama CLI not found in PATH", not "kimi CLI not
+// found in PATH" — because "kimi" is the agent label, not a CLI name.
+func TestRunMissingBackend_StderrMentionsCLINotName(t *testing.T) {
+	backends := map[string]Backend{
+		"gemini": &mockBackend{
+			name:      "gemini",
+			runResult: &Result{Model: "pro", Status: "ok", Response: "hello"},
+		},
+		// No ollama backend registered.
+	}
+
+	req := ToolRequest{
+		Prompt:  "test",
+		Role:    "default",
+		Timeout: 10,
+		Agents: []AgentSpec{
+			{CLI: "ollama", Name: "kimi", Model: "kimi-k2.6:cloud"},
+		},
+	}
+
+	data, err := Run(context.Background(), req, backends)
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	var r Result
+	if err := json.Unmarshal(result["kimi"], &r); err != nil {
+		t.Fatalf("unmarshal kimi: %v", err)
+	}
+	if r.Status != "not_found" {
+		t.Errorf("status = %q, want not_found", r.Status)
+	}
+	if !strings.Contains(r.Stderr, "ollama") {
+		t.Errorf("stderr = %q, want mention of 'ollama' (CLI)", r.Stderr)
+	}
+	if strings.Contains(r.Stderr, "kimi") {
+		t.Errorf("stderr = %q, should NOT mention 'kimi' (agent name, not CLI)", r.Stderr)
+	}
+}

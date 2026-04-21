@@ -93,13 +93,15 @@ type App struct {
 
 // NewApp creates an App wired to a native Go dispatch function.
 // Optionally pass backend probes to enable per-backend readyz health checks.
-func NewApp(config Config, dispatch DispatchFunc, backends map[string]BackendProbe) *App {
+// metrics must be non-nil; main owns the instance so it can also be shared
+// with buildBackends (so OllamaBackend.observe can route into the same
+// counters).
+func NewApp(config Config, dispatch DispatchFunc, backends map[string]BackendProbe, metrics *Metrics) *App {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    config.ServerName,
 		Version: config.ServerVersion,
 	}, nil)
 
-	metrics := &Metrics{}
 	app := &App{
 		config:   config,
 		dispatch: dispatch,

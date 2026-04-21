@@ -6,17 +6,18 @@ import (
 )
 
 type Result struct {
-	Response        string  `json:"response"`
-	Model           string  `json:"model"`
-	Status          string  `json:"status"`
-	ExitCode        *int    `json:"exit_code"`
-	ExitSignal      *string `json:"exit_signal"`
-	Stderr          string  `json:"stderr"`
-	ElapsedMs       int64   `json:"elapsed_ms"`
-	ParseError      *string `json:"parse_error"`
-	Truncated       bool    `json:"truncated"`
-	StderrTruncated bool    `json:"stderr_truncated"`
-	SessionID       *string `json:"session_id"`
+	Response        string         `json:"response"`
+	Model           string         `json:"model"`
+	Status          string         `json:"status"`
+	ExitCode        *int           `json:"exit_code"`
+	ExitSignal      *string        `json:"exit_signal"`
+	Stderr          string         `json:"stderr"`
+	ElapsedMs       int64          `json:"elapsed_ms"`
+	ParseError      *string        `json:"parse_error"`
+	Truncated       bool           `json:"truncated"`
+	StderrTruncated bool           `json:"stderr_truncated"`
+	SessionID       *string        `json:"session_id"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
 func NotFoundResult(backendName, model string) *Result {
@@ -33,6 +34,23 @@ func ProbeFailedResult(backendName, model, reason string, exitCode *int) *Result
 	}
 	stderr := backendName + " CLI probe failed: " + reason + ". Run " + strings.ToLower(backendName) + " --version to diagnose."
 	return &Result{Model: model, Status: "probe_failed", ExitCode: exitCode, Stderr: stderr}
+}
+
+// ConfigErrorResult is the HTTP-native analogue of NotFoundResult/ProbeFailedResult.
+// Use it when a backend cannot run due to missing/invalid configuration
+// (e.g., missing API key, unresolvable model) rather than a missing binary
+// or a failed probe. Status is "error" so callers treat it as a normal
+// per-agent failure, not a dispatch-wide fault.
+func ConfigErrorResult(backendName, model, reason string) *Result {
+	if model == "" {
+		model = "cli-default"
+	}
+	return &Result{
+		Model:    model,
+		Status:   "error",
+		Response: backendName + " backend misconfigured: " + reason,
+		Stderr:   reason,
+	}
 }
 
 type Meta struct {

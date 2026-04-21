@@ -2,6 +2,7 @@ package roundtable
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -77,4 +78,27 @@ func TestProbeFailedResult(t *testing.T) {
 	r := ProbeFailedResult("gemini", "gemini-2.5-pro", "exited with code 1", &exitCode)
 	if r.Status != "probe_failed" { t.Errorf("status = %q, want probe_failed", r.Status) }
 	if r.ExitCode == nil || *r.ExitCode != 1 { t.Errorf("exit_code = %v, want 1", r.ExitCode) }
+}
+
+func TestConfigErrorResult(t *testing.T) {
+	r := ConfigErrorResult("ollama", "kimi-k2.6:cloud", "OLLAMA_API_KEY not set")
+	if r.Status != "error" {
+		t.Errorf("status = %q, want error", r.Status)
+	}
+	if r.Model != "kimi-k2.6:cloud" {
+		t.Errorf("model = %q, want kimi-k2.6:cloud", r.Model)
+	}
+	if !strings.Contains(r.Stderr, "OLLAMA_API_KEY not set") {
+		t.Errorf("stderr = %q, want substring 'OLLAMA_API_KEY not set'", r.Stderr)
+	}
+	if !strings.Contains(r.Response, "ollama") {
+		t.Errorf("response = %q, want substring 'ollama'", r.Response)
+	}
+}
+
+func TestConfigErrorResult_DefaultModel(t *testing.T) {
+	r := ConfigErrorResult("ollama", "", "no model configured")
+	if r.Model != "cli-default" {
+		t.Errorf("model = %q, want cli-default", r.Model)
+	}
 }
