@@ -329,6 +329,53 @@ func TestOpenAIHTTPBackend_Run_ConcurrencyGate_Deadline(t *testing.T) {
 	}
 }
 
+// OpenAI-current returns message.content as an array of parts
+// (multi-modal, tool use, refusal payloads). The old string-only parser
+// would treat those responses as "ok" with an empty response — silent
+// corruption. Parser must extract text parts.
+func TestOpenAIParse_ContentAsArray(t *testing.T) {
+	body := []byte(`{
+		"model":"glm-4.6",
+		"choices":[{"message":{"content":[
+			{"type":"text","text":"Hello "},
+			{"type":"text","text":"world"},
+			{"type":"image_url","image_url":"data:..."}
+		]},"finish_reason":"stop"}]
+	}`)
+	parsed := openAIParseResponse(body, 200, "", "zai")
+	if parsed.Status != "ok" {
+		t.Errorf("status = %q", parsed.Status)
+	}
+	if parsed.Response != "Hello world" {
+		t.Errorf("response = %q, want 'Hello world'", parsed.Response)
+	}
+}
+
+func TestOpenAIParse_ContentArrayEmptyTextParts(t *testing.T) {
+	body := []byte(`{
+		"model":"x",
+		"choices":[{"message":{"content":[]},"finish_reason":"tool_calls"}]
+	}`)
+	parsed := openAIParseResponse(body, 200, "", "p")
+	if parsed.Status != "ok" {
+		t.Errorf("status = %q", parsed.Status)
+	}
+	if parsed.Response != "" {
+		t.Errorf("response = %q, want empty (tool-only response)", parsed.Response)
+	}
+	if parsed.Metadata["finish_reason"] != "tool_calls" {
+		t.Errorf("finish_reason must still be surfaced: %v", parsed.Metadata)
+	}
+}
+
+func TestOpenAIParse_ContentUnknownShape(t *testing.T) {
+	body := []byte(`{"model":"x","choices":[{"message":{"content":42}}]}`)
+	parsed := openAIParseResponse(body, 200, "", "p")
+	if parsed.Status != "error" {
+		t.Errorf("status = %q, want error (unrecognized content shape)", parsed.Status)
+	}
+}
+
 // TOCTOU guard: Healthy() checked the env var, then something (rotation,
 // ops error, test reset) cleared it. The dispatcher reaches Run() before
 // a re-probe. We must fail fast with ConfigError, not burn a semaphore

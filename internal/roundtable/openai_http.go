@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/sync/semaphore"
@@ -272,7 +273,7 @@ func openAIParseResponse(body []byte, statusCode int, retryAfter, providerLabel 
 		Model   string `json:"model"`
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content json.RawMessage `json:"content"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -325,11 +326,52 @@ func openAIParseResponse(body []byte, statusCode int, retryAfter, providerLabel 
 		metadata["tokens"] = tokens
 	}
 
+	content, contentErr := extractOpenAIContent(data.Choices[0].Message.Content)
+	if contentErr != nil {
+		return ParsedOutput{
+			Response: providerLabel + ": " + contentErr.Error(),
+			Status:   "error",
+			Metadata: metadata,
+		}
+	}
+
 	return ParsedOutput{
-		Response: data.Choices[0].Message.Content,
+		Response: content,
 		Status:   "ok",
 		Metadata: metadata,
 	}
+}
+
+// extractOpenAIContent accepts the OpenAI-compat message.content field as
+// either a plain string (classic shape used by Ollama, DeepSeek, Groq,
+// most legacy deployments) or an array of content parts (the
+// OpenAI-current shape used for multi-modal, tool-use, and some provider
+// refusal payloads). Text parts are concatenated; other part types are
+// skipped. Returns an error when neither shape parses — that signals a
+// non-compliant upstream, not an empty assistant message (an assistant
+// that legitimately replies with "" still parses fine).
+func extractOpenAIContent(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s, nil
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		var sb strings.Builder
+		for _, p := range parts {
+			if p.Type == "text" && p.Text != "" {
+				sb.WriteString(p.Text)
+			}
+		}
+		return sb.String(), nil
+	}
+	return "", fmt.Errorf("unrecognized message.content shape (neither string nor []part)")
 }
 
 func openAIRateLimitedOutput(body []byte, statusCode int, retryAfter, providerLabel string) ParsedOutput {
