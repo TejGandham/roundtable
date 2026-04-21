@@ -2,6 +2,7 @@ package roundtable
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -95,4 +96,130 @@ func (o *OllamaBackend) Healthy(_ context.Context) error {
 // Run is implemented in Task 5 (uses the helper from Task 4).
 func (o *OllamaBackend) Run(ctx context.Context, req Request) (*Result, error) {
 	return nil, fmt.Errorf("not implemented yet")
+}
+
+// ollamaParseResponse converts a raw response body + HTTP status code into
+// a ParsedOutput. See docs/plans/2026-04-20-ollama-cloud-provider.md §4.1
+// for the status-mapping rationale.
+//
+// Status codes:
+//   - 200: parse JSON, expect {model, message: {content}, done_reason, ...}
+//   - 401/403: status="error", pass through upstream error message
+//   - 429: status="rate_limited" (Ollama Cloud doesn't currently publish
+//     Retry-After, but if present it's surfaced on Metadata["retry_after"]
+//     verbatim — caller decides how to interpret seconds vs HTTP-date)
+//   - 503: status="rate_limited" (Ollama Cloud's 503 storms are load-shedding)
+//   - other: status="error" with upstream body as response
+//
+// retryAfter is the raw Retry-After header value (or "" if absent). Passed
+// through as a string rather than http.Header to keep the parser package-
+// dependency-light and the tests trivial to construct.
+func ollamaParseResponse(body []byte, statusCode int, retryAfter string) ParsedOutput {
+	switch {
+	case statusCode == 429 || statusCode == 503:
+		return ollamaRateLimitedOutput(body, statusCode, retryAfter)
+	case statusCode >= 400:
+		return ollamaErrorOutput(body, statusCode)
+	case statusCode != 200:
+		// 1xx/3xx aren't expected here; treat as error.
+		return ollamaErrorOutput(body, statusCode)
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		pe := "JSON parse failed"
+		return ParsedOutput{
+			Response:   string(body),
+			Status:     "error",
+			ParseError: &pe,
+		}
+	}
+
+	msg, ok := data["message"].(map[string]any)
+	if !ok {
+		return ParsedOutput{
+			Response: "ollama: response missing message field",
+			Status:   "error",
+		}
+	}
+	content, _ := msg["content"].(string)
+
+	metadata := map[string]any{}
+	if m, ok := data["model"].(string); ok {
+		metadata["model_used"] = m
+	}
+	if dr, ok := data["done_reason"].(string); ok {
+		metadata["done_reason"] = dr
+	}
+	// Preserve token counts as a nested map for metadata consumers;
+	// float64 is what encoding/json gives us for JSON numbers.
+	tokens := map[string]any{}
+	if v, ok := data["prompt_eval_count"]; ok {
+		tokens["prompt_eval_count"] = v
+	}
+	if v, ok := data["eval_count"]; ok {
+		tokens["eval_count"] = v
+	}
+	if len(tokens) > 0 {
+		metadata["tokens"] = tokens
+	}
+
+	return ParsedOutput{
+		Response: content,
+		Status:   "ok",
+		Metadata: metadata,
+	}
+}
+
+// ollamaRateLimitedOutput formats a 429/503 response uniformly. retryAfter
+// is the raw Retry-After header value (or "" if absent); when present it's
+// surfaced on Metadata so callers can back off intelligently.
+func ollamaRateLimitedOutput(body []byte, statusCode int, retryAfter string) ParsedOutput {
+	msg := ollamaExtractErrorMessage(body)
+	if msg == "" {
+		msg = fmt.Sprintf("HTTP %d", statusCode)
+	}
+	suffix := ". No Retry-After is published; back off and retry later."
+	if retryAfter != "" {
+		suffix = ". Retry-After: " + retryAfter
+	}
+	out := ParsedOutput{
+		Response: "Ollama rate limited (HTTP " + fmt.Sprint(statusCode) + "): " + msg + suffix,
+		Status:   "rate_limited",
+	}
+	if retryAfter != "" {
+		out.Metadata = map[string]any{"retry_after": retryAfter}
+	}
+	return out
+}
+
+// ollamaErrorOutput formats a non-success non-rate-limit response.
+func ollamaErrorOutput(body []byte, statusCode int) ParsedOutput {
+	msg := ollamaExtractErrorMessage(body)
+	if msg == "" {
+		msg = string(body)
+	}
+	return ParsedOutput{
+		Response: fmt.Sprintf("ollama HTTP %d: %s", statusCode, msg),
+		Status:   "error",
+	}
+}
+
+// ollamaExtractErrorMessage pulls a human-readable message out of an
+// error body. Accepts {"error":"..."} or {"error":{"message":"..."}}.
+// Returns "" if body doesn't parse or has no error field.
+func ollamaExtractErrorMessage(body []byte) string {
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return ""
+	}
+	switch v := data["error"].(type) {
+	case string:
+		return v
+	case map[string]any:
+		if m, ok := v["message"].(string); ok {
+			return m
+		}
+	}
+	return ""
 }
