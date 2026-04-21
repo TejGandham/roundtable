@@ -12,6 +12,10 @@ import (
 	"github.com/TejGandham/roundtable/internal/stdiomcp"
 )
 
+// version is the release string injected via -ldflags "-X main.version=..."
+// at build time. Defaults to "dev" for ad-hoc `go build` / `go run`.
+var version = "dev"
+
 func main() {
 	// MUST be first. See internal/stdiomcp.InitStdioDiscipline docs.
 	logger := stdiomcp.InitStdioDiscipline()
@@ -32,7 +36,7 @@ func runStdio(logger *slog.Logger) {
 		RolesDir:        rolesDirEnv(logger, "ROUNDTABLE_ROLES_DIR", "ROUNDTABLE_HTTP_ROLES_DIR"),
 		ProjectRolesDir: rolesDirEnv(logger, "ROUNDTABLE_PROJECT_ROLES_DIR", "ROUNDTABLE_HTTP_PROJECT_ROLES_DIR"),
 		ServerName:      "roundtable",
-		ServerVersion:   "0.8.0-dev",
+		ServerVersion:   version,
 	}
 	dispatch := buildStdioDispatch(backends, cfg)
 	srv := stdiomcp.NewServer(cfg, dispatch, logger)
@@ -55,7 +59,7 @@ func buildBackends(logger *slog.Logger, observe roundtable.ObserveFunc) (map[str
 	var codexBackend roundtable.Backend
 	codexPath := roundtable.ResolveExecutable("codex")
 	if codexPath != "" {
-		codexBackend = roundtable.NewCodexBackend(codexPath, "")
+		codexBackend = roundtable.NewCodexBackend(codexPath, "", version)
 		logger.Info("codex backend configured (lazy start)", "path", codexPath)
 	} else {
 		logger.Warn("codex binary not found, using CodexFallback")
