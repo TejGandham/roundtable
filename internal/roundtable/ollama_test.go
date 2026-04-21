@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOllamaBackend_Name(t *testing.T) {
@@ -266,5 +270,271 @@ func TestInlineFileContents_SkipsOverTotalBudget(t *testing.T) {
 	// First file should still be present as a full <file>.
 	if !strings.Contains(got, `<file path="`+paths[0]+`">`) {
 		t.Error("expected first file to still be inlined")
+	}
+}
+
+// -----------------------------------------------------------------------
+// Task 5: Run() HTTP flow tests
+// -----------------------------------------------------------------------
+
+func newOllamaTestBackend(t *testing.T, baseURL string) *OllamaBackend {
+	t.Helper()
+	t.Setenv("OLLAMA_BASE_URL", baseURL)
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	// observe=nil — constructor normalizes to no-op. Tests that need to
+	// observe metrics build their own backend (see TestOllamaRun_EmitsMetrics).
+	return NewOllamaBackend("kimi-k2.6:cloud", nil)
+}
+
+func TestOllamaRun_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Errorf("path = %q, want /api/chat", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-test-value" {
+			t.Errorf("Authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"model":"kimi-k2.6:cloud",
+			"message":{"role":"assistant","content":"Hello from kimi"},
+			"done_reason":"stop",
+			"prompt_eval_count":10,
+			"eval_count":4
+		}`))
+	}))
+	defer srv.Close()
+
+	b := newOllamaTestBackend(t, srv.URL)
+	res, err := b.Run(context.Background(), Request{Prompt: "hi", Model: "kimi-k2.6:cloud"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Errorf("status = %q, want ok", res.Status)
+	}
+	if res.Response != "Hello from kimi" {
+		t.Errorf("response = %q", res.Response)
+	}
+	if res.Model != "kimi-k2.6:cloud" {
+		t.Errorf("model = %q", res.Model)
+	}
+	if res.ElapsedMs < 0 {
+		t.Errorf("elapsed_ms = %d, want >= 0", res.ElapsedMs)
+	}
+	// End-to-end metadata propagation: parser populates parsed.Metadata,
+	// BuildResult propagates it onto Result.Metadata (Task 0). done_reason
+	// is the load-bearing one — it's how callers detect 16K-cap truncation.
+	if res.Metadata == nil {
+		t.Fatal("res.Metadata = nil; Task 0 propagation did not land")
+	}
+	if got := res.Metadata["done_reason"]; got != "stop" {
+		t.Errorf("metadata done_reason = %v, want stop", got)
+	}
+}
+
+func TestOllamaRun_TruncationSurfaced(t *testing.T) {
+	// done_reason=length must survive the parser → BuildResult → Result
+	// pipeline so callers can detect 16K-cap truncation (§5.3).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"model":"kimi-k2.6:cloud",
+			"message":{"role":"assistant","content":"partial..."},
+			"done_reason":"length"
+		}`))
+	}))
+	defer srv.Close()
+
+	b := newOllamaTestBackend(t, srv.URL)
+	res, err := b.Run(context.Background(), Request{Prompt: "hi", Model: "kimi-k2.6:cloud"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Errorf("status = %q, want ok (truncation isn't an error)", res.Status)
+	}
+	if res.Metadata == nil || res.Metadata["done_reason"] != "length" {
+		t.Errorf("metadata done_reason = %v, want length", res.Metadata["done_reason"])
+	}
+}
+
+func TestOllamaRun_NoModelResolvable(t *testing.T) {
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	b := NewOllamaBackend("", nil) // no default
+	res, err := b.Run(context.Background(), Request{Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Errorf("status = %q, want error", res.Status)
+	}
+}
+
+func TestOllamaRun_RateLimited429(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"too many requests"}`))
+	}))
+	defer srv.Close()
+
+	b := newOllamaTestBackend(t, srv.URL)
+	res, err := b.Run(context.Background(), Request{Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "rate_limited" {
+		t.Errorf("status = %q, want rate_limited", res.Status)
+	}
+}
+
+func TestOllamaRun_ContextDeadline(t *testing.T) {
+	// Server hangs; client context expires first. Expect status=timeout
+	// with BuildResult's "Request timed out after" response formatting.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	defer srv.Close()
+
+	b := newOllamaTestBackend(t, srv.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	res, err := b.Run(ctx, Request{Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "timeout" {
+		t.Errorf("status = %q, want timeout", res.Status)
+	}
+	if !strings.Contains(res.Response, "timed out") {
+		t.Errorf("response = %q, want 'timed out' message from BuildResult", res.Response)
+	}
+}
+
+func TestOllamaRun_NetworkError(t *testing.T) {
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	t.Setenv("OLLAMA_BASE_URL", "http://127.0.0.1:1") // refused
+	b := NewOllamaBackend("kimi-k2.6:cloud", nil)
+	res, err := b.Run(context.Background(), Request{Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Errorf("status = %q, want error", res.Status)
+	}
+	if res.Stderr == "" {
+		t.Error("stderr should contain the dial error")
+	}
+}
+
+func TestOllamaRun_DefaultBaseURL(t *testing.T) {
+	// Verify path composition: OLLAMA_BASE_URL set to httptest, POST lands
+	// at /api/chat.
+	var gotURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotURL = r.URL.Path
+		_, _ = w.Write([]byte(`{"model":"kimi-k2.6:cloud","message":{"role":"assistant","content":"ok"},"done_reason":"stop"}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	t.Setenv("OLLAMA_BASE_URL", srv.URL)
+	b := NewOllamaBackend("kimi-k2.6:cloud", nil)
+	res, err := b.Run(context.Background(), Request{Prompt: "hi", Model: "kimi-k2.6:cloud"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Errorf("status = %q, want ok", res.Status)
+	}
+	if gotURL != "/api/chat" {
+		t.Errorf("path = %q, want /api/chat", gotURL)
+	}
+}
+
+func TestOllamaRun_DefaultBaseURL_FallsThroughWhenUnset(t *testing.T) {
+	// When OLLAMA_BASE_URL is unset, Run falls back to https://ollama.com.
+	// Use a canceled ctx to prevent any real network I/O. If the env-missing
+	// short-circuit were wrongly reintroduced, status would not be the
+	// ctx-canceled "error" we assert below.
+	t.Setenv("OLLAMA_API_KEY", "sk-test-value")
+	t.Setenv("OLLAMA_BASE_URL", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	b := NewOllamaBackend("kimi-k2.6:cloud", nil)
+	res, _ := b.Run(ctx, Request{Prompt: "hi"})
+	if res.Status != "error" {
+		t.Errorf("status = %q, want error (canceled ctx)", res.Status)
+	}
+	if res.Stderr == "" {
+		t.Error("stderr empty; expected canceled-ctx error message")
+	}
+}
+
+func TestOllamaRun_InlinesFileContents(t *testing.T) {
+	dir := t.TempDir()
+	p1 := filepath.Join(dir, "one.txt")
+	p2 := filepath.Join(dir, "two.txt")
+	if err := os.WriteFile(p1, []byte("alpha body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p2, []byte("beta body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"model":"kimi-k2.6:cloud","message":{"role":"assistant","content":"ok"},"done_reason":"stop"}`))
+	}))
+	defer srv.Close()
+
+	b := newOllamaTestBackend(t, srv.URL)
+	_, err := b.Run(context.Background(), Request{
+		Prompt: "review these",
+		Model:  "kimi-k2.6:cloud",
+		Files:  []string{p1, p2},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Run() disables HTML escaping on the JSON encoder, so < and > travel
+	// the wire verbatim. Quotes inside the content string are still
+	// JSON-escaped as \" per JSON spec — search for that form.
+	body := string(gotBody)
+	for _, want := range []string{
+		`<file path=\"` + p1 + `\">`,
+		"alpha body",
+		`<file path=\"` + p2 + `\">`,
+		"beta body",
+		"review these",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("request body missing %q; body was:\n%s", want, body)
+		}
+	}
+}
+
+func TestOllamaRun_NoFilesNoInlining(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"model":"kimi-k2.6:cloud","message":{"role":"assistant","content":"ok"},"done_reason":"stop"}`))
+	}))
+	defer srv.Close()
+
+	b := newOllamaTestBackend(t, srv.URL)
+	_, err := b.Run(context.Background(), Request{
+		Prompt: "no files here",
+		Model:  "kimi-k2.6:cloud",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if strings.Contains(string(gotBody), "<file ") {
+		t.Errorf("unexpected <file> tag in request with no req.Files: %s", string(gotBody))
 	}
 }

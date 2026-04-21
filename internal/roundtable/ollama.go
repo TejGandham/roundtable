@@ -1,9 +1,12 @@
 package roundtable
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -106,9 +109,109 @@ func (o *OllamaBackend) Healthy(_ context.Context) error {
 	return nil
 }
 
-// Run is implemented in Task 5 (uses the helper from Task 4).
+// Run dispatches a single prompt to Ollama Cloud's /api/chat endpoint.
+// See docs/plans/2026-04-20-ollama-cloud-provider.md §4.1 for rationale.
+//
+// Env is read per-call (see Decision F). File contents in req.Files are
+// eagerly inlined because this HTTP path has no tool-calling loop. The
+// context deadline is routed through BuildResult so the timeout response
+// text matches the subprocess backends' formatting.
 func (o *OllamaBackend) Run(ctx context.Context, req Request) (*Result, error) {
-	return nil, fmt.Errorf("not implemented yet")
+	apiKey := os.Getenv("OLLAMA_API_KEY")
+	baseURL := os.Getenv("OLLAMA_BASE_URL")
+	if baseURL == "" {
+		baseURL = "https://ollama.com"
+	}
+
+	model := req.Model
+	if model == "" {
+		model = o.defaultModel
+	}
+
+	// NOTE: we don't re-validate apiKey here. Healthy() already failed the
+	// dispatcher's probe if unset, and buildBackends only registers this
+	// backend when the key is present at startup. A defensive check here
+	// would be dead code given those invariants. Model is per-Request so
+	// that check stays.
+	if model == "" {
+		return ConfigErrorResult("ollama", "",
+			"no model resolved: set OLLAMA_DEFAULT_MODEL or AgentSpec.Model"), nil
+	}
+
+	// Prepend inlined file contents (if any). Subprocess backends get file
+	// contents via their own tool loop; an HTTP call has no tool loop, so
+	// we eagerly read req.Files here. See inlineFileContents for caps.
+	content := req.Prompt
+	if inlined := inlineFileContents(req.Files); inlined != "" {
+		content = inlined + content
+	}
+
+	// Use Encoder with HTML escaping disabled so <file path="...">
+	// blocks travel the wire verbatim instead of </>-encoded.
+	// Smaller bytes, and easier to eyeball in telemetry dumps (if we ever
+	// enable them — today we don't log the body per the PII invariant).
+	var bodyBuf bytes.Buffer
+	enc := json.NewEncoder(&bodyBuf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(map[string]any{
+		"model":    model,
+		"messages": []map[string]string{{"role": "user", "content": content}},
+		"stream":   false,
+	})
+	bodyBytes := bodyBuf.Bytes()
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		baseURL+"/api/chat", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return ConfigErrorResult("ollama", model, "request build: "+err.Error()), nil
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// NOTE: do NOT log bodyBytes or the response body at any level — they
+	// contain user prompts and model output (PII/secret surface). Log
+	// status code and elapsed time only.
+	start := time.Now()
+	resp, err := o.httpClient.Do(httpReq)
+	elapsed := time.Since(start).Milliseconds()
+
+	if err != nil {
+		// Route timeout through BuildResult so the response-text formatting
+		// matches subprocess backends. Other transport errors stay direct.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) ||
+			errors.Is(err, context.DeadlineExceeded) {
+			return BuildResult(
+				RawRunOutput{TimedOut: true, ElapsedMs: elapsed, Stderr: err.Error()},
+				ParsedOutput{},
+				model,
+			), nil
+		}
+		return &Result{
+			Model:     model,
+			Status:    "error",
+			Stderr:    err.Error(),
+			ElapsedMs: elapsed,
+		}, nil
+	}
+	defer resp.Body.Close()
+
+	// Cap response under LimitReader to protect against runaway upstream.
+	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, ollamaMaxResponseBytes))
+	if readErr != nil {
+		return &Result{
+			Model:     model,
+			Status:    "error",
+			Stderr:    "read body: " + readErr.Error(),
+			ElapsedMs: elapsed,
+		}, nil
+	}
+
+	parsed := ollamaParseResponse(raw, resp.StatusCode, resp.Header.Get("Retry-After"))
+	return BuildResult(
+		RawRunOutput{Stdout: raw, ElapsedMs: elapsed},
+		parsed,
+		model,
+	), nil
 }
 
 // ollamaParseResponse converts a raw response body + HTTP status code into
