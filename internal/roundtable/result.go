@@ -2,7 +2,7 @@ package roundtable
 
 import (
 	"encoding/json"
-	"strings"
+	"fmt"
 )
 
 type Result struct {
@@ -20,20 +20,27 @@ type Result struct {
 	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
-func NotFoundResult(backendName, model string) *Result {
+func NotFoundResult(providerID, model string) *Result {
 	if model == "" {
 		model = "cli-default"
 	}
-	stderr := backendName + " CLI not found in PATH"
-	return &Result{Model: model, Status: "not_found", Stderr: stderr}
+	return &Result{
+		Model:  model,
+		Status: "not_found",
+		Stderr: fmt.Sprintf("provider %q not registered", providerID),
+	}
 }
 
-func ProbeFailedResult(backendName, model, reason string, exitCode *int) *Result {
+func ProbeFailedResult(providerID, model, reason string, exitCode *int) *Result {
 	if model == "" {
 		model = "cli-default"
 	}
-	stderr := backendName + " CLI probe failed: " + reason + ". Run " + strings.ToLower(backendName) + " --version to diagnose."
-	return &Result{Model: model, Status: "probe_failed", ExitCode: exitCode, Stderr: stderr}
+	return &Result{
+		Model:    model,
+		Status:   "probe_failed",
+		ExitCode: exitCode,
+		Stderr:   fmt.Sprintf("provider %q probe failed: %s", providerID, reason),
+	}
 }
 
 // ConfigErrorResult is the HTTP-native analogue of NotFoundResult/ProbeFailedResult.

@@ -24,7 +24,7 @@ func TestResultJSON(t *testing.T) {
 }
 
 func TestResultJSONNilPointers(t *testing.T) {
-	r := &Result{Model: "cli-default", Status: "not_found", Stderr: "codex CLI not found in PATH"}
+	r := &Result{Model: "cli-default", Status: "not_found", Stderr: `provider "codex" not registered`}
 	data, err := json.Marshal(r)
 	if err != nil { t.Fatalf("marshal: %v", err) }
 	var raw map[string]any
@@ -78,6 +78,36 @@ func TestProbeFailedResult(t *testing.T) {
 	r := ProbeFailedResult("gemini", "gemini-2.5-pro", "exited with code 1", &exitCode)
 	if r.Status != "probe_failed" { t.Errorf("status = %q, want probe_failed", r.Status) }
 	if r.ExitCode == nil || *r.ExitCode != 1 { t.Errorf("exit_code = %v, want 1", r.ExitCode) }
+}
+
+// Regression guard: NotFoundResult's stderr must not mention PATH — meaningless
+// for HTTP providers addressed by operator-chosen ids (e.g., "moonshot").
+func TestNotFoundResult_ProviderAgnosticMessage(t *testing.T) {
+	r := NotFoundResult("moonshot", "kimi-k2-0711-preview")
+	if r.Status != "not_found" {
+		t.Errorf("status = %q", r.Status)
+	}
+	if strings.Contains(r.Stderr, "PATH") {
+		t.Errorf("stderr = %q; must not mention PATH for HTTP providers", r.Stderr)
+	}
+	if !strings.Contains(r.Stderr, "moonshot") {
+		t.Errorf("stderr = %q; must name the provider", r.Stderr)
+	}
+}
+
+// ProbeFailedResult's stderr must not suggest subprocess-flavored diagnostics
+// (like "--version") — meaningless for HTTP providers.
+func TestProbeFailedResult_ProviderAgnosticMessage(t *testing.T) {
+	r := ProbeFailedResult("moonshot", "m1", "api_key missing", nil)
+	if r.Status != "probe_failed" {
+		t.Errorf("status = %q", r.Status)
+	}
+	if strings.Contains(r.Stderr, "--version") {
+		t.Errorf("stderr = %q; must not suggest CLI-specific diagnostics", r.Stderr)
+	}
+	if !strings.Contains(r.Stderr, "moonshot") || !strings.Contains(r.Stderr, "api_key missing") {
+		t.Errorf("stderr = %q", r.Stderr)
+	}
 }
 
 func TestConfigErrorResult(t *testing.T) {
