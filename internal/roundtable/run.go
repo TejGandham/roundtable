@@ -291,6 +291,8 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 			spec: agent,
 			request: Request{
 				Prompt:          assembledPrompt,
+				RolePrompt:      rolePrompt,
+				UserRequest:     basePrompt,
 				Files:           req.Files,
 				Timeout:         timeout,
 				Role:            role,

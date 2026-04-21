@@ -105,6 +105,105 @@ func TestOpenAIParse_Success(t *testing.T) {
 	}
 }
 
+func TestOpenAIParse_CachedTokens(t *testing.T) {
+	body := []byte(`{
+		"model":"accounts/fireworks/models/minimax-m2p7",
+		"choices":[{"message":{"content":"hi"},"finish_reason":"stop"}],
+		"usage":{
+			"prompt_tokens":1024,
+			"completion_tokens":4,
+			"prompt_tokens_details":{"cached_tokens":900}
+		}
+	}`)
+	parsed := openAIParseResponse(body, 200, "", "fireworks-minimax")
+	if parsed.Status != "ok" {
+		t.Fatalf("status = %q, want ok", parsed.Status)
+	}
+	tokens, ok := parsed.Metadata["tokens"].(map[string]any)
+	if !ok {
+		t.Fatalf("tokens not a map: %T", parsed.Metadata["tokens"])
+	}
+	got, ok := tokens["cached_tokens"].(float64)
+	if !ok {
+		t.Fatalf("cached_tokens missing or wrong type: %T", tokens["cached_tokens"])
+	}
+	if got != 900 {
+		t.Errorf("cached_tokens = %v, want 900", got)
+	}
+}
+
+func TestOpenAIParse_CachedTokensAbsent(t *testing.T) {
+	body := []byte(`{
+		"choices":[{"message":{"content":"hi"},"finish_reason":"stop"}],
+		"usage":{"prompt_tokens":10,"completion_tokens":2}
+	}`)
+	parsed := openAIParseResponse(body, 200, "", "zai")
+	tokens, _ := parsed.Metadata["tokens"].(map[string]any)
+	if _, present := tokens["cached_tokens"]; present {
+		t.Errorf("cached_tokens must be absent when prompt_tokens_details missing; got %v", tokens["cached_tokens"])
+	}
+}
+
+func TestBuildMessages_SplitRoleAndUser(t *testing.T) {
+	msgs := buildMessages(Request{
+		RolePrompt:  "You are a code reviewer.",
+		UserRequest: "Review this.",
+	})
+	if len(msgs) != 2 {
+		t.Fatalf("len(msgs) = %d, want 2", len(msgs))
+	}
+	if msgs[0]["role"] != "system" || msgs[0]["content"] != "You are a code reviewer." {
+		t.Errorf("system msg = %v", msgs[0])
+	}
+	if msgs[1]["role"] != "user" {
+		t.Errorf("user msg role = %q", msgs[1]["role"])
+	}
+	if !strings.Contains(msgs[1]["content"], "=== REQUEST ===") {
+		t.Errorf("user content missing request marker: %q", msgs[1]["content"])
+	}
+	if !strings.Contains(msgs[1]["content"], "Review this.") {
+		t.Errorf("user content missing question: %q", msgs[1]["content"])
+	}
+}
+
+func TestBuildMessages_LegacyPromptFallback(t *testing.T) {
+	msgs := buildMessages(Request{Prompt: "single-message legacy"})
+	if len(msgs) != 1 {
+		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+	}
+	if msgs[0]["role"] != "user" {
+		t.Errorf("role = %q, want user", msgs[0]["role"])
+	}
+	if msgs[0]["content"] != "single-message legacy" {
+		t.Errorf("content = %q", msgs[0]["content"])
+	}
+}
+
+func TestBuildMessages_UserQuestionAtEnd(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "stable.go")
+	if err := os.WriteFile(f, []byte("package x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	msgs := buildMessages(Request{
+		RolePrompt:  "ROLE",
+		UserRequest: "DYNAMIC-QUESTION",
+		Files:       []string{f},
+	})
+	user := msgs[1]["content"]
+	qPos := strings.Index(user, "DYNAMIC-QUESTION")
+	filePos := strings.Index(user, "<file path=")
+	if qPos < 0 || filePos < 0 {
+		t.Fatalf("missing markers in %q", user)
+	}
+	if filePos > qPos {
+		t.Errorf("files must come BEFORE question for prefix cache stability; filePos=%d qPos=%d", filePos, qPos)
+	}
+	if strings.Contains(user, "=== FILES ===") {
+		t.Errorf("=== FILES === trailer must be omitted on HTTP path (cache-hostile)")
+	}
+}
+
 func TestOpenAIParse_Truncated(t *testing.T) {
 	body := []byte(`{"model":"glm-4.6","choices":[{"message":{"content":"cut..."},"finish_reason":"length"}]}`)
 	parsed := openAIParseResponse(body, 200, "", "zai")

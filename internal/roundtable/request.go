@@ -1,7 +1,11 @@
 package roundtable
 
 type Request struct {
-	Prompt          string
+	Prompt string
+
+	RolePrompt  string
+	UserRequest string
+
 	Files           []string
 	Timeout         int
 	Role            string

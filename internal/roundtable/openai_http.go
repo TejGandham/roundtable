@@ -141,17 +141,14 @@ func (o *OpenAIHTTPBackend) Run(ctx context.Context, req Request) (*Result, erro
 		return result, nil
 	}
 
-	content := req.Prompt
-	if inlined := inlineFileContents(req.Files); inlined != "" {
-		content = inlined + content
-	}
+	messages := buildMessages(req)
 
 	var bodyBuf bytes.Buffer
 	enc := json.NewEncoder(&bodyBuf)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(map[string]any{
 		"model":    model,
-		"messages": []map[string]string{{"role": "user", "content": content}},
+		"messages": messages,
 		"stream":   false,
 	})
 	bodyBytes := bodyBuf.Bytes()
@@ -257,6 +254,49 @@ func (o *OpenAIHTTPBackend) Run(ctx context.Context, req Request) (*Result, erro
 	return result, nil
 }
 
+// buildMessages assembles the /v1/chat/completions messages array from a
+// Request, structured for prefix-cache stability on providers that do
+// automatic prefix caching (Fireworks, DeepSeek, Moonshot, z.ai, Groq,
+// OpenAI ≥1024 tokens).
+//
+// Stable prefix ordering:
+//  1. system = rolePrompt  — identical for every call with the same role
+//  2. user   = inlined-file-contents + "=== REQUEST ===\n" + user question
+//     Files come BEFORE the question so same-file calls share a long
+//     byte prefix regardless of question wording. The "=== FILES ===
+//     <path> (<N bytes>)" trailer is deliberately omitted here — its
+//     os.Stat-derived size bytes drift between calls and would defeat
+//     caching. File paths are still visible via the inlined "<file
+//     path=...>" wrapper.
+//
+// Fallback: when a caller populates only the legacy Request.Prompt
+// (e.g. subprocess backends, older tests), the concatenated prompt is
+// emitted as a single user message with files inlined up front — the
+// pre-split behavior — so no caller is broken.
+func buildMessages(req Request) []map[string]string {
+	if req.RolePrompt == "" && req.UserRequest == "" {
+		content := req.Prompt
+		if inlined := inlineFileContents(req.Files); inlined != "" {
+			content = inlined + content
+		}
+		return []map[string]string{{"role": "user", "content": content}}
+	}
+
+	var user strings.Builder
+	if inlined := inlineFileContents(req.Files); inlined != "" {
+		user.WriteString(inlined)
+	}
+	user.WriteString("=== REQUEST ===\n")
+	user.WriteString(req.UserRequest)
+
+	msgs := make([]map[string]string, 0, 2)
+	if role := strings.TrimSpace(req.RolePrompt); role != "" {
+		msgs = append(msgs, map[string]string{"role": "system", "content": role})
+	}
+	msgs = append(msgs, map[string]string{"role": "user", "content": user.String()})
+	return msgs
+}
+
 // openAIParseResponse converts a raw /v1/chat/completions response body
 // plus HTTP status into a ParsedOutput. See design doc §5.1.1.
 //
@@ -290,8 +330,11 @@ func openAIParseResponse(body []byte, statusCode int, retryAfter, providerLabel 
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Usage struct {
-			PromptTokens     json.Number `json:"prompt_tokens"`
-			CompletionTokens json.Number `json:"completion_tokens"`
+			PromptTokens        json.Number `json:"prompt_tokens"`
+			CompletionTokens    json.Number `json:"completion_tokens"`
+			PromptTokensDetails *struct {
+				CachedTokens json.Number `json:"cached_tokens"`
+			} `json:"prompt_tokens_details,omitempty"`
 		} `json:"usage"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
@@ -332,6 +375,13 @@ func openAIParseResponse(body []byte, statusCode int, retryAfter, providerLabel 
 	if s := data.Usage.CompletionTokens.String(); s != "" {
 		if f, err := data.Usage.CompletionTokens.Float64(); err == nil {
 			tokens["completion_tokens"] = f
+		}
+	}
+	if d := data.Usage.PromptTokensDetails; d != nil {
+		if s := d.CachedTokens.String(); s != "" {
+			if f, err := d.CachedTokens.Float64(); err == nil {
+				tokens["cached_tokens"] = f
+			}
 		}
 	}
 	if len(tokens) > 0 {
