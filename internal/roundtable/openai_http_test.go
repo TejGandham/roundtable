@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -285,10 +286,6 @@ func TestOpenAIHTTPBackend_Run_ResponseSizeCap(t *testing.T) {
 }
 
 func TestOpenAIHTTPBackend_Run_ConcurrencyGate_Deadline(t *testing.T) {
-	// Use a channel gated by the test — closed in cleanup so the handler
-	// always returns promptly even if the client's context-cancel doesn't
-	// reach the server fast enough (net/http's request-context propagation
-	// on client disconnect is not immediate).
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		select {
@@ -326,6 +323,72 @@ func TestOpenAIHTTPBackend_Run_ConcurrencyGate_Deadline(t *testing.T) {
 		if r.Status == "ok" {
 			t.Errorf("results[%d] = ok; gate let two requests through at once", i)
 		}
+	}
+}
+
+// Strengthened semaphore proof: the Deadline-variant above only proves the
+// gate does _something_ under stress (both results !=ok). This one proves
+// actual serialization by tracking the max number of handler invocations
+// in flight simultaneously via an atomic counter. The invariant —
+// inFlight <= MaxConcurrent — must hold across a burst of N parallel Runs
+// even when N >> MaxConcurrent.
+func TestOpenAIHTTPBackend_Run_ConcurrencyGate_EnforcesSerialization(t *testing.T) {
+	var inFlight atomic.Int32
+	var peak atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		now := inFlight.Add(1)
+		for {
+			p := peak.Load()
+			if now <= p || peak.CompareAndSwap(p, now) {
+				break
+			}
+		}
+		// Hold the slot long enough that any broken gate would admit a
+		// second request while we're here. 30ms is plenty; real Run calls
+		// finish in <1ms against this handler.
+		time.Sleep(30 * time.Millisecond)
+		inFlight.Add(-1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+
+	const maxConc = 2
+	const burst = 12
+	cfg := testConfig()
+	cfg.BaseURL = srv.URL
+	cfg.APIKeyEnv = "MOONSHOT_API_KEY_TEST"
+	cfg.MaxConcurrent = maxConc
+	t.Setenv("MOONSHOT_API_KEY_TEST", "sk-test")
+	b := NewOpenAIHTTPBackend(cfg, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	oks := atomic.Int32{}
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := b.Run(ctx, Request{Prompt: "x", Timeout: 10})
+			if err != nil {
+				t.Errorf("Run err: %v", err)
+				return
+			}
+			if res.Status == "ok" {
+				oks.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := peak.Load(); got > maxConc {
+		t.Errorf("peak in-flight = %d, want <= MaxConcurrent=%d — gate broken", got, maxConc)
+	}
+	if oks.Load() != burst {
+		t.Errorf("ok count = %d, want %d (all should eventually succeed via the gate)", oks.Load(), burst)
 	}
 }
 
