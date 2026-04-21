@@ -110,8 +110,8 @@ func (c *CodexBackend) doStart(_ context.Context) error {
 	defer cancel()
 	_, err = c.call(initCtx, "initialize", map[string]any{
 		"clientInfo": map[string]any{
-			"name":    "roundtable-http-mcp",
-			"version": "0.7.0",
+			"name":    "roundtable",
+			"version": "0.8.0",
 		},
 	})
 	if err != nil {

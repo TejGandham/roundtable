@@ -13,7 +13,7 @@
 # Usage:
 #   1. Build and install the real binary as roundtable-bin:
 #        make build
-#        cp roundtable-http-mcp $HOME/.local/bin/roundtable-bin
+#        cp roundtable $HOME/.local/bin/roundtable-bin
 #   2. Install this script as roundtable:
 #        install -m 755 scripts/roundtable-stdio-wrapper.sh \
 #          $HOME/.local/bin/roundtable
