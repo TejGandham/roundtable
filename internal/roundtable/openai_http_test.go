@@ -9,11 +9,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"encoding/json"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 var _ Backend = (*OpenAIHTTPBackend)(nil)
@@ -514,18 +516,25 @@ func TestOpenAIParse_ContentAsArray(t *testing.T) {
 }
 
 func TestOpenAIParse_ContentArrayEmptyTextParts(t *testing.T) {
+	// Original question this test guards: empty-array content must parse
+	// without crashing. Formerly used finish_reason:"tool_calls" (back when
+	// tool_calls was silently ignored); after the tool-calls diagnostic
+	// landed we use finish_reason:"stop" here so the test keeps focus on
+	// the content-shape invariant without stepping on the new branch. The
+	// tool-calls-specific behavior has its own TestOpenAIParse_ToolCalls_*
+	// coverage below.
 	body := []byte(`{
 		"model":"x",
-		"choices":[{"message":{"content":[]},"finish_reason":"tool_calls"}]
+		"choices":[{"message":{"content":[]},"finish_reason":"stop"}]
 	}`)
 	parsed := openAIParseResponse(body, 200, "", "p")
 	if parsed.Status != "ok" {
 		t.Errorf("status = %q", parsed.Status)
 	}
 	if parsed.Response != "" {
-		t.Errorf("response = %q, want empty (tool-only response)", parsed.Response)
+		t.Errorf("response = %q, want empty", parsed.Response)
 	}
-	if parsed.Metadata["finish_reason"] != "tool_calls" {
+	if parsed.Metadata["finish_reason"] != "stop" {
 		t.Errorf("finish_reason must still be surfaced: %v", parsed.Metadata)
 	}
 }
@@ -565,12 +574,15 @@ func TestOpenAIParse_ContentUnknownShape(t *testing.T) {
 }
 
 // Documenting current behavior: OpenAI-compat servers occasionally emit
-// {"content": null} for tool-call-only responses. json.Unmarshal treats
-// JSON null as the zero value for *string, so we get status=ok with an
-// empty response string — not a parse error. finish_reason is still
-// surfaced so callers can distinguish empty-answer from tool-only-turn.
+// {"content": null}. json.Unmarshal treats JSON null as the zero value for
+// *string, so we get status=ok with an empty response string — not a parse
+// error. Historically the fixture used finish_reason:"tool_calls" (back
+// when tool_calls was silently ignored); now that the tool-calls branch
+// surfaces status=error, we use finish_reason:"stop" here so this test
+// stays focused on the null-content invariant. Tool-calls-specific
+// behavior is covered by TestOpenAIParse_ToolCalls_*.
 func TestOpenAIParse_ContentNull(t *testing.T) {
-	body := []byte(`{"model":"x","choices":[{"message":{"content":null},"finish_reason":"tool_calls"}]}`)
+	body := []byte(`{"model":"x","choices":[{"message":{"content":null},"finish_reason":"stop"}]}`)
 	parsed := openAIParseResponse(body, 200, "", "p")
 	if parsed.Status != "ok" {
 		t.Errorf("status = %q, want ok (null content is legitimate)", parsed.Status)
@@ -578,7 +590,7 @@ func TestOpenAIParse_ContentNull(t *testing.T) {
 	if parsed.Response != "" {
 		t.Errorf("response = %q, want empty string", parsed.Response)
 	}
-	if parsed.Metadata["finish_reason"] != "tool_calls" {
+	if parsed.Metadata["finish_reason"] != "stop" {
 		t.Errorf("finish_reason must still be surfaced: %v", parsed.Metadata)
 	}
 }
@@ -711,5 +723,226 @@ func TestOpenAIHTTPBackend_Run_InlinesFiles(t *testing.T) {
 	mu.Unlock()
 	if !strings.Contains(body, "<file path=") || !strings.Contains(body, "hello from file") {
 		t.Errorf("expected file-inlining in body; got: %s", body)
+	}
+}
+
+// ------------------------------------------------------------------
+// Tool-calls diagnostic (stopgap). See
+// docs/superpowers/specs/2026-04-22-openai-http-tool-calls-diagnostic-design.md.
+// ------------------------------------------------------------------
+
+func TestOpenAIParse_ToolCalls_Unsupported(t *testing.T) {
+	body := []byte(`{
+		"model":"some-tool-eager-model",
+		"choices":[{"message":{"content":"","tool_calls":[
+			{"id":"c1","type":"function","function":{"name":"read_file","arguments":"{}"}},
+			{"id":"c2","type":"function","function":{"name":"grep","arguments":"{}"}}
+		]},"finish_reason":"tool_calls"}],
+		"usage":{"prompt_tokens":10,"completion_tokens":5}
+	}`)
+	parsed := openAIParseResponse(body, 200, "", "p")
+	if parsed.Status != "error" {
+		t.Errorf("status = %q, want error", parsed.Status)
+	}
+	if !strings.Contains(parsed.Response, "model requested tool calls") {
+		t.Errorf("response missing diagnostic marker: %q", parsed.Response)
+	}
+	got, ok := parsed.Metadata["requested_tools"].([]string)
+	if !ok {
+		t.Fatalf("requested_tools type = %T, want []string", parsed.Metadata["requested_tools"])
+	}
+	if len(got) != 2 || got[0] != "read_file" || got[1] != "grep" {
+		t.Errorf("requested_tools = %v, want [read_file grep]", got)
+	}
+	if parsed.Metadata["finish_reason"] != "tool_calls" {
+		t.Errorf("finish_reason = %v, want tool_calls", parsed.Metadata["finish_reason"])
+	}
+	// Regression guard for the ordering-constraint issue: token extraction
+	// must run before the tool_calls early-return, or usage telemetry is lost.
+	tokens, ok := parsed.Metadata["tokens"].(map[string]any)
+	if !ok {
+		t.Fatalf("tokens missing or wrong type: %T", parsed.Metadata["tokens"])
+	}
+	if _, ok := tokens["prompt_tokens"]; !ok {
+		t.Errorf("prompt_tokens not populated: %v", tokens)
+	}
+}
+
+func TestOpenAIParse_ToolCalls_MissingArray(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"absent", `{"model":"x","choices":[{"message":{"content":""},"finish_reason":"tool_calls"}]}`},
+		{"null", `{"model":"x","choices":[{"message":{"content":"","tool_calls":null},"finish_reason":"tool_calls"}]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed := openAIParseResponse([]byte(tc.body), 200, "", "p")
+			if parsed.Status != "error" {
+				t.Errorf("status = %q, want error", parsed.Status)
+			}
+			got, ok := parsed.Metadata["requested_tools"].([]string)
+			if !ok {
+				t.Fatalf("requested_tools type = %T, want []string (guards make vs nil)", parsed.Metadata["requested_tools"])
+			}
+			if got == nil {
+				t.Errorf("requested_tools is nil — must be an initialized zero-length slice so it marshals as [] not null")
+			}
+			if len(got) != 0 {
+				t.Errorf("requested_tools = %v, want []", got)
+			}
+		})
+	}
+}
+
+func TestOpenAIParse_ToolCalls_Malformed(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"scalar", `{"model":"x","choices":[{"message":{"content":"","tool_calls":"not an array"},"finish_reason":"tool_calls"}]}`},
+		{"object", `{"model":"x","choices":[{"message":{"content":"","tool_calls":{}},"finish_reason":"tool_calls"}]}`},
+		{"entry_missing_function", `{"model":"x","choices":[{"message":{"content":"","tool_calls":[{}]},"finish_reason":"tool_calls"}]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed := openAIParseResponse([]byte(tc.body), 200, "", "p")
+			if parsed.Status != "error" {
+				t.Errorf("status = %q, want error", parsed.Status)
+			}
+			if parsed.ParseError != nil {
+				t.Errorf("ParseError set to %q — malformed tool_calls must be isolated to the new branch, not surfaced as a global parse failure", *parsed.ParseError)
+			}
+			got, ok := parsed.Metadata["requested_tools"].([]string)
+			if !ok {
+				t.Fatalf("requested_tools type = %T, want []string", parsed.Metadata["requested_tools"])
+			}
+			if len(got) != 0 {
+				t.Errorf("requested_tools = %v, want []", got)
+			}
+		})
+	}
+}
+
+func TestOpenAIParse_ToolCalls_WithPreamble(t *testing.T) {
+	cases := []struct {
+		name        string
+		content     string
+		wantPartial string // "" means partial_content must be absent from the metadata map
+	}{
+		{
+			name:        "scalar",
+			content:     `"I'll examine the repository."`,
+			wantPartial: "I'll examine the repository.",
+		},
+		{
+			name:        "array_of_parts",
+			content:     `[{"type":"text","text":"I'll examine the repository."}]`,
+			wantPartial: "I'll examine the repository.",
+		},
+		{
+			name:        "whitespace_only",
+			content:     `"   "`,
+			wantPartial: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{
+				"model":"x",
+				"choices":[{"message":{"content":%s,"tool_calls":[
+					{"id":"c1","type":"function","function":{"name":"read_file"}}
+				]},"finish_reason":"tool_calls"}]
+			}`, tc.content))
+			parsed := openAIParseResponse(body, 200, "", "p")
+			if parsed.Status != "error" {
+				t.Errorf("status = %q, want error", parsed.Status)
+			}
+			got, present := parsed.Metadata["partial_content"]
+			if tc.wantPartial == "" {
+				if present {
+					t.Errorf("partial_content = %q, want absent", got)
+				}
+				return
+			}
+			if !present {
+				t.Fatalf("partial_content absent, want %q", tc.wantPartial)
+			}
+			if got != tc.wantPartial {
+				t.Errorf("partial_content = %q, want %q", got, tc.wantPartial)
+			}
+		})
+	}
+}
+
+func TestOpenAIParse_ToolCalls_PreambleTruncated(t *testing.T) {
+	const cap = 4 * 1024
+	ellipsis := "…" // 3 bytes
+
+	cases := []struct {
+		name       string
+		rune       string
+		ascii      bool
+		byteLenMax int // inclusive upper bound on the resulting partial_content byte length
+	}{
+		// Pure ASCII: the rune-boundary backup is a no-op — every byte is a
+		// rune start — so the cut lands at exactly 4096. Total length is
+		// exactly cap + len("…").
+		{name: "ascii", rune: "x", ascii: true, byteLenMax: cap + len(ellipsis)},
+		// 3-byte rune: 4096 is not divisible by 3, so the cut lands mid-rune
+		// and the backup retreats up to 2 bytes. Total is strictly less than
+		// cap + len("…") in this specific case; allow up to cap + len("…")
+		// as an upper bound.
+		{name: "multibyte_3byte", rune: "你", ascii: false, byteLenMax: cap + len(ellipsis)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Build ~5 KiB of the rune, definitely above the 4 KiB cap.
+			repeats := (5 * 1024 / len(tc.rune)) + 1
+			preamble := strings.Repeat(tc.rune, repeats)
+			// Re-encode as a JSON string literal.
+			contentJSON, err := json.Marshal(preamble)
+			if err != nil {
+				t.Fatalf("marshal preamble: %v", err)
+			}
+			body := []byte(fmt.Sprintf(`{
+				"model":"x",
+				"choices":[{"message":{"content":%s,"tool_calls":[
+					{"id":"c1","type":"function","function":{"name":"read_file"}}
+				]},"finish_reason":"tool_calls"}]
+			}`, contentJSON))
+			parsed := openAIParseResponse(body, 200, "", "p")
+			got, ok := parsed.Metadata["partial_content"].(string)
+			if !ok {
+				t.Fatalf("partial_content type = %T, want string", parsed.Metadata["partial_content"])
+			}
+			if !strings.HasSuffix(got, ellipsis) {
+				t.Errorf("partial_content does not end with %q: last bytes = %q", ellipsis, got[max(0, len(got)-10):])
+			}
+			if !utf8.ValidString(got) {
+				t.Errorf("partial_content is not valid UTF-8 — rune-boundary backup regressed")
+			}
+			if len(got) > tc.byteLenMax {
+				t.Errorf("partial_content len = %d, want ≤ %d", len(got), tc.byteLenMax)
+			}
+			if tc.ascii && len(got) != cap+len(ellipsis) {
+				t.Errorf("ascii partial_content len = %d, want exactly %d", len(got), cap+len(ellipsis))
+			}
+		})
+	}
+}
+
+func TestOpenAIParse_ToolCalls_StopUnchanged(t *testing.T) {
+	body := []byte(`{"model":"x","choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}`)
+	parsed := openAIParseResponse(body, 200, "", "p")
+	if parsed.Status != "ok" {
+		t.Errorf("status = %q, want ok (stop path must be untouched by struct extension)", parsed.Status)
+	}
+	if parsed.Response != "hello" {
+		t.Errorf("response = %q, want hello", parsed.Response)
+	}
+	if _, present := parsed.Metadata["requested_tools"]; present {
+		t.Errorf("requested_tools must not be set on non-tool-calls path")
 	}
 }

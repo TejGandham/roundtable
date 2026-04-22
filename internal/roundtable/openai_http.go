@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/sync/semaphore"
 )
@@ -325,7 +326,8 @@ func openAIParseResponse(body []byte, statusCode int, retryAfter, providerLabel 
 		Model   string `json:"model"`
 		Choices []struct {
 			Message struct {
-				Content json.RawMessage `json:"content"`
+				Content   json.RawMessage `json:"content"`
+				ToolCalls json.RawMessage `json:"tool_calls"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -386,6 +388,72 @@ func openAIParseResponse(body []byte, statusCode int, retryAfter, providerLabel 
 	}
 	if len(tokens) > 0 {
 		metadata["tokens"] = tokens
+	}
+
+	// Tool-calls diagnostic (stopgap). When finish_reason=="tool_calls" the
+	// provider is asking us to execute a tool and feed the result back in a
+	// follow-up turn. We don't implement a tool-use loop on this backend, so
+	// the correct answer is a surfaced error rather than a silent empty
+	// response. See docs/superpowers/specs/2026-04-22-openai-http-tool-calls-diagnostic-design.md.
+	if finish == "tool_calls" {
+		// make([]string, 0), not var — a nil slice marshals as JSON null;
+		// consumers expect an array. The presence of this key (even empty)
+		// is the machine-readable signal that this branch fired.
+		names := make([]string, 0)
+		if raw := data.Choices[0].Message.ToolCalls; len(raw) > 0 {
+			var calls []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			}
+			// Best-effort: nonstandard tool_calls shapes (scalar, object,
+			// missing function) leave names empty; the diagnostic still
+			// fires because finish_reason already said so. Keeping the
+			// decode isolated here (via json.RawMessage on the parent
+			// struct) prevents one provider's quirks from killing the
+			// whole parse.
+			if err := json.Unmarshal(raw, &calls); err == nil {
+				for _, tc := range calls {
+					if tc.Function.Name != "" {
+						names = append(names, tc.Function.Name)
+					}
+				}
+			}
+		}
+		metadata["requested_tools"] = names
+
+		// Capture any preamble. Back up to a rune boundary before the 4 KiB
+		// cut so a multi-byte codepoint straddling byte 4096 is not severed —
+		// otherwise json.Marshal silently rewrites the torn bytes as U+FFFD.
+		const maxPartialContentBytes = 4 * 1024
+		if partial, err := extractOpenAIContent(data.Choices[0].Message.Content); err == nil {
+			trimmed := strings.TrimSpace(partial)
+			if len(trimmed) > maxPartialContentBytes {
+				cut := maxPartialContentBytes
+				for cut > 0 && !utf8.RuneStart(trimmed[cut]) {
+					cut--
+				}
+				trimmed = trimmed[:cut] + "…"
+			}
+			if trimmed != "" {
+				metadata["partial_content"] = trimmed
+			}
+		}
+
+		// Process-log correlation point. This does NOT populate
+		// ParsedOutput.ParseError or Result.Stderr; the observe hook will
+		// still record status="error" alongside real HTTP failures.
+		slog.Info("openai_http tool_calls requested",
+			"provider", providerLabel,
+			"model", data.Model,
+			"tools", names,
+		)
+
+		return ParsedOutput{
+			Response: providerLabel + ": model requested tool calls; this backend does not support tool execution",
+			Status:   "error",
+			Metadata: metadata,
+		}
 	}
 
 	content, contentErr := extractOpenAIContent(data.Choices[0].Message.Content)
