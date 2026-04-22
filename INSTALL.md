@@ -60,7 +60,7 @@ chmod +x "roundtable-http-mcp-${OS}-${ARCH}"
 ```
 
 This installs:
-- `roundtable-http-mcp-${OS}-${ARCH}` — the single Go binary (stdio MCP server + dispatcher + parsers + embedded role prompts). The `http-mcp` in the filename is a legacy name carried for compatibility with the v0.8.0 tarball layout; the binary itself only serves stdio.
+- `roundtable-http-mcp-${OS}-${ARCH}` — the single Go binary (MCP server + dispatcher + parsers + embedded role prompts). The `http-mcp` in the filename is a legacy carryover — the v0.8.0 tarball predates the Phase C HTTP-transport removal and still contains a binary that serves HTTP when invoked without arguments. INSTALL.md §4 always invokes it with the explicit `stdio` subcommand, which selects stdio mode on both the v0.8.0 binary and every post-Phase-C build.
 - `roundtable-http-mcp` — symlink to the above so commands in the rest of this guide stay platform-agnostic
 - `SKILL.md` — optional skill file for Claude Code
 
