@@ -63,9 +63,7 @@ var toolInputSchema = json.RawMessage(`{
   "required": ["prompt"]
 }`)
 
-// Config is the subset of runtime config that the stdio server needs.
-// Intentionally has no HTTP fields — Addr, MCPPath, ProbeTimeout belong
-// in httpmcp/config.go only.
+// Config is the runtime config that the stdio server needs.
 type Config struct {
 	RolesDir        string
 	ProjectRolesDir string

@@ -3,8 +3,7 @@ package stdiomcp
 import "context"
 
 // ToolInput is the MCP tool input schema shared by all five Roundtable
-// tools. Mirrored from internal/httpmcp/backend.go for Phase A — Phase C1
-// deletes the httpmcp copy.
+// tools.
 type ToolInput struct {
 	Prompt       string `json:"prompt"`
 	Files        string `json:"files,omitempty"`

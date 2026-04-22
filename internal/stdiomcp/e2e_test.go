@@ -63,9 +63,9 @@ func TestStdioE2E(t *testing.T) {
 	}
 }
 
-// buildRoundtableBinary compiles the roundtable-http-mcp binary into a
-// temporary directory and returns its path. Uses `go build` directly;
-// if `go` is not on PATH (mise-managed environment), honors GO_BIN.
+// buildRoundtableBinary compiles the roundtable binary into a temporary
+// directory and returns its path. Uses `go build` directly; if `go` is
+// not on PATH (mise-managed environment), honors GO_BIN.
 func buildRoundtableBinary(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -79,8 +79,7 @@ func buildRoundtableBinary(t *testing.T) string {
 	}
 
 	// Build from the test's working directory (internal/stdiomcp).
-	// Relative import path reaches up two levels to cmd/roundtable-http-mcp.
-	cmd := exec.Command(goBin, "build", "-o", bin, "../../cmd/roundtable-http-mcp")
+	cmd := exec.Command(goBin, "build", "-o", bin, "../../cmd/roundtable")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}

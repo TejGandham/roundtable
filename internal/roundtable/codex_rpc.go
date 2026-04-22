@@ -16,8 +16,9 @@ import (
 
 // CodexBackend speaks JSON-RPC over stdio to `codex app-server --listen stdio://`.
 type CodexBackend struct {
-	execPath string
-	model    string
+	execPath      string
+	model         string
+	clientVersion string // advertised to codex in the initialize handshake
 
 	startOnce sync.Once
 	startErr  error
@@ -42,13 +43,19 @@ type CodexBackend struct {
 }
 
 // NewCodexBackend creates a CodexBackend that will launch the given executable.
-func NewCodexBackend(execPath, model string) *CodexBackend {
+// clientVersion is advertised as clientInfo.version in the initialize handshake;
+// the composition root passes the binary's build-time version string.
+func NewCodexBackend(execPath, model, clientVersion string) *CodexBackend {
+	if clientVersion == "" {
+		clientVersion = "dev"
+	}
 	return &CodexBackend{
-		execPath: execPath,
-		model:    model,
-		notifs:   make(map[string]chan json.RawMessage),
-		pending:  make(map[int64]chan json.RawMessage),
-		done:     make(chan struct{}),
+		execPath:      execPath,
+		model:         model,
+		clientVersion: clientVersion,
+		notifs:        make(map[string]chan json.RawMessage),
+		pending:       make(map[int64]chan json.RawMessage),
+		done:          make(chan struct{}),
 	}
 }
 
@@ -110,8 +117,8 @@ func (c *CodexBackend) doStart(_ context.Context) error {
 	defer cancel()
 	_, err = c.call(initCtx, "initialize", map[string]any{
 		"clientInfo": map[string]any{
-			"name":    "roundtable-http-mcp",
-			"version": "0.7.0",
+			"name":    "roundtable",
+			"version": c.clientVersion,
 		},
 	})
 	if err != nil {

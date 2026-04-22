@@ -4,7 +4,7 @@
 /roundtable
 
 # Release binaries uploaded to GitHub/Forgejo, not tracked in git
-/release/roundtable-http-mcp-*
+/release/roundtable-*
 
 # Sisyphus evidence (noisy, not needed in git)
 .sisyphus/evidence/
@@ -18,7 +18,7 @@ erl_crash.dump
 .codex
 SHA256SUMS
 
-# Built escript binary
+# Built binaries
 /roundtable-cli
-/roundtable-http-mcp
 .depwire/
+roundtable-0.8.0-*.tar.gz

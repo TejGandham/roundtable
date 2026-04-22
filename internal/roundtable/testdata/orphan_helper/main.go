@@ -23,7 +23,7 @@ func main() {
 	shim := os.Args[1]
 	pidFile := os.Args[2]
 
-	cb := roundtable.NewCodexBackend(shim, "")
+	cb := roundtable.NewCodexBackend(shim, "", "test")
 	if err := cb.Start(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "Start:", err)
 		os.Exit(1)
