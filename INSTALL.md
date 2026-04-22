@@ -37,7 +37,7 @@ If Claude Code is currently running with a legacy Roundtable registered, also re
 Releases ship one tarball per platform (`darwin-arm64`, `linux-amd64`), plus a single `SHA256SUMS` file covering all of them. The snippet below detects your platform, verifies the checksum, extracts to `~/.local/share/roundtable`, and normalizes the extracted binary's name to `roundtable` so subsequent sections are platform- and release-agnostic.
 
 ```bash
-VERSION=0.8.0
+VERSION=0.9.0
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"      # darwin | linux
 case "$(uname -m)" in
