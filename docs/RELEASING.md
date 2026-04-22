@@ -85,22 +85,15 @@ Smoke-test — stdio servers have no HTTP endpoints, so verify via the
 
 ## 4. Package Tarballs
 
-`make release` produces two arch-suffixed binaries in `release/`
-(`roundtable-http-mcp-darwin-arm64`, `roundtable-http-mcp-linux-amd64`;
-renamed to `roundtable-darwin-arm64`, `roundtable-linux-amd64` after the
-Phase C binary rename). Package one tarball per platform, each containing
-that platform's binary plus `SKILL.md`, then generate a single
-`SHA256SUMS` covering both.
+`make release` produces two arch-suffixed binaries in `release/`:
+`roundtable-darwin-arm64` and `roundtable-linux-amd64`. Package one
+tarball per platform, each containing that platform's binary plus
+`SKILL.md`, then generate a single `SHA256SUMS` covering both.
 
 ```bash
-# Adjust BIN to match the binary basename in release/ for this version:
-#   pre-rename releases: roundtable-http-mcp
-#   post-rename releases: roundtable
-BIN=roundtable-http-mcp
-
 for pair in darwin-arm64 linux-amd64; do
   tar czf "roundtable-${NEW_VERSION}-${pair}.tar.gz" \
-    -C release "${BIN}-${pair}" SKILL.md
+    -C release "roundtable-${pair}" SKILL.md
 done
 ```
 
@@ -115,12 +108,12 @@ shasum -a 256 \
 
 Verify: `cat SHA256SUMS` should show two lines — one hash + filename per tarball.
 
-> The install script in `INSTALL.md` assumes the binary inside each tarball
-> keeps its arch suffix and symlinks the canonical name → the suffixed
-> name on extract. Do not rename or `--transform` the binary during `tar` —
-> the SHA256SUMS line format (`<hash>␣␣<filename>.tar.gz`) and the
-> `grep "  ${ASSET}$" SHA256SUMS | shasum -c -` verification step in
-> INSTALL.md both depend on these exact names.
+> The install script in `INSTALL.md` verifies each tarball against
+> `SHA256SUMS` with `grep "  ${ASSET}$" SHA256SUMS | shasum -c -`, which
+> depends on the exact filename appearing in the SHA256SUMS line. Do
+> not rename the tarballs after checksumming; the binary inside can
+> keep its arch suffix (the installer normalizes it to `roundtable` on
+> extract).
 
 ## 5. Run Full Test Suite
 
@@ -192,9 +185,8 @@ gh release create "v${NEW_VERSION}" \
 |`cmd/roundtable/main.go` `var version`|Runtime default (`"dev"`), overridden at link time — no edit required on bump|
 |`INSTALL.md` `VERSION=`|Install script version|
 |`release/SKILL.md`|Skill file shipped in every tarball|
-|`release/roundtable-http-mcp-darwin-arm64`|Apple Silicon binary (pre-rename) shipped in the darwin-arm64 tarball|
-|`release/roundtable-http-mcp-linux-amd64`|Linux x86_64 binary (pre-rename) shipped in the linux-amd64 tarball|
-|`release/roundtable-{darwin-arm64,linux-amd64}`|Same slots post-Phase C binary rename|
+|`release/roundtable-darwin-arm64`|Apple Silicon binary shipped in the darwin-arm64 tarball|
+|`release/roundtable-linux-amd64`|Linux x86_64 binary shipped in the linux-amd64 tarball|
 
 ## Notes
 

@@ -18,17 +18,23 @@ claude --version 2>/dev/null && echo "claude: ok" || echo "claude: not found"
 
 Missing CLIs are skipped gracefully at runtime (`status: "not_found"`).
 
-## 2. Remove Previous Version
+## 2. Uninstall Any Legacy Install (Required)
+
+**IMPORTANT — the legacy HTTP-era Roundtable is no longer supported and will mostly not work.** Any install from v0.8.0 or earlier shipped a binary named `roundtable-http-mcp` that started an HTTP MCP server on `127.0.0.1:4040` and exposed `/healthz`, `/readyz`, and `/metricsz` endpoints. Phase C removed that transport entirely — the HTTP listener, the health endpoints, and any `claude mcp add --transport http` registration path are gone. A legacy install left in place against the current codebase will fail in most flows.
+
+Fully remove any prior install before proceeding. The `pkill` filter here only matches the legacy binary name; it will not touch a post-rename `roundtable` process.
 
 ```bash
-pkill -f 'roundtable-http-mcp' 2>/dev/null || true
+pkill -9 -f 'roundtable-http-mcp' 2>/dev/null || true
 rm -rf ~/.local/share/roundtable
 claude mcp remove roundtable 2>/dev/null || true
 ```
 
+If Claude Code is currently running with a legacy Roundtable registered, also restart Claude Code so it forgets the stale binary path.
+
 ## 3. Install
 
-Releases ship one tarball per platform (`darwin-arm64`, `linux-amd64`), plus a single `SHA256SUMS` file covering all of them. The snippet below detects your platform, verifies the checksum, extracts to `~/.local/share/roundtable`, and aliases the arch-suffixed binary to the canonical name `roundtable-http-mcp` that the rest of this guide assumes.
+Releases ship one tarball per platform (`darwin-arm64`, `linux-amd64`), plus a single `SHA256SUMS` file covering all of them. The snippet below detects your platform, verifies the checksum, extracts to `~/.local/share/roundtable`, and normalizes the extracted binary's name to `roundtable` so subsequent sections are platform- and release-agnostic.
 
 ```bash
 VERSION=0.8.0
@@ -51,22 +57,24 @@ grep "  ${ASSET}$" SHA256SUMS | shasum -a 256 -c -
 
 tar xzf "${ASSET}"
 rm -f "${ASSET}"
-ln -sf "roundtable-http-mcp-${OS}-${ARCH}" roundtable-http-mcp
-chmod +x "roundtable-http-mcp-${OS}-${ARCH}"
+
+# Normalize the extracted binary to the canonical name `roundtable`.
+# The tarball for this platform contains exactly one executable whose
+# filename ends in `${OS}-${ARCH}`; rename it so the rest of this guide
+# doesn't depend on the exact release-time filename.
+mv roundtable*"${OS}-${ARCH}" roundtable
+chmod +x roundtable
 
 # macOS only: strip the quarantine attribute so Gatekeeper doesn't block the
 # unsigned binary on first launch. No-op on Linux.
-[ "$OS" = "darwin" ] && xattr -d com.apple.quarantine "roundtable-http-mcp-${OS}-${ARCH}" 2>/dev/null || true
+[ "$OS" = "darwin" ] && xattr -d com.apple.quarantine roundtable 2>/dev/null || true
 ```
 
 This installs:
-- `roundtable-http-mcp-${OS}-${ARCH}` — the single Go binary (MCP server + dispatcher + parsers + embedded role prompts). The `http-mcp` in the filename is a legacy carryover — the v0.8.0 tarball predates the Phase C HTTP-transport removal and still contains a binary that serves HTTP when invoked without arguments. INSTALL.md §4 always invokes it with the explicit `stdio` subcommand, which selects stdio mode on both the v0.8.0 binary and every post-Phase-C build.
-- `roundtable-http-mcp` — symlink to the above so commands in the rest of this guide stay platform-agnostic
+- `roundtable` — the single Go binary (stdio MCP server + dispatcher + parsers + embedded role prompts)
 - `SKILL.md` — optional skill file for Claude Code
 
 Supported platforms: `darwin-arm64` (Apple Silicon — M1/M2/M3/M4) and `linux-amd64`. Intel Macs and Linux arm64 are not currently released; build from source via `make build`.
-
-> **Note for post-rename releases:** starting with the first release after the `roundtable-http-mcp` → `roundtable` binary rename, tarballs will contain `roundtable-${OS}-${ARCH}` instead of `roundtable-http-mcp-${OS}-${ARCH}`. Update the symlink target and the `chmod`/`xattr` lines accordingly when bumping `VERSION` past that release.
 
 ## 4. Register with Claude Code (stdio — recommended)
 
@@ -74,7 +82,7 @@ Claude Code spawns the binary over stdio on demand. No daemon, no port.
 
 ```bash
 claude mcp add -s user roundtable -- \
-  ~/.local/share/roundtable/roundtable-http-mcp stdio
+  ~/.local/share/roundtable/roundtable stdio
 ```
 
 If CLIs are installed in non-standard locations (nvm, Homebrew, Volta), pass the explicit paths as env vars on the `claude mcp add` command:
@@ -84,7 +92,7 @@ claude mcp add -s user roundtable \
   -e ROUNDTABLE_CLAUDE_PATH="$(which claude)" \
   -e ROUNDTABLE_GEMINI_PATH="$(which gemini)" \
   -e ROUNDTABLE_CODEX_PATH="$(which codex)" \
-  -- ~/.local/share/roundtable/roundtable-http-mcp stdio
+  -- ~/.local/share/roundtable/roundtable stdio
 ```
 
 Only include env vars for CLIs that exist. Optional environment variables recognised by the binary:
@@ -131,7 +139,7 @@ Set `ROUNDTABLE_DEFAULT_AGENTS` at registration time:
 ```bash
 claude mcp add -s user roundtable \
   -e ROUNDTABLE_DEFAULT_AGENTS='[{"provider":"codex"},{"provider":"claude"}]' \
-  -- ~/.local/share/roundtable/roundtable-http-mcp stdio
+  -- ~/.local/share/roundtable/roundtable stdio
 ```
 
 Per-call `agents` parameter always overrides defaults. See [SKILL.md](SKILL.md) for the full agent schema.
@@ -142,7 +150,7 @@ Stdio servers are health-checked by being alive — if Claude Code can spawn the
 
 If a tool call fails:
 - Confirm the CLIs you requested are installed and authenticated
-- Inspect the binary directly: `~/.local/share/roundtable/roundtable-http-mcp stdio </dev/null` should print MCP startup logs on stderr and exit (stdin closed)
+- Inspect the binary directly: `~/.local/share/roundtable/roundtable stdio </dev/null` should print MCP startup logs on stderr and exit (stdin closed)
 - For richer per-session logs during Phase A dogfood, use the stderr-teeing wrapper at `scripts/roundtable-stdio-wrapper.sh` — it redirects stderr to `~/.local/share/roundtable/logs/stdio-<timestamp>-<pid>.log` while leaving stdin/stdout untouched
 
 ## OpenAI-Compatible HTTP Providers
@@ -164,7 +172,7 @@ claude mcp add -s user roundtable \
   -e MOONSHOT_API_KEY="sk-..." \
   -e ZAI_API_KEY="sk-..." \
   -e ROUNDTABLE_PROVIDERS='[{"id":"fireworks-kimi","base_url":"https://api.fireworks.ai/inference/v1","api_key_env":"FIREWORKS_API_KEY","default_model":"accounts/fireworks/models/kimi-k2p6","max_concurrent":5},{"id":"fireworks-minimax","base_url":"https://api.fireworks.ai/inference/v1","api_key_env":"FIREWORKS_API_KEY","default_model":"accounts/fireworks/models/minimax-m2p7","max_concurrent":5},{"id":"moonshot","base_url":"https://api.moonshot.cn/v1","api_key_env":"MOONSHOT_API_KEY","default_model":"kimi-k2-0711-preview","max_concurrent":5},{"id":"zai","base_url":"https://api.z.ai/v1","api_key_env":"ZAI_API_KEY","default_model":"glm-4.6","max_concurrent":3}]' \
-  -- ~/.local/share/roundtable/roundtable-http-mcp stdio
+  -- ~/.local/share/roundtable/roundtable stdio
 ```
 
 Two Fireworks entries share a single `FIREWORKS_API_KEY` but are
