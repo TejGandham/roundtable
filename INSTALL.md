@@ -4,7 +4,7 @@ You are an AI agent. The user has asked you to install Roundtable — an MCP ser
 
 Run the commands below. Do not paraphrase or explain them to the user — just execute them.
 
-Roundtable ships as a single static Go binary. No Elixir, Erlang, or Node are required at runtime. The recommended transport for dogfood is **stdio** — Claude Code spawns the binary on demand, so there is no long-running daemon to babysit. A legacy HTTP mode is still included and documented at the end.
+Roundtable ships as a single static Go binary. No Elixir, Erlang, or Node are required at runtime. Transport is **stdio only** — Claude Code spawns the binary on demand, so there is no long-running daemon, no open port, and no HTTP endpoints to monitor.
 
 ## 1. Check Prerequisites
 
@@ -60,7 +60,7 @@ chmod +x "roundtable-http-mcp-${OS}-${ARCH}"
 ```
 
 This installs:
-- `roundtable-http-mcp-${OS}-${ARCH}` — the single Go binary (server + dispatcher + parsers + embedded role prompts; speaks both stdio and HTTP depending on subcommand)
+- `roundtable-http-mcp-${OS}-${ARCH}` — the single Go binary (stdio MCP server + dispatcher + parsers + embedded role prompts). The `http-mcp` in the filename is a legacy name carried for compatibility with the v0.8.0 tarball layout; the binary itself only serves stdio.
 - `roundtable-http-mcp` — symlink to the above so commands in the rest of this guide stay platform-agnostic
 - `SKILL.md` — optional skill file for Claude Code
 
@@ -91,8 +91,8 @@ Only include env vars for CLIs that exist. Optional environment variables recogn
 
 |Env Var|Default|Purpose|
 |-|-|-|
-|`ROUNDTABLE_HTTP_ROLES_DIR`|(embedded)|Override directory with custom role prompt files|
-|`ROUNDTABLE_HTTP_PROJECT_ROLES_DIR`|(none)|Project-scoped role prompt directory|
+|`ROUNDTABLE_ROLES_DIR`|(embedded)|Override directory with custom role prompt files. `ROUNDTABLE_HTTP_ROLES_DIR` is accepted as a deprecated fallback.|
+|`ROUNDTABLE_PROJECT_ROLES_DIR`|(none)|Project-scoped role prompt directory. `ROUNDTABLE_HTTP_PROJECT_ROLES_DIR` is accepted as a deprecated fallback.|
 |`ROUNDTABLE_DEFAULT_AGENTS`|(all 3)|JSON array of agents to run by default|
 |`ROUNDTABLE_GEMINI_PATH`|`$PATH` lookup|Explicit path to the gemini CLI|
 |`ROUNDTABLE_CODEX_PATH`|`$PATH` lookup|Explicit path to the codex CLI|
@@ -145,59 +145,13 @@ If a tool call fails:
 - Inspect the binary directly: `~/.local/share/roundtable/roundtable-http-mcp stdio </dev/null` should print MCP startup logs on stderr and exit (stdin closed)
 - For richer per-session logs during Phase A dogfood, use the stderr-teeing wrapper at `scripts/roundtable-stdio-wrapper.sh` — it redirects stderr to `~/.local/share/roundtable/logs/stdio-<timestamp>-<pid>.log` while leaving stdin/stdout untouched
 
-## Legacy HTTP Mode (optional)
+## OpenAI-Compatible HTTP Providers
 
-HTTP mode is still bundled but will be removed in Phase C. Use it only when you need the `/healthz`, `/readyz`, or `/metricsz` endpoints for external monitoring.
-
-### Start the HTTP server
-
-```bash
-nohup ~/.local/share/roundtable/roundtable-http-mcp > /tmp/roundtable.log 2>&1 &
-curl -s http://127.0.0.1:4040/healthz  # expect: ok
-curl -s http://127.0.0.1:4040/readyz   # expect: ready
-```
-
-Optional HTTP-only environment variables:
-
-|Env Var|Default|Purpose|
-|-|-|-|
-|`ROUNDTABLE_HTTP_ADDR`|`127.0.0.1:4040`|Listen address|
-|`ROUNDTABLE_HTTP_MCP_PATH`|`/mcp`|MCP endpoint path|
-
-### Register as HTTP MCP server
-
-```bash
-claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
-```
-
-### HTTP monitoring
-
-```bash
-curl -s http://127.0.0.1:4040/metricsz
-```
-
-Returns JSON with scalar counters (`total_requests`, `dispatch_errors`),
-per-provider-per-model request counters (`roundtable_provider_requests_total`
-keyed as `provider/model/status`), duration histograms
-(`roundtable_provider_request_duration_ms_sum`,
-`roundtable_provider_request_duration_ms_count` keyed as `provider/model`),
-and the registered provider list (`roundtable_providers_registered`).
-
-### HTTP troubleshooting
-
-If `/healthz` doesn't respond:
-- Check if the server is running: `pgrep -f roundtable-http-mcp`
-- Check logs: `cat /tmp/roundtable.log`
-
-If `/readyz` returns 503:
-- Confirm at least one CLI (`gemini`, `codex`, or `claude`) is installed and on PATH
-- Check logs for per-backend health messages
-
-## Providers (HTTP)
-
-Roundtable dispatches to OpenAI-compatible HTTP providers declared in the
-`ROUNDTABLE_PROVIDERS` environment variable — a JSON array where each
-entry names one provider (Fireworks, Moonshot, z.ai, DeepSeek, Groq, etc.).
+Separately from the stdio MCP transport above, Roundtable can dispatch
+outbound to OpenAI-compatible HTTP APIs (Fireworks, Moonshot, z.ai,
+DeepSeek, Groq, etc.) as additional agents alongside the gemini/codex/claude
+subprocess backends. Providers are declared in the `ROUNDTABLE_PROVIDERS`
+environment variable — a JSON array where each entry names one provider.
 
 ### Minimal example
 
@@ -272,7 +226,7 @@ parse failure caused the absence. The startup logs tell you what
 happened:
 
 - `INFO provider registered id=... base_url=... default_model=... max_concurrent=...` — one line per successfully registered provider.
-- `WARN provider skipped — credential env var unset id=... api_key_env=...` — credentials missing; FR-3 skip. Callers see `not_found` per-agent; `/readyz` stays green.
+- `WARN provider skipped — credential env var unset id=... api_key_env=...` — credentials missing; FR-3 skip. Callers see `not_found` per-agent; the server still starts normally.
 - `ERROR ROUNDTABLE_PROVIDERS parse failed; no HTTP providers registered error=...` — JSON-level issue. Only subprocess backends register.
 
 ### Secret rotation
@@ -282,25 +236,15 @@ secret in the blob), rotating a key means updating a single env var.
 The value is read via `os.Getenv` at request time, so the new key
 takes effect immediately without restarting Roundtable.
 
-### Enumerating registered providers
+### Registered providers
 
-`/metricsz` (HTTP mode only) includes a `roundtable_providers_registered`
-field listing each registered provider's `id`, `base_url`, and
-`default_model` — a machine-readable enumeration surface for operators
-writing dashboards or deploy checks.
+Registered providers are surfaced only via the startup `INFO provider
+registered ...` log lines above. There is no HTTP metrics endpoint in
+the current stdio-only server; the provider IDs you configure are the
+names you use in `agents` JSON on each tool call.
 
-Metric keys use `|` as the tuple delimiter:
-`roundtable_provider_requests_total` is keyed `provider|model|status`
-and `roundtable_provider_request_duration_ms_sum` is keyed
-`provider|model`. Slashes are not used because real model ids (e.g.
-`accounts/fireworks/models/kimi-k2p6`) contain them. Provider ids
-containing `/`, `|`, or whitespace are rejected at load time.
-
-A special model label, **`_other`**, appears when a provider's observed
-distinct-model count exceeds an internal cap (32) or when a client
-sends a model label longer than 128 characters. This is a
-cardinality-DoS guard — see FR-28. Dashboards should treat keys like
-`provider|_other|status` as a bucket containing the overflow.
+Provider IDs containing `/`, `|`, or whitespace are rejected at load
+time so metric/log keys remain unambiguous.
 
 ### Known limitations (Apr 2026)
 
@@ -314,8 +258,7 @@ cardinality-DoS guard — see FR-28. Dashboards should treat keys like
 mise install
 make build
 make test
-make run        # HTTP mode on 127.0.0.1:4040
-make run-stdio  # stdio mode on stdin/stdout
+make run        # builds and runs `./roundtable stdio` on stdin/stdout
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architecture details.

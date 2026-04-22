@@ -12,7 +12,7 @@ On the build machine:
 
 ## 1. Determine Version
 
-Roundtable uses semantic versioning. Check the current version in `Makefile` (the `VERSION ?=` line) and in `internal/httpmcp/config.go` (`defaultVersion`).
+Roundtable uses semantic versioning. Check the current version in `Makefile` (the `VERSION ?=` line). The runtime version string lives in `cmd/roundtable/main.go` as `var version = "dev"`, overridden at build time via `-ldflags "-X main.version=${VERSION}"` — `make build` and `make release` already do this, so bumping `Makefile` is the only source edit required.
 
 Decide the bump:
 - **Patch** (0.7.0 -> 0.7.1): Bug fixes only
@@ -33,11 +33,10 @@ NEW_VERSION="0.7.1"  # Change this
 sed -i "s/^VERSION ?= .*/VERSION ?= ${NEW_VERSION}/" Makefile
 ```
 
-### internal/httpmcp/config.go
-
-```bash
-sed -i "s/defaultVersion      = \".*\"/defaultVersion      = \"${NEW_VERSION}\"/" internal/httpmcp/config.go
-```
+`cmd/roundtable/main.go` intentionally does **not** get sed-patched — the
+`version = "dev"` default is overridden at link time by `-ldflags
+"-X main.version=$(VERSION)"` in the Makefile, so bumping `VERSION ?=`
+is sufficient.
 
 ### INSTALL.md
 
@@ -67,19 +66,21 @@ This builds the single Go binary and copies it to `release/`.
 
 ### Manual build
 
+Post Phase C the binary is `roundtable` built from `./cmd/roundtable`:
+
 ```bash
 mise exec go@1.26.2 -- env GOTOOLCHAIN=local GOMODCACHE=/tmp/gomodcache GOCACHE=/tmp/gocache \
-  go build -o release/roundtable-http-mcp ./cmd/roundtable-http-mcp
-chmod +x release/roundtable-http-mcp
+  go build -ldflags "-s -w -X main.version=${NEW_VERSION}" \
+  -o release/roundtable ./cmd/roundtable
+chmod +x release/roundtable
 ```
 
-Verify the binary runs:
+Smoke-test — stdio servers have no HTTP endpoints, so verify via the
+`version` subcommand and an MCP `initialize` exchange:
 
 ```bash
-./release/roundtable-http-mcp &
-sleep 1
-curl -s http://127.0.0.1:4040/healthz  # should print "ok"
-pkill -f roundtable-http-mcp
+./release/roundtable version                 # prints "roundtable ${NEW_VERSION}"
+./release/roundtable stdio </dev/null 2>&1 | head -5  # expect MCP startup logs on stderr, clean exit
 ```
 
 ## 4. Package Tarballs
@@ -133,7 +134,7 @@ Both must succeed before tagging.
 ## 6. Commit and Tag
 
 ```bash
-git add Makefile internal/httpmcp/config.go INSTALL.md release/SKILL.md
+git add Makefile INSTALL.md release/SKILL.md
 git commit -m "chore: bump version to ${NEW_VERSION}"
 git tag -a "v${NEW_VERSION}" -m "v${NEW_VERSION} — <short description>"
 ```
@@ -187,8 +188,8 @@ gh release create "v${NEW_VERSION}" \
 
 |File|Role|
 |-|-|
-|`Makefile` `VERSION ?=` |Build-time version string|
-|`internal/httpmcp/config.go` `defaultVersion`|Reported MCP server version|
+|`Makefile` `VERSION ?=` |Build-time version string, injected via `-ldflags -X main.version=`|
+|`cmd/roundtable/main.go` `var version`|Runtime default (`"dev"`), overridden at link time — no edit required on bump|
 |`INSTALL.md` `VERSION=`|Install script version|
 |`release/SKILL.md`|Skill file shipped in every tarball|
 |`release/roundtable-http-mcp-darwin-arm64`|Apple Silicon binary (pre-rename) shipped in the darwin-arm64 tarball|

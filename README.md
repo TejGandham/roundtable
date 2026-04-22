@@ -20,7 +20,7 @@ You cross-check sometimes. Just not often enough to catch the subtle ones — be
 
 ## What it does
 
-Roundtable is an MCP server that sends your prompt to Claude, Gemini, and Codex CLIs — in parallel — and returns structured JSON with all their responses. One tool call from inside your existing agent. It uses the CLIs already in your PATH, already authenticated. Runs locally on `127.0.0.1`. Prompts stay in-memory on your machine — Roundtable assembles the role + prompt + file references in-process, hands them to your local CLIs, and never persists or proxies them anywhere else. The CLIs talk to their providers as usual.
+Roundtable is an MCP server that sends your prompt to Claude, Gemini, and Codex CLIs — in parallel — and returns structured JSON with all their responses. One tool call from inside your existing agent. It uses the CLIs already in your PATH, already authenticated. Claude Code spawns it over stdio on demand — no daemon, no open port. Prompts stay in-memory on your machine — Roundtable assembles the role + prompt + file references in-process, hands them to your local CLIs, and never persists or proxies them anywhere else. The CLIs talk to their providers as usual.
 
 You can run the same CLI with different models in a single dispatch. Claude with Opus for the architecture review, Claude with Sonnet for the quick sanity check. Gemini for the edge cases. Codex for an independent take. Compose your own panel.
 
@@ -44,7 +44,7 @@ Two models agree on the queue. One says it's overengineered. That disagreement i
 
 ## How it's built
 
-Single Go binary. HTTP MCP server on `127.0.0.1:4040` dispatching to Gemini and Claude via subprocess-per-request and to Codex via a long-lived `codex app-server` JSON-RPC connection. Each CLI runs in its own process group with atomic kill on timeout. If a backend hangs, Go kills it at the deadline and returns a structured error. If the Go server dies, the HTTP connection fails immediately. Health endpoints (`/healthz`, `/readyz`) and burn-in metrics (`/metricsz`) are built in. Cross-platform: Linux, macOS.
+Single Go binary, stdio MCP transport. Claude Code fork/execs it per session over stdin/stdout — no daemon, no port, no HTTP endpoints. Dispatches to Gemini and Claude via subprocess-per-request and to Codex via a long-lived `codex app-server` JSON-RPC connection (lazy-started under `sync.Once` on first tool call). Each CLI runs in its own process group with atomic kill on timeout and Linux `PR_SET_PDEATHSIG` so orphans die with the parent. If a backend hangs, Go kills it at the deadline and returns a structured error. Cross-platform: Linux, macOS.
 
 Selective dispatch controls cost. Route architecture decisions to the heavy models. Route boilerplate to the fast ones. The `agents` parameter takes a JSON array — pick exactly who sits at the table.
 
