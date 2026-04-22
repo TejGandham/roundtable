@@ -82,21 +82,44 @@ curl -s http://127.0.0.1:4040/healthz  # should print "ok"
 pkill -f roundtable-http-mcp
 ```
 
-## 4. Package Tarball
+## 4. Package Tarballs
+
+`make release` produces two arch-suffixed binaries in `release/`
+(`roundtable-http-mcp-darwin-arm64`, `roundtable-http-mcp-linux-amd64`;
+renamed to `roundtable-darwin-arm64`, `roundtable-linux-amd64` after the
+Phase C binary rename). Package one tarball per platform, each containing
+that platform's binary plus `SKILL.md`, then generate a single
+`SHA256SUMS` covering both.
 
 ```bash
-cd release
-tar czf ../roundtable-${NEW_VERSION}.tar.gz roundtable-http-mcp SKILL.md
-cd -
+# Adjust BIN to match the binary basename in release/ for this version:
+#   pre-rename releases: roundtable-http-mcp
+#   post-rename releases: roundtable
+BIN=roundtable-http-mcp
+
+for pair in darwin-arm64 linux-amd64; do
+  tar czf "roundtable-${NEW_VERSION}-${pair}.tar.gz" \
+    -C release "${BIN}-${pair}" SKILL.md
+done
 ```
 
-### SHA256 checksum
+### SHA256 checksums
 
 ```bash
-sha256sum roundtable-${NEW_VERSION}.tar.gz > SHA256SUMS
+shasum -a 256 \
+  "roundtable-${NEW_VERSION}-darwin-arm64.tar.gz" \
+  "roundtable-${NEW_VERSION}-linux-amd64.tar.gz" \
+  > SHA256SUMS
 ```
 
-Verify: `cat SHA256SUMS` should show one line with the hash and filename.
+Verify: `cat SHA256SUMS` should show two lines — one hash + filename per tarball.
+
+> The install script in `INSTALL.md` assumes the binary inside each tarball
+> keeps its arch suffix and symlinks the canonical name → the suffixed
+> name on extract. Do not rename or `--transform` the binary during `tar` —
+> the SHA256SUMS line format (`<hash>␣␣<filename>.tar.gz`) and the
+> `grep "  ${ASSET}$" SHA256SUMS | shasum -c -` verification step in
+> INSTALL.md both depend on these exact names.
 
 ## 5. Run Full Test Suite
 
@@ -140,9 +163,11 @@ tea release create \
 <Description of what changed.>
 
 ### Assets
-- \`roundtable-${NEW_VERSION}.tar.gz\` — Go binary + skill file
-- \`SHA256SUMS\` — integrity checksum" \
-  --asset "roundtable-${NEW_VERSION}.tar.gz" \
+- \`roundtable-${NEW_VERSION}-darwin-arm64.tar.gz\` — Apple Silicon binary + skill file
+- \`roundtable-${NEW_VERSION}-linux-amd64.tar.gz\` — Linux x86_64 binary + skill file
+- \`SHA256SUMS\` — integrity checksums (one line per tarball)" \
+  --asset "roundtable-${NEW_VERSION}-darwin-arm64.tar.gz" \
+  --asset "roundtable-${NEW_VERSION}-linux-amd64.tar.gz" \
   --asset "SHA256SUMS"
 ```
 
@@ -153,7 +178,8 @@ gh release create "v${NEW_VERSION}" \
   --repo TejGandham/roundtable \
   --title "Roundtable v${NEW_VERSION}" \
   --notes "Release notes here." \
-  "roundtable-${NEW_VERSION}.tar.gz" \
+  "roundtable-${NEW_VERSION}-darwin-arm64.tar.gz" \
+  "roundtable-${NEW_VERSION}-linux-amd64.tar.gz" \
   "SHA256SUMS"
 ```
 
@@ -164,8 +190,10 @@ gh release create "v${NEW_VERSION}" \
 |`Makefile` `VERSION ?=` |Build-time version string|
 |`internal/httpmcp/config.go` `defaultVersion`|Reported MCP server version|
 |`INSTALL.md` `VERSION=`|Install script version|
-|`release/SKILL.md`|Skill file shipped in tarball|
-|`release/roundtable-http-mcp`|Go binary shipped in tarball|
+|`release/SKILL.md`|Skill file shipped in every tarball|
+|`release/roundtable-http-mcp-darwin-arm64`|Apple Silicon binary (pre-rename) shipped in the darwin-arm64 tarball|
+|`release/roundtable-http-mcp-linux-amd64`|Linux x86_64 binary (pre-rename) shipped in the linux-amd64 tarball|
+|`release/roundtable-{darwin-arm64,linux-amd64}`|Same slots post-Phase C binary rename|
 
 ## Notes
 

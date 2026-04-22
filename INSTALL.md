@@ -28,19 +28,45 @@ claude mcp remove roundtable 2>/dev/null || true
 
 ## 3. Install
 
+Releases ship one tarball per platform (`darwin-arm64`, `linux-amd64`), plus a single `SHA256SUMS` file covering all of them. The snippet below detects your platform, verifies the checksum, extracts to `~/.local/share/roundtable`, and aliases the arch-suffixed binary to the canonical name `roundtable-http-mcp` that the rest of this guide assumes.
+
 ```bash
 VERSION=0.8.0
+
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"      # darwin | linux
+case "$(uname -m)" in
+  arm64|aarch64) ARCH=arm64 ;;
+  x86_64|amd64)  ARCH=amd64 ;;
+  *) echo "unsupported arch: $(uname -m)"; return 1 2>/dev/null || exit 1 ;;
+esac
+ASSET="roundtable-${VERSION}-${OS}-${ARCH}.tar.gz"
+BASE="https://github.com/TejGandham/roundtable/releases/download/v${VERSION}"
+
 mkdir -p ~/.local/share/roundtable
-curl -sL "https://github.com/TejGandham/roundtable/releases/download/v${VERSION}/roundtable-mcp-${VERSION}.tar.gz" \
-  | tar xz -C ~/.local/share/roundtable
-chmod +x ~/.local/share/roundtable/roundtable-http-mcp
+cd ~/.local/share/roundtable
+
+curl -fsSLO "${BASE}/${ASSET}"
+curl -fsSLO "${BASE}/SHA256SUMS"
+grep "  ${ASSET}$" SHA256SUMS | shasum -a 256 -c -
+
+tar xzf "${ASSET}"
+rm -f "${ASSET}"
+ln -sf "roundtable-http-mcp-${OS}-${ARCH}" roundtable-http-mcp
+chmod +x "roundtable-http-mcp-${OS}-${ARCH}"
+
+# macOS only: strip the quarantine attribute so Gatekeeper doesn't block the
+# unsigned binary on first launch. No-op on Linux.
+[ "$OS" = "darwin" ] && xattr -d com.apple.quarantine "roundtable-http-mcp-${OS}-${ARCH}" 2>/dev/null || true
 ```
 
 This installs:
-- `roundtable-http-mcp` — the single Go binary (server + dispatcher + parsers + embedded role prompts; speaks both stdio and HTTP depending on subcommand)
+- `roundtable-http-mcp-${OS}-${ARCH}` — the single Go binary (server + dispatcher + parsers + embedded role prompts; speaks both stdio and HTTP depending on subcommand)
+- `roundtable-http-mcp` — symlink to the above so commands in the rest of this guide stay platform-agnostic
 - `SKILL.md` — optional skill file for Claude Code
 
-> Checksum: the tarball's sha256 is published alongside the release as `SHA256SUMS`.
+Supported platforms: `darwin-arm64` (Apple Silicon — M1/M2/M3/M4) and `linux-amd64`. Intel Macs and Linux arm64 are not currently released; build from source via `make build`.
+
+> **Note for post-rename releases:** starting with the first release after the `roundtable-http-mcp` → `roundtable` binary rename, tarballs will contain `roundtable-${OS}-${ARCH}` instead of `roundtable-http-mcp-${OS}-${ARCH}`. Update the symlink target and the `chmod`/`xattr` lines accordingly when bumping `VERSION` past that release.
 
 ## 4. Register with Claude Code (stdio — recommended)
 
