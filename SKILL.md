@@ -222,7 +222,7 @@ Call `hivemind` with `prompt: "What about the token refresh edge case you mentio
 Gemini CLI restricts file access to its current working directory. When using `files` (especially with `xray`):
 
 1. Use **relative paths** in `files` (not absolute paths).
-2. Start the `roundtable-http-mcp` server from the project root — Gemini inherits the server's cwd.
+2. Gemini inherits its cwd from `roundtable`, which in turn inherits it from the MCP client that fork/exec'd it (Claude Code, etc.). Invoke your MCP client from the project root so Gemini can see the files.
 
 This is a Gemini CLI constraint, not a roundtable issue. Codex and Claude do not have this limitation.
 

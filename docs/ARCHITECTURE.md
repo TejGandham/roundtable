@@ -1,103 +1,120 @@
 # Roundtable Architecture
 
-Roundtable is a single static Go binary (`roundtable-http-mcp`) that serves MCP over HTTP and dispatches prompts to Claude, Gemini, and Codex CLIs in parallel, returning structured JSON with all responses and metadata. It supports selective agent dispatch — invoke any subset of CLIs, run the same CLI with different models, and assign per-agent roles.
+Roundtable is a single static Go binary (`roundtable`) that serves the Model Context Protocol over **stdio** and dispatches each prompt to Claude, Gemini, and Codex CLIs — plus any configured OpenAI-compatible HTTP providers — in parallel, returning a structured JSON document with every response and per-agent metadata. It supports selective agent dispatch: invoke any subset of backends, run the same backend with different models, and assign per-agent roles.
 
 ## Overview
 
-Roundtable is a single Go binary (`roundtable-http-mcp`) that:
+`roundtable` is a single Go binary that:
 
-1. Serves MCP over HTTP on `127.0.0.1:4040/mcp` (stateless streamable HTTP transport).
-2. Exposes five tools: `hivemind`, `deepdive`, `architect`, `challenge`, `xray`.
-3. On each tool call, assembles a role-scoped prompt and dispatches it to three model backends in parallel.
-4. Normalizes each backend's output into a uniform JSON contract and returns the aggregate to the caller.
+1. Speaks MCP over stdin/stdout (the `modelcontextprotocol/go-sdk` stdio transport). There is no listening port and no HTTP endpoint.
+2. Registers five tools: `hivemind`, `deepdive`, `architect`, `challenge`, `xray`.
+3. On each tool call, assembles a role-scoped prompt and dispatches it to the resolved set of backends in parallel.
+4. Normalizes each backend's output into a uniform JSON contract (`result.go::DispatchResult`) and returns the aggregate to the caller.
 
-The Go binary is the only process Claude Code talks to. All dispatch, prompt assembly, role loading, output parsing, and JSON construction happen in Go. There is no Elixir or Erlang runtime involved.
+Claude Code (or any other MCP client) fork/execs `roundtable stdio` once per session and the two processes exchange JSON-RPC frames over the pipes until the client disconnects. No daemon survives between sessions, so there is nothing to babysit and no cross-session state to worry about.
 
 ## Architecture diagram
 
 ```
-+----------------+            +----------------------------+
-|  Claude Code   |  HTTP/MCP  |   roundtable-http-mcp      |
-|  (MCP client)  +----------->+   (Go single binary)       |
-+----------------+            |                            |
-                              |  +----------------------+  |
-                              |  | httpmcp (transport)  |  |
-                              |  |  - tool registration |  |
-                              |  |  - streamable HTTP   |  |
-                              |  |  - health endpoints  |  |
-                              |  |  - metrics counters  |  |
-                              |  +----------+-----------+  |
-                              |             |              |
-                              |             v              |
-                              |  +----------------------+  |
-                              |  | roundtable (domain)  |  |
-                              |  |  - Run() dispatcher  |  |
-                              |  |  - prompt assembly   |  |
-                              |  |  - role loader       |  |
-                              |  |  - result normalize  |  |
-                              |  +----------+-----------+  |
-                              |             |              |
-                              |    +--------+--------+     |
-                              |    |        |        |     |
-                              |    v        v        v     |
-                              |  gemini   codex    claude  |
-                              |  Backend  Backend  Backend |
-                              +----|--------|--------|-----+
-                                   |        |        |
-                              subprocess  stdio    subprocess
-                                  |    JSON-RPC      |
-                                  v        |         v
-                             +---------+   |    +---------+
-                             | gemini  |   |    | claude  |
-                             |   CLI   |   |    |   CLI   |
-                             +---------+   |    +---------+
-                                           v
-                                     +------------+
-                                     | codex      |
-                                     | app-server |
-                                     +------------+
++----------------+                       +---------------------------+
+|  Claude Code   |  fork/exec + stdio    |   roundtable (Go binary)  |
+|  (MCP client)  +---------------------->+                           |
++----------------+                       |  +---------------------+  |
+                                         |  | stdiomcp (transport)|  |
+                                         |  |  - tool registration|  |
+                                         |  |  - stdio framing    |  |
+                                         |  |  - 5s keepalive     |  |
+                                         |  |  - panic recovery   |  |
+                                         |  +----------+----------+  |
+                                         |             |             |
+                                         |             v             |
+                                         |  +---------------------+  |
+                                         |  | roundtable (domain) |  |
+                                         |  |  - Run() dispatcher |  |
+                                         |  |  - prompt assembly  |  |
+                                         |  |  - role loader      |  |
+                                         |  |  - result normalize |  |
+                                         |  |  - provider registry|  |
+                                         |  +----------+----------+  |
+                                         |             |             |
+                                         |   +----+----+----+----+   |
+                                         |   |    |    |    |    |   |
+                                         |   v    v    v    v    v   |
+                                         | gemini codex claude  HTTP |
+                                         | Back.  Back. Back. providers
+                                         +---|------|------|------|--+
+                                             |      |      |      |
+                                        subprocess stdio subprocess POST
+                                            |   JSON-RPC   |      /v1/chat
+                                            v       |      v      /completions
+                                       +---------+  |  +---------+
+                                       | gemini  |  |  | claude  |
+                                       |   CLI   |  |  |   CLI   |
+                                       +---------+  |  +---------+
+                                                    v
+                                              +-----------+
+                                              | codex     |
+                                              | app-server|
+                                              +-----------+
 ```
 
-Dashed line for Codex: the long-lived `codex app-server` process is launched once at startup and reused across all requests. Each request creates a fresh thread inside the app-server.
+The Codex app-server is launched lazily under a `sync.Once` on the first tool call that needs it, not at process start. The subprocess backends (Gemini, Claude) are spawned per-request. OpenAI-compatible providers speak HTTP to their configured `base_url` with `stream: false` chat completions.
 
 ## Components
 
+### Top-level
+
 | Package / file | Responsibility |
 |-|-|
-| `cmd/roundtable-http-mcp/main.go` | Entry point. Builds backends, starts the Codex app-server, wires the dispatch function into httpmcp, runs HTTP server with signal-driven graceful shutdown. |
-| `internal/httpmcp/server.go` | MCP tool registration, HTTP handler mux, streamable HTTP transport, progress notifications, request panic recovery, cached backend health probes. |
-| `internal/httpmcp/backend.go` | `ToolInput` and `ToolSpec` types shared between the tool handler and the dispatch bridge. |
-| `internal/httpmcp/config.go` | Environment variable loader. |
-| `internal/httpmcp/metrics.go` | Atomic counters exposed via `/metricsz`. |
-|`internal/roundtable/run.go`|`Run()` — the native dispatch entry point. Resolves agents, loads roles, assembles prompts, runs two-phase parallel probe/run, returns `DispatchResult` JSON. Also holds `ProbeTimeout` (5s) and `RunGrace` (30s) constants.|
-|`internal/roundtable/backend.go`|`Backend` interface (`Name`, `Start`, `Stop`, `Healthy`, `Run`).|
-| `internal/roundtable/runner.go` | `SubprocessRunner` with bounded `LimitedWriter` stdout/stderr capture, process group cleanup, `ROUNDTABLE_ACTIVE=1` env injection, `ROUNDTABLE_EXTRA_PATH` prepend. |
-| `internal/roundtable/runner_unix.go` | Unix `Setpgid` + `kill -SIGKILL -PGID` atomic process group kill. |
-| `internal/roundtable/runner_windows.go` | Windows process kill stub. |
-| `internal/roundtable/gemini.go` | Gemini subprocess backend. Arg builder, stdout/stderr JSON parser, rate-limit detection, metadata extraction. |
-| `internal/roundtable/claude.go` | Claude subprocess backend. Arg builder, JSON parser, ANSI stripping from `modelUsage` keys. |
-| `internal/roundtable/codex_rpc.go` | **Primary Codex path.** Long-lived `codex app-server` process with JSON-RPC 2.0 over stdio. Handles initialize handshake, per-turn threads, notification routing, interrupt on cancel. |
-| `internal/roundtable/codex_fallback.go` | Fallback Codex backend. Subprocess-per-request `codex exec --json` JSONL parser. Used when the app-server fails to start. |
-| `internal/roundtable/prompt.go` | `AssemblePrompt` — joins role + `=== REQUEST ===` + `=== FILES ===` sections. `FormatFileReferences` stats each file. |
-| `internal/roundtable/roles.go` | `LoadRolePrompt` with three-level fallback: project dir -> global dir -> `go:embed roles/*.txt` defaults. |
-| `internal/roundtable/roles/` | Embedded defaults: `default.txt`, `planner.txt`, `codereviewer.txt`. |
-| `internal/roundtable/request.go` | `Request` — transport-neutral input to a backend. |
-| `internal/roundtable/result.go` | `Result`, `Meta`, `DispatchResult` types and JSON marshaling. `NotFoundResult`, `ProbeFailedResult` constructors. |
-| `internal/roundtable/output.go` | `BuildResult` status normalization (timeout / terminated / error / ok) and `BuildMeta` aggregation. |
+| `cmd/roundtable/main.go` | Entry point. Parses `stdio` / `version` / `help` subcommands, builds backends, wires dispatch into `stdiomcp`, runs the stdio server with signal-driven shutdown. |
+
+### `internal/stdiomcp` — transport
+
+| File | Responsibility |
+|-|-|
+| `server.go` | MCP tool registration against `mcp.Server`, 5s keepalive progress notifications, tool-handler panic recovery, server startup logging. |
+| `types.go` | `ToolSpec`, `ToolInput`, `ToolRequest`, `DispatchFunc` — transport-neutral contracts shared with the domain layer. |
+| `discipline.go` | Structured-output discipline helpers (prompt suffix handling). |
+
+### `internal/roundtable` — domain + backends
+
+| File | Responsibility |
+|-|-|
+| `run.go` | `Run()` — the native dispatch entry point. Resolves agents, loads roles, assembles prompts, runs two-phase parallel probe/run, returns `DispatchResult` JSON. Holds `ProbeTimeout` (5s) and `RunGrace` (30s) constants. |
+| `backend.go` | `Backend` interface (`Name`, `Start`, `Stop`, `Healthy`, `Run`). |
+| `runner.go` | `SubprocessRunner` with bounded `LimitedWriter` stdout/stderr capture, process-group cleanup, `ROUNDTABLE_ACTIVE=1` env injection, `ROUNDTABLE_EXTRA_PATH` prepend. |
+| `runner_unix.go` | Unix `Setpgid` + `kill -SIGKILL -PGID` atomic process-group kill. |
+| `runner_windows.go` | Windows process kill stub. |
+| `gemini.go` | Gemini subprocess backend. Arg builder, stdout/stderr JSON parser, rate-limit detection, metadata extraction. |
+| `claude.go` | Claude subprocess backend. Arg builder, JSON parser, ANSI stripping from `modelUsage` keys. |
+| `codex_rpc.go` | **Primary Codex path.** Long-lived `codex app-server` subprocess with JSON-RPC 2.0 over stdio. Lazy-started under `sync.Once` on first use. Handles initialize handshake, per-turn threads, notification routing, interrupt on cancel. |
+| `codex_rpc_pdeathsig_linux.go` | Linux-only: `PR_SET_PDEATHSIG = SIGKILL` so the kernel reaps the app-server if `roundtable` exits without calling `Stop`. |
+| `codex_rpc_pdeathsig_other.go` / `codex_rpc_pdeathsig_windows.go` | No-op implementations for non-Linux. |
+| `codex_fallback.go` | Fallback Codex backend: subprocess-per-request `codex exec --json` JSONL parser. Used only when `NewCodexBackend.Start` fails (e.g., a Codex build without `app-server`). |
+| `openai_http.go` | Generic OpenAI-compatible HTTP backend. Posts `stream: false` chat completions, handles 429/503 as `rate_limited`, parses string-or-array `content`, enforces per-provider concurrency via a semaphore. |
+| `providers.go` | `ProviderConfig` + `LoadProviderRegistry` — parses `ROUNDTABLE_PROVIDERS`, validates `base_url`, registers one `OpenAIHTTPBackend` per entry. |
+| `observe.go` | Lightweight observability hooks for per-provider/model outcome counting. |
+| `files.go` | `InlineFileContents` — reads referenced files under caps (size and total), emits `<file path="...">...</file>` boundaries. |
+| `prompt.go` | `AssemblePrompt` — joins role + `=== REQUEST ===` + inlined files. |
+| `roles.go` | `LoadRolePrompt` with three-level fallback: project dir → global dir → `go:embed roles/*.txt` defaults. |
+| `roles/` | Embedded defaults: `default.txt`, `planner.txt`, `codereviewer.txt`. |
+| `request.go` | `Request` — transport-neutral input to a backend. |
+| `result.go` | `Result`, `Meta`, `DispatchResult` types and JSON marshaling. `NotFoundResult`, `ProbeFailedResult`, `ConfigErrorResult` constructors. |
+| `output.go` | `BuildResult` status normalization (timeout / terminated / error / rate_limited / ok) and `BuildMeta` aggregation. |
 
 ## Request flow
 
 Step-by-step for a single `hivemind` tool call:
 
-1. **HTTP request arrives** at `POST /mcp`. The `mcp.StreamableHTTPHandler` (from `modelcontextprotocol/go-sdk`) parses it as an MCP `CallToolRequest`.
-2. **Tool handler fires** in `server.go::registerTool`. It increments `TotalRequests`, extracts the progress token, and launches a goroutine to do the actual work so the main goroutine can push 30-second progress notifications back to the client.
-3. **DispatchFunc is invoked** (`buildDispatchFunc` in `main.go`). It parses the `agents` JSON, splits `files` on commas, resolves the timeout (default 900s), builds a `roundtable.ToolRequest`, and calls `roundtable.Run`.
+1. **MCP frame arrives** on stdin. The go-sdk stdio transport parses it as an `mcp.CallToolRequest`.
+2. **Tool handler fires** in `stdiomcp/server.go` (registered by `registerTool`). It captures the progress token and launches a worker goroutine; the main goroutine selects on the worker's done channel, `ctx.Done()`, and a 5s ticker emitting keepalive progress notifications. An immediate `notify(0)` on tool-call start saves clients that default to a short deadline.
+3. **DispatchFunc is invoked** (`buildStdioDispatch` in `main.go`). It parses the `agents` JSON, splits `files` on commas, resolves the timeout (default 900s, capped at 900s), builds a `roundtable.ToolRequest`, and calls `roundtable.Run`.
 4. **`Run` resolves agents** — explicit `Agents` > `ROUNDTABLE_DEFAULT_AGENTS` env > the default three (`gemini`, `codex`, `claude`).
-5. **Per-agent config** — for each agent, `Run` resolves role (agent spec > per-CLI > tool default > `"default"`), model, and resume ID; loads the role prompt via `LoadRolePrompt`; calls `AssemblePrompt(rolePrompt, basePrompt+suffix, files)`; finds the matching backend by CLI name.
-6. **Probe phase** — a goroutine per agent calls `backend.Healthy(ctx)` with a 5s timeout. Results are collected from a buffered channel into a fixed-index slice.
-7. **Run phase** — for each agent that passed the probe, a goroutine calls `backend.Run(runCtx, req)` where `runCtx` has a `timeout + 30s grace` deadline. Panics are recovered into error `Result`s. Unhealthy agents get `ProbeFailedResult` or `NotFoundResult`.
-8. **Result aggregation** — `Run` assembles a `map[string]*Result` keyed by agent name, calls `BuildMeta` to compute max elapsed, files referenced, and per-agent role names, then JSON-marshals a `DispatchResult`.
-9. **Response** — the bytes are sent back through the done channel to the HTTP handler, wrapped in an `mcp.CallToolResult` with a single `TextContent`, and serialized to the HTTP client.
+5. **Per-agent config** — for each agent, `Run` resolves role (agent spec > per-CLI > tool default > `"default"`), model, and resume ID; loads the role prompt via `LoadRolePrompt`; calls `AssemblePrompt(rolePrompt, basePrompt+suffix, files)`; finds the matching backend by provider id.
+6. **Probe phase** — one goroutine per agent calls `backend.Healthy(ctx)` with `ProbeTimeout=5s`. Results collect from a buffered channel into a fixed-index slice. `Healthy` is cheap for all backends (Codex uses a lock-free liveness check against the cached start state; subprocess backends cache `execPath` via `ResolveExecutable`).
+7. **Run phase** — for each agent that passed the probe, a goroutine calls `backend.Run(runCtx, req)` where `runCtx` has a `timeout + 30s` grace deadline. Panics are recovered into error `Result`s. Unhealthy agents get `ProbeFailedResult` or `NotFoundResult`.
+8. **Result aggregation** — `Run` assembles a `map[string]*Result` keyed by agent name, calls `BuildMeta` to compute max elapsed, files referenced, and per-agent role names, and JSON-marshals a `DispatchResult`.
+9. **Response** — the bytes are sent back through the worker's done channel to the tool handler, wrapped in an `mcp.CallToolResult` with a single `TextContent`, and written out over stdio.
 
 If the context is cancelled (client disconnect or deadline), the handler returns an error result. Each backend's `Run` is expected to honor `ctx.Done()` and return a `timeout` or `error` `Result`.
 
@@ -116,71 +133,83 @@ If the context is cancelled (client disconnect or deadline), the handler returns
 - `Run`: builds args `[-p --output-format json --dangerously-skip-permissions (--model <m>)? (-r <id>)? <prompt>]`. The prompt is positional, last.
 - Parser reads stdout JSON only. Checks `is_error` for the error path. Strips ANSI escape codes from the first `modelUsage` key to extract the model name.
 
-### CodexBackend (primary — long-lived app-server)
+### CodexBackend (primary — lazy long-lived app-server)
 
-- `Start` launches `codex app-server --listen stdio://` once at server startup. Pipes stdin/stdout, spawns a `readLoop` goroutine, then sends an `initialize` request with `clientInfo` populated from `config.ServerName` and `config.ServerVersion`.
-- `Healthy` checks that `cmd.Process != nil` and the `done` channel (closed by `readLoop` on EOF) is not closed.
-- `Run` implements a three-step protocol per request:
-  1. `thread/start` with empty params -> receives `{thread: {id}}`.
+- **Lazy start**: `codex app-server --listen stdio://` is **not** launched at `roundtable` startup. It is started under a `sync.Once` inside `ensureStarted`, called from the first `Run` invocation that dispatches to Codex. This keeps process start cheap for sessions that never call Codex and means `Healthy(ctx)` is cheap (pre-start it returns nil without launching anything).
+- **Orphan prevention**: on Linux, `applyPdeathsig` sets `Setpgid=true` and `PR_SET_PDEATHSIG=SIGKILL` so the kernel delivers SIGKILL to the app-server if `roundtable` exits without calling `Stop`. On macOS / Windows the process-group flag alone is used; orphan cleanup in those environments relies on happy-path `Stop`.
+- **Handshake**: once started, the backend pipes stdin/stdout, spawns a `readLoop` goroutine, then sends an `initialize` request with `clientInfo` populated from `config.ServerName` / `config.ServerVersion`.
+- **`Healthy`** checks that `cmd.Process != nil` and the `done` channel (closed by `readLoop` on EOF) is not closed.
+- **`Run`** implements a three-step protocol per request:
+  1. `thread/start` with empty params → receives `{thread: {id}}`.
   2. `turn/start` with `{threadId, input: [{type: "text", text: prompt}], (model)?}`.
   3. Block on the per-thread notification channel until `turn/completed`, accumulating `item/completed` events where `item.type == "agentMessage"`.
-- `Stop` grabs references under lock, releases the lock (to avoid deadlock with `readLoop`), closes stdin, kills the process, waits, and waits for `done`.
+- **`Stop`** grabs references under lock, releases the lock (to avoid deadlock with `readLoop`), closes stdin, kills the process, waits, and waits for `done`.
 - On context cancel during a turn, fires a best-effort `turn/interrupt` with a fresh 5s context and returns a `timeout` result. The app-server stays alive for subsequent turns.
 - `readLoop` reads newline-delimited JSON. Messages with an `id` field are responses (routed to `pending[id]`); messages with only `method` are notifications (routed to `notifs[threadId]` by parsing `params.threadId`).
 - Concurrency: `pending` and `notifs` use separate mutexes. The top-level `mu` protects the stdin `Write` so concurrent turns can interleave messages safely.
 
 ### CodexFallbackBackend (subprocess-per-request JSONL)
 
-Used only when `NewCodexBackend.Start` fails at startup (e.g., the codex binary version does not support `app-server`).
+Used only when `NewCodexBackend.Start` fails at startup (e.g., a codex binary that does not support `app-server`).
 
 - `Healthy`: `codex --version` probe.
 - `Run`: builds args `[exec --json --dangerously-bypass-approvals-and-sandbox (-c model=<m>)? (-c reasoning_effort=<r>)? <resume...> <prompt>]`. Resume modes: empty, `last` (`resume --last <prompt>`), or session id (`resume <id> <prompt>`).
 - Parser walks stdout line by line, decoding each `{` JSON event:
-  - `item.completed` with `item.type == "agent_message"` -> append text to messages.
-  - `thread.started` -> capture `thread_id` as session ID.
-  - `turn.completed` -> capture `usage` into metadata.
-  - `error` -> append to errors.
+  - `item.completed` with `item.type == "agent_message"` → append text to messages.
+  - `thread.started` → capture `thread_id` as session ID.
+  - `turn.completed` → capture `usage` into metadata.
+  - `error` → append to errors.
 - Success path joins messages with `\n\n`. Error-only path joins errors with `\n`. Empty output returns a synthetic error with `parse_error`.
+
+### OpenAIHTTPBackend (outbound HTTP providers)
+
+- Registered from `ROUNDTABLE_PROVIDERS` at startup (see Configuration below).
+- `Healthy`: verifies the `api_key_env` env var is non-empty. Does not make a network call.
+- `Run`: POSTs `{"model": ..., "messages": [{"role": "system", "content": <role>}, {"role": "user", "content": <inlined files>+<prompt>}], "stream": false}` to `${base_url}/chat/completions`.
+- The per-provider semaphore (`max_concurrent`, default 3) gates concurrent requests. Waits above `gate_slow_log_threshold` (default 100 ms) emit a debug log for tuning.
+- Response parsing handles `choices[0].message.content` as both string and array-of-parts; extracts text parts, fails closed on empty assistant output.
+- 429 / 503 map to `status: "rate_limited"` with `metadata.retry_after` populated when the server sends `Retry-After`. No auto-retry.
+- `finish_reason == "length"` sets `metadata.output_truncated = true` so callers can detect cutoff without knowing provider conventions.
 
 ## Codex app-server protocol
 
 The app-server speaks JSON-RPC 2.0 over stdio. Every message is one JSON object terminated by `\n`. All methods return `-32600 "Not initialized"` until `initialize` completes.
 
 ```
-roundtable-http-mcp          codex app-server
-       |                            |
-       |  -->  initialize           |
-       |       { clientInfo: {...} }|
-       |  <--  { result: {...} }    |
-       |                            |
-       |        (idle until a tool call arrives)
-       |                            |
-       |  -->  thread/start         |
-       |       { }                  |
-       |  <--  { result:            |
-       |          { thread:         |
-       |            { id: "thr_.." }|
-       |          }                 |
-       |        }                   |
-       |                            |
-       |  -->  turn/start           |
-       |       { threadId: "thr_..",|
-       |         input: [{type:     |
-       |         "text", text: ...}]|
-       |       }                    |
-       |  <--  { result: {...} }    |
-       |                            |
-       |  <-- notify: item/completed (agentMessage) ...
+    roundtable                          codex app-server
+       |                                        |
+       |  (first Codex-bound tool call arrives — sync.Once fires)
+       |                                        |
+       |  -->  initialize                       |
+       |       { clientInfo: { name, version }} |
+       |  <--  { result: {...} }                |
+       |                                        |
+       |  -->  thread/start                     |
+       |       { }                              |
+       |  <--  { result:                        |
+       |          { thread:                     |
+       |            { id: "thr_.." }            |
+       |          }                             |
+       |        }                               |
+       |                                        |
+       |  -->  turn/start                       |
+       |       { threadId: "thr_..",            |
+       |         input: [{type:                 |
+       |         "text", text: ...}]            |
+       |       }                                |
+       |  <--  { result: {...} }                |
+       |                                        |
+       |  <-- notify: item/completed (agentMessage)
        |  <-- notify: item/completed (reasoning, ignored)
        |  <-- notify: threadTokenUsage/updated (ignored)
        |  <-- notify: turn/completed { threadId }
-       |                            |
-       |     (on client cancel)     |
-       |  -->  turn/interrupt       |
-       |       { threadId }         |
+       |                                        |
+       |     (on client cancel)                 |
+       |  -->  turn/interrupt                   |
+       |       { threadId }                     |
 ```
 
-The Go implementation only extracts text from `agentMessage` items; other item types (reasoning traces, tool calls) are silently dropped. Token usage is ignored in the current build — the hook exists in `collectTurn` but is a no-op.
+The Go implementation only extracts text from `agentMessage` items; other item types (reasoning traces, tool calls) are silently dropped.
 
 ## Configuration
 
@@ -190,19 +219,15 @@ All configuration is via environment variables.
 
 |Variable|Default|Purpose|
 |-|-|-|
-|`ROUNDTABLE_HTTP_ADDR`|`127.0.0.1:4040`|Listen address.|
-|`ROUNDTABLE_HTTP_MCP_PATH`|`/mcp`|MCP endpoint path.|
-|`ROUNDTABLE_HTTP_SERVER_NAME`|`roundtable-http-mcp`|Reported MCP server name.|
-|`ROUNDTABLE_HTTP_SERVER_VERSION`|from `config.defaultVersion`|Reported MCP server version.|
-|`ROUNDTABLE_HTTP_PROBE_TIMEOUT`|`2s`|Duration for the readyz health probe (per backend).|
+|`ROUNDTABLE_ROLES_DIR`|(embedded)|Global roles directory. Overrides embedded defaults. `ROUNDTABLE_HTTP_ROLES_DIR` accepted as a deprecated fallback.|
+|`ROUNDTABLE_PROJECT_ROLES_DIR`|(none)|Project-local roles directory, searched before global. `ROUNDTABLE_HTTP_PROJECT_ROLES_DIR` accepted as a deprecated fallback.|
 
 ### Dispatch
 
 |Variable|Default|Purpose|
 |-|-|-|
-|`ROUNDTABLE_HTTP_ROLES_DIR`|(embedded)|Global roles directory. Overrides embedded defaults.|
-|`ROUNDTABLE_HTTP_PROJECT_ROLES_DIR`|(none)|Project-local roles directory, searched before global.|
-|`ROUNDTABLE_DEFAULT_AGENTS`|(all three)|JSON-encoded array string of default agents when the tool call omits `agents`.|
+|`ROUNDTABLE_DEFAULT_AGENTS`|(all three subprocess backends)|JSON-encoded array string of default agents when the tool call omits `agents`. HTTP providers are never in the default set — adding one is a compile-time test failure (`TestDefaultAgents_ExcludesAllHTTPProviders`).|
+|`ROUNDTABLE_PROVIDERS`|(none)|JSON array registering one or more OpenAI-compatible HTTP providers. See `INSTALL.md` §7–15 for the full schema and examples.|
 
 ### Executable resolution
 
@@ -218,38 +243,31 @@ The child process environment always includes `ROUNDTABLE_ACTIVE=1` (set by `sub
 
 ## Health and observability
 
-| Endpoint | Behavior |
-|-|-|
-| `GET /` | Plain text banner with server name and MCP path. |
-| `GET /healthz` | Always returns `200 ok` — liveness only. |
-| `GET /readyz` | Returns `200 ready` if backends are healthy, `503 not ready: ...` otherwise. In native mode, calls `Healthy(ctx)` on each backend with a cached 10s TTL; stale entries trigger a reprobe on the request goroutine. |
-| `GET /metricsz` | JSON counter snapshot. |
+`roundtable` is a stdio MCP server, so there are no HTTP endpoints and no `/healthz`, `/readyz`, or `/metricsz`. Liveness is implicit: if Claude Code (or any MCP client) can exchange `initialize` frames with the binary over stdin/stdout, the server is alive. A stalled server manifests as stdio EOF or the client's own deadline firing.
 
-Metrics counters (atomic, never reset):
+Per-backend health is observed lazily at tool-call time via the probe phase in `Run()` — each call runs a fresh health probe with the 5s `ProbeTimeout`, and probe failures are surfaced per-agent in the response JSON rather than as a server-level ready/not-ready signal.
 
-|Counter|Incremented when|
-|-|-|
-|`total_requests`|Any tool call arrives.|
-|`dispatch_errors`|Dispatch returned an error or the tool handler panicked.|
+Provider-level observability is handled by the `observe.go` hooks: outcome counters are recorded per `(provider, model, status)` tuple for optional external collection. There is no built-in Prometheus / JSON endpoint in the current stdio-only build.
 
 ## Concurrency model
 
 | Component | Concurrency mechanism |
 |-|-|
-| HTTP server | `http.Server` with streamable HTTP transport. Each MCP call runs on its own goroutine. |
-| Tool handler | Spawns a worker goroutine; main goroutine selects on `done`, `ctx.Done()`, and a 30s ticker for progress notifications. |
+| stdio server | The go-sdk stdio transport reads framed JSON-RPC messages from stdin. Each MCP call runs on its own goroutine. |
+| Tool handler | Spawns a worker goroutine; the main goroutine selects on `done`, `ctx.Done()`, and a 5s ticker emitting keepalive progress notifications (plus an immediate progress-on-start). |
 | Native `Run()` | Two sequential phases, each using goroutines + a buffered channel for fan-in. Probe phase collects into a fixed-index slice; run phase collects into a counted loop. |
 | GeminiBackend / ClaudeBackend / CodexFallbackBackend | `sync.Mutex` protects the cached `execPath`. `Run` is otherwise stateless — each call spawns its own subprocess. |
-| CodexBackend | Three mutexes: `mu` (subprocess handles + stdin writes), `pendingMu` (request id -> response channel), `notifMu` (thread id -> notification channel). A single `readLoop` goroutine fans incoming messages out to the right channel. `done` is closed on EOF so callers can unblock. |
+| CodexBackend | `sync.Once` gates app-server start; three mutexes: `mu` (subprocess handles + stdin writes), `pendingMu` (request id → response channel), `notifMu` (thread id → notification channel). A single `readLoop` goroutine fans incoming messages out to the right channel. `done` is closed on EOF so callers can unblock. |
+| OpenAIHTTPBackend | Per-provider `semaphore.Weighted` gates concurrent requests at `max_concurrent`. Shared `http.Client` with per-transport tuning (`ResponseHeaderTimeout`, idle pool). |
 | SubprocessRunner | Each process gets its own process group (`Setpgid=true`). `exec.CommandContext` + `cmd.Cancel` issue `kill -SIGKILL -PGID` on context cancel. A deferred `killProcessGroup` after `Wait` reaps orphan grandchildren. `cmd.WaitDelay = 2s` ensures deterministic cleanup. |
 
 ## Error handling
 
-- **Panic recovery** — the tool handler and every `Run` goroutine in `run.go` wrap their work in a `recover()` block that emits an error `Result` or increments `dispatch_errors`.
-- **Timeouts** — the Go context is the single source of truth. Each backend's `Run` must honor `ctx.Done()`; `SubprocessRunner` converts `ctx.Err() != nil` into `TimedOut=true` and `BuildResult` maps that to `status: "timeout"` with a synthetic response message.
-- **Process orphans** — atomic process group kill on Unix (`kill -SIGKILL -PGID`), plus a deferred cleanup after `Wait` to catch grandchildren that escaped the parent PID. On Windows the runner uses `cmd.Process.Kill()`.
-- **Output limits** — stdout capped at 1 MB, stderr at 512 KB, probe output at 64 KB. `LimitedWriter` reports full consumption to avoid broken-pipe errors in the child, then sets a `truncated` flag that propagates to the `Result`.
-- **Graceful shutdown** — `main.go` installs a `signal.NotifyContext` on SIGINT/SIGTERM. On signal, it calls `server.Shutdown` with a 30s context, and `stopBackends` releases Codex app-server.
+- **Panic recovery** — the tool handler and every `Run` goroutine in `run.go` wrap their work in a `recover()` block that emits an error `Result`.
+- **Timeouts** — the Go context is the single source of truth. Each backend's `Run` must honor `ctx.Done()`; `SubprocessRunner` converts `ctx.Err() != nil` into `TimedOut=true` and `BuildResult` maps that to `status: "timeout"` with a synthetic response message. `OpenAIHTTPBackend` maps `context.DeadlineExceeded` during both the `sem.Acquire` wait and the `http.Do` / body-read phases to `timeout`.
+- **Process orphans** — atomic process-group kill on Unix (`kill -SIGKILL -PGID`) plus a deferred cleanup after `Wait` to catch grandchildren that escaped the parent PID. The Codex app-server additionally sets `PR_SET_PDEATHSIG=SIGKILL` on Linux so the kernel cleans it up if `roundtable` exits abnormally. Windows uses `cmd.Process.Kill()`.
+- **Output limits** — stdout capped at 1 MB, stderr at 512 KB, probe output at 64 KB for subprocess backends. HTTP response bodies are capped at 8 MiB via `io.LimitReader`. `LimitedWriter` reports full consumption to avoid broken-pipe errors in the child, then sets a `truncated` flag that propagates to the `Result`.
+- **Graceful shutdown** — `main.go` installs a `signal.NotifyContext` on SIGINT / SIGTERM. On signal, `stdiomcp.Serve` returns, `stopBackends` releases the Codex app-server, and the process exits cleanly. Client disconnect (stdin EOF) reaches the same shutdown path.
 
 ## Development
 
@@ -268,7 +286,8 @@ Manually:
 
 ```bash
 mise exec go@1.26.2 -- env GOTOOLCHAIN=local GOMODCACHE=/tmp/gomodcache GOCACHE=/tmp/gocache \
-  go build -o roundtable-http-mcp ./cmd/roundtable-http-mcp
+  go build -ldflags "-s -w -X main.version=$(git describe --tags --abbrev=0)" \
+  -o roundtable ./cmd/roundtable
 ```
 
 ### Test
@@ -281,33 +300,38 @@ Go test layout:
 
 |File|Coverage|
 |-|-|
-|`internal/httpmcp/server_test.go`|Dispatch function wiring, readyz with mock probes, panic recovery, metrics, 404 handling.|
+|`internal/stdiomcp/server_test.go`|Tool registration, handler dispatch wiring, panic recovery.|
+|`internal/stdiomcp/discipline_test.go`|Structured-output discipline.|
+|`internal/stdiomcp/e2e_test.go`|End-to-end stdio MCP flow with mock dispatch.|
 |`internal/roundtable/run_test.go`|`Run()` with mock backends, agent resolution, per-agent roles, probe failure.|
 |`internal/roundtable/runner_test.go`|Fake CLI scripts, timeout kill, truncation.|
 |`internal/roundtable/gemini_test.go`|Arg ordering, JSON + stderr fallback, rate-limit detection.|
 |`internal/roundtable/claude_test.go`|Arg ordering, ANSI stripping, `is_error`.|
-|`internal/roundtable/codex_rpc_test.go`|Fake app-server pipe, handshake, notification routing, interrupt.|
+|`internal/roundtable/codex_rpc_test.go`|Fake app-server pipe, handshake, notification routing, interrupt, lazy-start semantics.|
+|`internal/roundtable/codex_rpc_orphan_linux_test.go`|Linux `PR_SET_PDEATHSIG` orphan-cleanup behavior.|
 |`internal/roundtable/codex_fallback_test.go`|JSONL event parsing, resume modes.|
+|`internal/roundtable/openai_http_test.go`|HTTP provider dispatch, semaphore gate, 429/503 mapping, string/array content parsing.|
+|`internal/roundtable/providers_test.go`|`LoadProviderRegistry` parsing, `base_url` validation, per-entry skip semantics.|
+|`internal/roundtable/files_test.go`|File inlining, size caps, `<file>` boundary formatting.|
 |`internal/roundtable/prompt_test.go`, `roles_test.go`, `output_test.go`, `result_test.go`, `domain_test.go`|Pure-function unit tests.|
 |`internal/roundtable/mock_backend_test.go`|Shared `mockBackend` test double used by `run_test.go`.|
 
 ### Run locally
 
 ```bash
-./roundtable-http-mcp
-# or with explicit paths
-ROUNDTABLE_GEMINI_PATH=/usr/local/bin/gemini \
-ROUNDTABLE_CODEX_PATH=/usr/local/bin/codex \
-ROUNDTABLE_CLAUDE_PATH=/usr/local/bin/claude \
-  ./roundtable-http-mcp
+./roundtable stdio
 ```
+
+Or via `make run` (builds + runs). The binary reads MCP frames from stdin and writes responses to stdout; stderr is reserved for structured logs.
 
 Register with Claude Code:
 
 ```bash
-claude mcp add --transport http roundtable http://127.0.0.1:4040/mcp
+claude mcp add -s user roundtable -- ~/.local/share/roundtable/roundtable stdio
 ```
+
+See `INSTALL.md` for the full one-line install + registration flow.
 
 ## History
 
-The project originally shipped as an Elixir/OTP stdio MCP server and was migrated to pure Go in April 2026. See `git log` for the full migration commits if you need the archaeology.
+Roundtable began as an Elixir/OTP stdio MCP server, was ported to Go with an HTTP MCP transport for the v0.7.x–v0.8.0 line, and in Phase C (merged April 2026, shipped in v0.9.0) the HTTP transport was deleted in favor of stdio-only. The rename `roundtable-http-mcp` → `roundtable` landed in the same phase. The OpenAI-compatible outbound HTTP provider layer (added in v0.8.0, expanded through v0.9.0) is unrelated to the deleted inbound HTTP MCP transport — the binary serves only stdio, and uses HTTP only as a client to reach external providers like Fireworks, Moonshot, z.ai, and DeepSeek.
