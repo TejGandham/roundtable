@@ -2,55 +2,157 @@
   "id": null,
   "uid": "roundtable-skill",
   "title": "Roundtable Skill",
-  "tags": ["roundtable"],
+  "tags": [
+    "roundtable"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
   "time": {
-    "from": "now-24h",
+    "from": "now-30d",
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["5s", "30s", "1m", "5m", "15m"],
-    "time_options": ["1h", "6h", "12h", "24h", "7d"]
+    "refresh_intervals": [
+      "5s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ],
+    "time_options": [
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "7d",
+      "30d"
+    ]
   },
   "annotations": {
     "list": []
   },
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PBFA97CFB590B2093"
+        },
+        "query": {
+          "query": "label_values(roundtable_calls_total{service_name=\"roundtable\"}, host_name)",
+          "refId": "host"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "project",
+        "label": "Project",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PBFA97CFB590B2093"
+        },
+        "query": {
+          "query": "label_values(roundtable_calls_total{service_name=\"roundtable\"}, project_name)",
+          "refId": "project"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "role",
+        "label": "Role",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PBFA97CFB590B2093"
+        },
+        "query": {
+          "query": "label_values(roundtable_calls_total{service_name=\"roundtable\"}, roundtable_role)",
+          "refId": "role"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
   },
   "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
     {
       "id": 1,
       "type": "stat",
       "title": "Total Invocations",
-      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 1
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\"}[24h]))",
-          "instant": true,
-          "legendFormat": "Total"
+          "expr": "sum(increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range]))",
+          "instant": true
         }
       ],
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
         "orientation": "auto",
         "textMode": "auto",
         "colorMode": "value",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "none"
+          "unit": "none",
+          "decimals": 0
         },
         "overrides": []
       }
@@ -59,19 +161,28 @@
       "id": 2,
       "type": "stat",
       "title": "Success Rate",
-      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 5,
+        "y": 1
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", status_code=\"STATUS_CODE_OK\"}[24h])) / sum(increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\"}[24h])) * 100",
-          "instant": true,
-          "legendFormat": "Success %"
+          "expr": "sum(increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", status_code=\"STATUS_CODE_OK\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range])) / sum(increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range])) * 100",
+          "instant": true
         }
       ],
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -83,7 +194,26 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percent"
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "noValue": "\u2014"
         },
         "overrides": []
       }
@@ -91,20 +221,29 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Avg Duration",
-      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0},
+      "title": "Avg Invoke Duration",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 10,
+        "y": 1
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(roundtable_duration_milliseconds_sum{service_name=\"roundtable\", span_name=\"roundtable.invoke\"}[1h])) / sum(rate(roundtable_duration_milliseconds_count{service_name=\"roundtable\", span_name=\"roundtable.invoke\"}[1h])) / 1000",
-          "instant": true,
-          "legendFormat": "Avg"
+          "expr": "sum(rate(roundtable_duration_milliseconds_sum{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range])) / clamp_min(sum(rate(roundtable_duration_milliseconds_count{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range])), 1) / 1000",
+          "instant": true
         }
       ],
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -116,27 +255,242 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "decimals": 1
         },
         "overrides": []
       }
     },
     {
       "id": 4,
-      "type": "timeseries",
-      "title": "Gemini Status",
-      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6},
+      "type": "stat",
+      "title": "p95 Invoke Latency",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 14,
+        "y": 1
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (roundtable_gemini_status) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\"}[1h]))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range])))",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Active Hosts",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 19,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(count by (host_name) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range]) > 0))",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Invocation Activity",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Invocations by span_name",
+      "description": "One line per span. roundtable.invoke = root; gemini/codex/claude = children. Not stacked because child spans are subsets of the root (stacking would double-count).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (span_name) (rate(roundtable_calls_total{service_name=\"roundtable\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval]))",
+          "legendFormat": "{{span_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "fillOpacity": 30,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Errors by span_name",
+      "description": "STATUS_CODE_ERROR rate per span.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (span_name) (rate(roundtable_calls_total{service_name=\"roundtable\", status_code=\"STATUS_CODE_ERROR\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval]))",
+          "legendFormat": "{{span_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Gemini Backend",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "panels": []
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Gemini Status",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (roundtable_gemini_status) (rate(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.gemini\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval]))",
           "legendFormat": "{{roundtable_gemini_status}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "cps",
           "custom": {
             "stacking": {
               "mode": "normal",
@@ -155,26 +509,139 @@
         },
         "tooltip": {
           "mode": "multi",
-          "sort": "none"
+          "sort": "desc"
         }
       }
     },
     {
-      "id": 5,
+      "id": 21,
       "type": "timeseries",
-      "title": "Codex Status",
-      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6},
+      "title": "Gemini Latency p50 / p95 / p99",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 16
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (roundtable_codex_status) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\"}[1h]))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.gemini\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.gemini\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.gemini\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "fillOpacity": 0,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "piechart",
+      "title": "Gemini Model Distribution",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (roundtable_gemini_model) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.gemini\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{roundtable_gemini_model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut"
+      }
+    },
+    {
+      "id": 400,
+      "type": "row",
+      "title": "Codex Backend",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Codex Status",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (roundtable_codex_status) (rate(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.codex\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval]))",
           "legendFormat": "{{roundtable_codex_status}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "cps",
           "custom": {
             "stacking": {
               "mode": "normal",
@@ -193,31 +660,48 @@
         },
         "tooltip": {
           "mode": "multi",
-          "sort": "none"
+          "sort": "desc"
         }
       }
     },
     {
-      "id": 6,
+      "id": 31,
       "type": "timeseries",
-      "title": "Gemini Latency p50/p95",
-      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 15},
+      "title": "Codex Latency p50 / p95 / p99",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 25
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.gemini\"}[1h])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.codex\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval])))",
           "legendFormat": "p50"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.gemini\"}[1h])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.codex\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval])))",
           "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.codex\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval])))",
+          "legendFormat": "p99"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms"
+          "unit": "ms",
+          "custom": {
+            "fillOpacity": 0,
+            "showPoints": "never"
+          }
         },
         "overrides": []
       },
@@ -228,31 +712,96 @@
         },
         "tooltip": {
           "mode": "multi",
-          "sort": "none"
+          "sort": "desc"
         }
       }
     },
     {
-      "id": 7,
-      "type": "timeseries",
-      "title": "Codex Latency p50/p95",
-      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 15},
+      "id": 32,
+      "type": "piechart",
+      "title": "Codex Model Distribution",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 25
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.codex\"}[1h])))",
-          "legendFormat": "p50"
-        },
-        {
-          "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.codex\"}[1h])))",
-          "legendFormat": "p95"
+          "expr": "sum by (roundtable_codex_model) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.codex\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{roundtable_codex_model}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms"
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut"
+      }
+    },
+    {
+      "id": 500,
+      "type": "row",
+      "title": "Claude Backend",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "panels": []
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Claude Span Rate",
+      "description": "roundtable.claude spans \u2014 fires when the local Claude CLI backend is invoked.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 34
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status_code) (rate(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.claude\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval]))",
+          "legendFormat": "{{status_code}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "fillOpacity": 35,
+            "showPoints": "never"
+          }
         },
         "overrides": []
       },
@@ -263,20 +812,202 @@
         },
         "tooltip": {
           "mode": "multi",
-          "sort": "none"
+          "sort": "desc"
         }
       }
     },
     {
-      "id": 8,
+      "id": 41,
+      "type": "timeseries",
+      "title": "Claude Latency p50 / p95 / p99",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 34
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.claude\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.claude\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.claude\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "fillOpacity": 0,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "Claude Invocations",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 34
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.claude\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range]))",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 600,
+      "type": "row",
+      "title": "Invoke Latency Distribution",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "panels": []
+    },
+    {
+      "id": 50,
+      "type": "heatmap",
+      "title": "roundtable.invoke Duration Heatmap",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (le) (rate(roundtable_duration_milliseconds_bucket{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__rate_interval]))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}"
+        }
+      ],
+      "options": {
+        "calculate": false,
+        "yAxis": {
+          "unit": "ms"
+        },
+        "color": {
+          "mode": "scheme",
+          "scheme": "Turbo",
+          "steps": 64
+        },
+        "tooltip": {
+          "show": true,
+          "yHistogram": true
+        },
+        "legend": {
+          "show": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 700,
+      "type": "row",
+      "title": "Dimensions",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "panels": []
+    },
+    {
+      "id": 60,
       "type": "piechart",
       "title": "Role Distribution",
-      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 24},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 53
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (roundtable_role) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\"}[24h]))",
+          "expr": "sum by (roundtable_role) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\"}[$__range]))",
           "instant": true,
           "legendFormat": "{{roundtable_role}}"
         }
@@ -289,24 +1020,37 @@
       },
       "options": {
         "legend": {
-          "displayMode": "list",
-          "placement": "right"
-        }
-      }
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut"
+      },
+      "description": "Breakdown across all roles \u2014 intentionally unfiltered by $role so selection doesn't collapse the chart."
     },
     {
-      "id": 9,
-      "type": "table",
-      "title": "Invocations by Host",
-      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 24},
+      "id": 61,
+      "type": "piechart",
+      "title": "Project Distribution",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 53
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (host_name) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\"}[24h]))",
+          "expr": "sum by (project_name) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", roundtable_role=~\"$role\"}[$__range]))",
           "instant": true,
-          "format": "table",
-          "legendFormat": "{{host_name}}"
+          "legendFormat": "{{project_name}}"
         }
       ],
       "fieldConfig": {
@@ -316,9 +1060,358 @@
         "overrides": []
       },
       "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut"
+      },
+      "description": "Breakdown across all projects \u2014 intentionally unfiltered by $project."
+    },
+    {
+      "id": 62,
+      "type": "table",
+      "title": "Invocations by Host",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (host_name) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range]))",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "{{host_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Invocations"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background-solid",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
         "showHeader": true,
-        "sortBy": []
-      }
+        "sortBy": [
+          {
+            "displayName": "Invocations",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "host_name": 0,
+              "Value": 1
+            }
+          }
+        }
+      ],
+      "description": "Breakdown across all hosts \u2014 intentionally unfiltered by $host."
+    },
+    {
+      "id": 63,
+      "type": "table",
+      "title": "Invocations by Session",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(50, sum by (session_tag) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range])))",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "{{session_tag}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Invocations"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background-solid",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Invocations",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 64,
+      "type": "table",
+      "title": "Role \u00d7 Gemini Outcomes",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (roundtable_role, roundtable_gemini_status) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range]))",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Count"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background-solid",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "roundtable_role"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "role"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "roundtable_gemini_status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "gemini"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Count",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 65,
+      "type": "table",
+      "title": "Role \u00d7 Codex Outcomes",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (roundtable_role, roundtable_codex_status) (increase(roundtable_calls_total{service_name=\"roundtable\", span_name=\"roundtable.invoke\", host_name=~\"$host\", project_name=~\"$project\", roundtable_role=~\"$role\"}[$__range]))",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Count"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background-solid",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "roundtable_role"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "role"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "roundtable_codex_status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "codex"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Count",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ]
     }
   ],
   "fiscalYearStartMonth": 0,
