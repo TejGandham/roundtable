@@ -83,30 +83,41 @@ Smoke-test — stdio servers have no HTTP endpoints, so verify via the
 ./release/roundtable stdio </dev/null 2>&1 | head -5  # expect MCP startup logs on stderr, clean exit
 ```
 
-## 4. Package Tarballs
+## 4. Package Archives
 
-`make release` produces two arch-suffixed binaries in `release/`:
-`roundtable-darwin-arm64` and `roundtable-linux-amd64`. Package one
-tarball per platform, each containing that platform's binary plus
-`SKILL.md`, then generate a single `SHA256SUMS` covering both.
+`make release` produces five arch-suffixed binaries in `release/`:
+`roundtable-darwin-amd64`, `roundtable-darwin-arm64`,
+`roundtable-linux-amd64`, `roundtable-linux-arm64`, and
+`roundtable-windows-amd64.exe`. Package one archive per platform, each
+containing that platform's binary plus `SKILL.md`. Unix platforms use
+`.tar.gz`; Windows uses `.zip` so PowerShell's `Expand-Archive` works
+out of the box.
 
 ```bash
-for pair in darwin-arm64 linux-amd64; do
+# Unix platforms → tar.gz
+for pair in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64; do
   tar czf "roundtable-${NEW_VERSION}-${pair}.tar.gz" \
     -C release "roundtable-${pair}" SKILL.md
 done
+
+# Windows → zip
+(cd release && zip "../roundtable-${NEW_VERSION}-windows-amd64.zip" \
+  "roundtable-windows-amd64.exe" SKILL.md)
 ```
 
 ### SHA256 checksums
 
 ```bash
 shasum -a 256 \
+  "roundtable-${NEW_VERSION}-darwin-amd64.tar.gz" \
   "roundtable-${NEW_VERSION}-darwin-arm64.tar.gz" \
   "roundtable-${NEW_VERSION}-linux-amd64.tar.gz" \
+  "roundtable-${NEW_VERSION}-linux-arm64.tar.gz" \
+  "roundtable-${NEW_VERSION}-windows-amd64.zip" \
   > SHA256SUMS
 ```
 
-Verify: `cat SHA256SUMS` should show two lines — one hash + filename per tarball.
+Verify: `cat SHA256SUMS` should show five lines — one hash + filename per archive.
 
 > The install script in `INSTALL.md` verifies each tarball against
 > `SHA256SUMS` with `grep "  ${ASSET}$" SHA256SUMS | shasum -c -`, which
@@ -157,11 +168,17 @@ tea release create \
 <Description of what changed.>
 
 ### Assets
+- \`roundtable-${NEW_VERSION}-darwin-amd64.tar.gz\` — Intel Mac binary + skill file
 - \`roundtable-${NEW_VERSION}-darwin-arm64.tar.gz\` — Apple Silicon binary + skill file
 - \`roundtable-${NEW_VERSION}-linux-amd64.tar.gz\` — Linux x86_64 binary + skill file
-- \`SHA256SUMS\` — integrity checksums (one line per tarball)" \
+- \`roundtable-${NEW_VERSION}-linux-arm64.tar.gz\` — Linux ARM64 binary + skill file
+- \`roundtable-${NEW_VERSION}-windows-amd64.zip\` — Windows x86_64 binary + skill file
+- \`SHA256SUMS\` — integrity checksums (one line per archive)" \
+  --asset "roundtable-${NEW_VERSION}-darwin-amd64.tar.gz" \
   --asset "roundtable-${NEW_VERSION}-darwin-arm64.tar.gz" \
   --asset "roundtable-${NEW_VERSION}-linux-amd64.tar.gz" \
+  --asset "roundtable-${NEW_VERSION}-linux-arm64.tar.gz" \
+  --asset "roundtable-${NEW_VERSION}-windows-amd64.zip" \
   --asset "SHA256SUMS"
 ```
 
@@ -172,8 +189,11 @@ gh release create "v${NEW_VERSION}" \
   --repo TejGandham/roundtable \
   --title "Roundtable v${NEW_VERSION}" \
   --notes "Release notes here." \
+  "roundtable-${NEW_VERSION}-darwin-amd64.tar.gz" \
   "roundtable-${NEW_VERSION}-darwin-arm64.tar.gz" \
   "roundtable-${NEW_VERSION}-linux-amd64.tar.gz" \
+  "roundtable-${NEW_VERSION}-linux-arm64.tar.gz" \
+  "roundtable-${NEW_VERSION}-windows-amd64.zip" \
   "SHA256SUMS"
 ```
 
@@ -185,8 +205,11 @@ gh release create "v${NEW_VERSION}" \
 |`cmd/roundtable/main.go` `var version`|Runtime default (`"dev"`), overridden at link time — no edit required on bump|
 |`INSTALL.md` `VERSION=`|Install script version|
 |`release/SKILL.md`|Skill file shipped in every tarball|
+|`release/roundtable-darwin-amd64`|Intel Mac binary shipped in the darwin-amd64 tarball|
 |`release/roundtable-darwin-arm64`|Apple Silicon binary shipped in the darwin-arm64 tarball|
 |`release/roundtable-linux-amd64`|Linux x86_64 binary shipped in the linux-amd64 tarball|
+|`release/roundtable-linux-arm64`|Linux ARM64 binary shipped in the linux-arm64 tarball|
+|`release/roundtable-windows-amd64.exe`|Windows x86_64 binary shipped in the windows-amd64 zip|
 
 ## Notes
 

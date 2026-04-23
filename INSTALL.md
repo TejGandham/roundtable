@@ -34,10 +34,10 @@ If Claude Code is currently running with a legacy Roundtable registered, also re
 
 ## 3. Install
 
-Releases ship one tarball per platform (`darwin-arm64`, `linux-amd64`), plus a single `SHA256SUMS` file covering all of them. The snippet below detects your platform, verifies the checksum, extracts to `~/.local/share/roundtable`, and normalizes the extracted binary's name to `roundtable` so subsequent sections are platform- and release-agnostic.
+Releases ship one archive per platform — `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64` as `.tar.gz`; `windows-amd64` as `.zip` — plus a single `SHA256SUMS` file covering all of them. The snippet below detects your platform, verifies the checksum, extracts to `~/.local/share/roundtable`, and normalizes the extracted binary's name to `roundtable` so subsequent sections are platform- and release-agnostic. Windows users: see the PowerShell section further down.
 
 ```bash
-VERSION=0.9.0
+VERSION=1.0.0
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"      # darwin | linux
 case "$(uname -m)" in
@@ -74,7 +74,48 @@ This installs:
 - `roundtable` — the single Go binary (stdio MCP server + dispatcher + parsers + embedded role prompts)
 - `SKILL.md` — optional skill file for Claude Code
 
-Supported platforms: `darwin-arm64` (Apple Silicon — M1/M2/M3/M4) and `linux-amd64`. Intel Macs and Linux arm64 are not currently released; build from source via `make build`.
+Supported platforms:
+
+- `darwin-arm64` — Apple Silicon (M1/M2/M3/M4)
+- `darwin-amd64` — Intel Mac
+- `linux-amd64` — standard x86_64 Linux
+- `linux-arm64` — ARM64 Linux (Graviton, Raspberry Pi 4+, Ampere, etc.)
+- `windows-amd64` — Windows x86_64 (see PowerShell section below)
+
+For platforms not listed, build from source via `make build`.
+
+### Windows (PowerShell)
+
+```powershell
+$Version = "1.0.0"
+$Asset   = "roundtable-$Version-windows-amd64.zip"
+$Base    = "https://github.com/TejGandham/roundtable/releases/download/v$Version"
+
+$InstallDir = Join-Path $HOME ".local\share\roundtable"
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+Set-Location $InstallDir
+
+Invoke-WebRequest -Uri "$Base/$Asset" -OutFile $Asset
+Invoke-WebRequest -Uri "$Base/SHA256SUMS" -OutFile "SHA256SUMS"
+
+# Verify checksum
+$Expected = (Select-String -Path SHA256SUMS -Pattern "  $Asset$").Line.Split(" ")[0]
+$Actual   = (Get-FileHash $Asset -Algorithm SHA256).Hash.ToLower()
+if ($Expected -ne $Actual) { Write-Error "checksum mismatch"; exit 1 }
+
+Expand-Archive -Force -Path $Asset -DestinationPath .
+Remove-Item $Asset
+
+# Normalize: the zip contains roundtable-windows-amd64.exe — rename to roundtable.exe
+Get-ChildItem "roundtable-windows-*.exe" | Rename-Item -NewName "roundtable.exe"
+```
+
+Register with Claude Code on Windows:
+
+```powershell
+claude mcp add -s user roundtable -- `
+  "$HOME\.local\share\roundtable\roundtable.exe" stdio
+```
 
 ## 4. Register with Claude Code (stdio — recommended)
 

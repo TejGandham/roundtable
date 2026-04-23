@@ -22,4 +22,7 @@ SHA256SUMS
 # Built binaries
 /roundtable-cli
 .depwire/
-roundtable-0.8.0-*.tar.gz
+# Release archives built by `make release` + packaging step — uploaded to
+# GitHub/Forgejo releases, not tracked in git. Covers any version.
+roundtable-*.tar.gz
+roundtable-*.zip
