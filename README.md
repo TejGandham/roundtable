@@ -1,5 +1,7 @@
 # Roundtable
 
+> **New:** [What is Roundtable? →](https://tejgandham.github.io/roundtable/) — a one-page explainer.
+
 How many times this week did you ask a second model?
 
 You have access to Claude, Gemini, Codex — you may even be paying for more than one. But the tab switch and the copy-paste never happen. So every answer you ship comes from one model's opinion.
