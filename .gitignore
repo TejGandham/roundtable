@@ -13,6 +13,7 @@
 # Local workflow state
 .sisyphus/
 .letta/
+.superpowers/
 erl_crash.dump
 .claude/
 .codex

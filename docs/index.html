@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Roundtable — an MCP server that sends your prompt to Claude, Gemini, Codex, and any OpenAI-compatible provider in parallel. Where they disagree is where you look twice.">
+<meta name="theme-color" content="#110E09">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Roundtable — multi-model consensus for your coding agent">
+<meta property="og:description" content="Every model's take on your question — in one call. Where they disagree is where to look twice.">
+<meta property="og:url" content="https://tejgandham.github.io/roundtable">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Roundtable — multi-model consensus for your coding agent">
+<meta name="twitter:description" content="Every model's take on your question — in one call. Where they disagree is where to look twice.">
+<title>Roundtable — multi-model consensus for your coding agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<style>
+  :root {
+    /* surface */
+    --bg: #110E09;
+    --bg-deep: #06050A;
+    --surface-1: #1A140C;
+    --surface-2: #221B10;
+    --border: rgba(212,160,74,0.18);
+    --border-strong: rgba(212,160,74,0.40);
+
+    /* text */
+    --text: #EDE6D6;
+    --text-2: #B8B0A0;
+    --text-3: #8A7F6C;
+    --text-dim: #6E6654;
+
+    /* brass — the signature */
+    --brass: #D4A04A;
+    --brass-deep: #B8862E;
+    --brass-ink: #17120A;
+    --brass-dim: #3C3428;
+    --brass-glow: rgba(212,160,74,0.7);
+    --brass-wash-1: rgba(212,160,74,0.06);
+    --brass-wash-2: rgba(212,160,74,0.08);
+    --brass-wash-3: rgba(212,160,74,0.12);
+
+    /* agents */
+    --claude: #8EB0F5;
+    --claude-deep: #5C8DEF;
+    --claude-border: rgba(142,176,245,0.35);
+    --gemini: #58D2BD;
+    --gemini-deep: #35B9A4;
+    --gemini-border: rgba(88,210,189,0.35);
+    --codex: #E89559;
+    --codex-deep: #D67939;
+    --codex-border: rgba(232,149,89,0.35);
+
+    /* terminal dots (mac-style chrome) */
+    --term-dot: #3A3028;
+
+    /* status */
+    --guest: #D4A04A;
+    --ok: #7ABF67;
+    --warn: #E8BC5B;
+    --err: #D85D47;
+
+    /* motion — ease-out-quart, natural deceleration */
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-reveal: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+    /* type */
+    --font-display: 'Space Grotesk', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, monospace;
+
+    /* radii */
+    --r-sm: 4px;
+    --r-md: 8px;
+    --r-lg: 12px;
+    --r-xl: 16px;
+    --r-pill: 100px;
+
+    /* shadows */
+    --sh-1: 0 1px 0 rgba(255,255,255,0.03) inset;
+    --sh-2: 0 8px 24px rgba(0,0,0,0.35);
+    --sh-3: 0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(212,160,74,0.25);
+    --sh-4: 0 20px 48px rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,255,255,0.08);
+  }
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    font-family: var(--font-display);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(212,160,74,.10), transparent 70%),
+      radial-gradient(ellipse 60% 40% at 50% 100%, rgba(88,210,189,.04), transparent 70%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection { background: rgba(212,160,74,0.35); color: var(--text); }
+
+  a { color: var(--brass); text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(212,160,74,0.5); }
+
+  :focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; border-radius: 2px; }
+
+  .world { max-width: 800px; margin: 0 auto; padding: 48px 20px 96px; }
+
+  /* Eyebrow — mono uppercase brass */
+  .eyebrow {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: var(--brass);
+    padding: 6px 14px;
+    border: 1px solid rgba(212,160,74,0.3);
+    border-radius: var(--r-pill);
+    background: rgba(212,160,74,0.06);
+  }
+
+  /* Typography scale */
+  h1 {
+    font-size: 72px;
+    line-height: 0.95;
+    letter-spacing: -3px;
+    font-weight: 700;
+    color: var(--text);
+    margin-block: 18px 14px;
+  }
+  h2 {
+    font-size: 32px;
+    line-height: 1.1;
+    letter-spacing: -1px;
+    font-weight: 700;
+    color: var(--text);
+    margin-block: 12px 14px;
+  }
+  h2 em { font-style: normal; color: var(--brass); }
+  h3 {
+    font-size: 22px;
+    line-height: 1.2;
+    letter-spacing: -0.5px;
+    font-weight: 700;
+    color: var(--text);
+    margin-block: 8px;
+  }
+  p { font-size: 16px; line-height: 1.6; color: var(--text-2); margin-block: 12px; }
+  p strong { color: var(--text); font-weight: 500; }
+  p em { color: var(--brass); font-style: normal; }
+  p code, li code {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--brass);
+    padding: 2px 6px;
+    background: rgba(212,160,74,0.08);
+    border-radius: var(--r-sm);
+  }
+
+  /* Hero */
+  .hero { text-align: center; padding-block: 24px 40px; }
+  .hero h1 { margin-block: 14px 16px; }
+  .hero .lede {
+    max-width: 560px;
+    margin: 0 auto 28px;
+    font-size: 18px;
+    color: var(--text-2);
+  }
+
+  /* Terminal-style question prompt */
+  .hero-prompt-wrap {
+    max-width: 640px;
+    margin: 0 auto 20px;
+    text-align: left;
+  }
+  .hero-prompt-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin-bottom: 8px;
+  }
+  .hero-prompt-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(212,160,74,0.4), transparent);
+  }
+  .hero-prompt {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    padding: 14px 20px;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--sh-1);
+  }
+  .hero-prompt .sigil { color: var(--brass); margin-right: 10px; }
+  .hero-prompt .tool { color: var(--text-dim); }
+  .hero-prompt .question {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .hero-prompt code {
+    font-family: inherit;
+    background: none;
+    padding: 0;
+  }
+  .answer-grid-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: var(--text-3);
+    text-align: left;
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .answer-grid-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(138,127,108,0.3), transparent);
+  }
+
+  /* Answer grid */
+  .answer-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-block: 0 24px;
+    text-align: left;
+  }
+  .answer-card {
+    background: rgba(0,0,0,0.30);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 18px 18px 20px;
+    box-shadow: var(--sh-2);
+    transition: border-color .25s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease);
+    opacity: 0;
+    animation: card-rise .7s var(--ease-reveal) forwards;
+    animation-delay: var(--rise-delay, 0s);
+  }
+  .answer-card:nth-child(1) { --rise-delay: 0.18s; }
+  .answer-card:nth-child(2) { --rise-delay: 0.32s; }
+  .answer-card:nth-child(3) { --rise-delay: 0.46s; }
+  @keyframes card-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .answer-card .bot-avatar svg {
+    transition: transform .35s var(--ease);
+    transform-origin: 50% 70%;
+  }
+  .answer-card:hover .bot-avatar svg,
+  .answer-card:focus-within .bot-avatar svg {
+    transform: rotate(-4deg) scale(1.06);
+  }
+  .answer-card:hover, .answer-card:focus-within {
+    transform: translateY(-2px);
+    box-shadow: var(--sh-3);
+  }
+  .answer-card:active { transform: translateY(0); transition-duration: .1s; }
+  .answer-card.claude { border-color: var(--claude-border); }
+  .answer-card.gemini { border-color: var(--gemini-border); }
+  .answer-card.codex  { border-color: var(--codex-border); }
+  .answer-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .bot-avatar { display: inline-flex; flex-shrink: 0; }
+  .bot-avatar svg { display: block; }
+  .bot-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .answer-card.claude .bot-name { color: var(--claude); }
+  .answer-card.gemini .bot-name { color: var(--gemini); }
+  .answer-card.codex  .bot-name { color: var(--codex); }
+  .answer-card p {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-2);
+    margin: 0;
+  }
+  .answer-card p .accent { color: var(--codex); }
+
+  /* Verdict ribbon */
+  .verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px auto 0;
+    padding: 10px 18px;
+    background: var(--brass-wash-1);
+    border: 1px solid rgba(212,160,74,0.28);
+    border-radius: var(--r-pill);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .verdict .light {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--brass);
+    box-shadow: 0 0 10px var(--brass-glow);
+    flex-shrink: 0;
+    animation: brass-breath 3.2s ease-in-out infinite;
+  }
+  .verdict .light:nth-child(2) { animation-delay: 0.4s; }
+  .verdict .light:nth-child(3) { animation-delay: 0.8s; }
+  .verdict .light.dim {
+    background: var(--brass-dim);
+    box-shadow: none;
+    animation: none;
+  }
+  @keyframes brass-breath {
+    0%, 100% { box-shadow: 0 0 10px var(--brass-glow); }
+    50%      { box-shadow: 0 0 14px var(--brass-glow), 0 0 22px rgba(212,160,74,0.35); }
+  }
+  .verdict .count { color: var(--text-2); }
+  .verdict .lbl { color: var(--brass); font-weight: 600; letter-spacing: 0.6px; }
+  .verdict-stack { display: flex; flex-direction: column; gap: 10px; align-items: center; margin-top: 20px; }
+
+  /* CTAs */
+  .cta-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 28px;
+    flex-wrap: wrap;
+  }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 12px 26px;
+    border-radius: var(--r-pill);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-decoration: none;
+    transition: transform .22s var(--ease), box-shadow .22s var(--ease), border-color .22s var(--ease);
+  }
+  .cta.primary {
+    background: linear-gradient(135deg, var(--brass), var(--brass-deep));
+    color: var(--brass-ink);
+    box-shadow: 0 8px 24px rgba(212,160,74,0.35), 0 1px 0 rgba(255,255,255,0.2) inset;
+  }
+  .cta.primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 30px rgba(212,160,74,0.5), 0 1px 0 rgba(255,255,255,0.25) inset;
+    text-decoration: none;
+  }
+  .cta.primary:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 14px rgba(212,160,74,0.3), 0 1px 0 rgba(255,255,255,0.15) inset;
+    transition-duration: .08s;
+  }
+  .cta.secondary {
+    background: var(--surface-1);
+    color: var(--text);
+    border: 1px solid var(--border);
+    box-shadow: var(--sh-2);
+  }
+  .cta.secondary:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    text-decoration: none;
+  }
+  .cta.secondary:active { transform: translateY(0); transition-duration: .08s; }
+
+  /* Sections */
+  section { padding-block: 56px 0; }
+  section + section { padding-block: 72px 0; }
+  .section-head { margin-bottom: 20px; }
+  .section-head .eyebrow { margin-bottom: 12px; }
+  .section-head p { max-width: 640px; }
+  section > p { max-width: 640px; }
+
+  /* Round-table scene */
+  .council-scene {
+    position: relative;
+    width: 100%;
+    height: 320px;
+    margin-top: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .council-table {
+    position: relative;
+    width: 340px;
+    height: 150px;
+    border-radius: var(--r-pill);
+    background: radial-gradient(ellipse at center, rgba(212,160,74,0.35), rgba(212,160,74,0.08));
+    border: 2px solid rgba(212,160,74,0.55);
+    box-shadow: var(--sh-4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .council-table::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(ellipse at center, rgba(212,160,74,0.28), transparent 70%);
+    animation: table-breath 7s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .council-table > * { position: relative; z-index: 1; }
+  @keyframes table-breath {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1; }
+  }
+  .council-table .q-glow {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    color: var(--text);
+    text-shadow: 0 0 20px rgba(212,160,74,0.3);
+  }
+  .council-table .q-glow em { font-style: normal; color: var(--brass); }
+
+  .council-bot {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .council-bot .name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+  }
+  .council-bot.claude { top: 10px; left: calc(50% - 210px); }
+  .council-bot.claude .name { color: var(--claude); }
+  .council-bot.gemini { top: 10px; right: calc(50% - 210px); }
+  .council-bot.gemini .name { color: var(--gemini); }
+  .council-bot.codex { bottom: 10px; left: calc(50% - 40px); }
+  .council-bot.codex .name { color: var(--codex); }
+
+  .guest-chair {
+    position: absolute;
+    width: 44px;
+    height: 54px;
+    border-radius: 8px 8px 10px 10px;
+    border: 1.5px dashed rgba(212,160,74,0.5);
+    background: rgba(212,160,74,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--brass);
+  }
+  .guest-chair.g1 { top: 70px; left: calc(50% - 290px); }
+  .guest-chair.g2 { top: 70px; right: calc(50% - 290px); }
+
+  /* Termcast */
+  .termcast {
+    max-width: 720px;
+    margin: 24px auto 0;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-3);
+    overflow: hidden;
+    text-align: left;
+  }
+  .termcast .bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid var(--border);
+  }
+  .termcast .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--term-dot); }
+  .termcast .dot.r { background: #FF5F56; }
+  .termcast .dot.y { background: #FFBD2E; }
+  .termcast .dot.g { background: #27C93F; }
+  .termcast .title {
+    margin-left: auto;
+    margin-right: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-3);
+    letter-spacing: 0.3px;
+  }
+  .termcast pre {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.75;
+    color: var(--text-2);
+    padding: 18px 22px 22px;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+  }
+  .termcast .prompt { color: var(--brass); }
+  .termcast .cmd { color: var(--text); }
+  .termcast .dim { color: var(--text-dim); }
+  .termcast .ok { color: var(--ok); }
+  .termcast .claude { color: var(--claude); }
+  .termcast .gemini { color: var(--gemini); }
+  .termcast .codex  { color: var(--codex); }
+  .termcast .brass  { color: var(--brass); }
+  .termcast .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: var(--brass);
+    vertical-align: text-bottom;
+    margin-left: 4px;
+    animation: cursor-blink 1.05s steps(2, jump-none) infinite;
+  }
+  @keyframes cursor-blink { 50% { opacity: 0; } }
+
+  /* Tools */
+  .tools-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-top: 24px;
+  }
+  .tool-badge {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 16px 10px;
+    text-align: center;
+    box-shadow: var(--sh-2);
+    transition: border-color .22s var(--ease), transform .22s var(--ease);
+  }
+  .tool-badge:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+  .tool-badge .nm {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--brass);
+    margin-bottom: 4px;
+  }
+  .tool-badge .role {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+
+  /* Guest badges */
+  .guests-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 24px;
+  }
+  .guest-badge {
+    background: rgba(212,160,74,0.05);
+    border: 1px dashed rgba(212,160,74,0.4);
+    border-radius: var(--r-lg);
+    padding: 14px 14px 16px;
+  }
+  .guest-badge .nm {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--brass);
+    margin-bottom: 4px;
+    letter-spacing: 0.3px;
+  }
+  .guest-badge .via {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-3);
+    margin-bottom: 8px;
+  }
+  .guest-badge .note {
+    font-size: 12px;
+    color: var(--text-2);
+    line-height: 1.45;
+    margin: 0;
+  }
+
+  /* Call signature */
+  .call-sig {
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(212,160,74,0.15);
+    border-radius: var(--r-lg);
+    padding: 14px 20px;
+    margin-top: 20px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-2);
+  }
+  .call-sig .prompt { color: var(--brass); }
+  .call-sig .cmd { color: var(--text); }
+  .call-sig .a-claude { color: var(--claude); }
+  .call-sig .a-gemini { color: var(--gemini); }
+  .call-sig .a-guest { color: var(--brass); }
+  .call-sig .dim { color: var(--text-dim); }
+
+  /* Pull-quote — editorial: vertical brass rule, serif italic, large quote glyph */
+  .pullquote {
+    position: relative;
+    max-width: 640px;
+    margin: 36px auto 8px;
+    padding: 28px 32px 26px 62px;
+    background: linear-gradient(90deg, var(--brass-wash-3), var(--brass-wash-1) 55%, transparent 100%);
+    border-left: 3px solid var(--brass);
+    border-radius: 0 var(--r-lg) var(--r-lg) 0;
+    box-shadow: var(--sh-2);
+  }
+  .pullquote::before {
+    content: "\201C";
+    position: absolute;
+    top: -8px;
+    left: 12px;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 96px;
+    line-height: 1;
+    color: var(--brass);
+    pointer-events: none;
+  }
+  .pullquote p {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 22px;
+    line-height: 1.5;
+    font-style: italic;
+    font-weight: 400;
+    color: var(--text);
+    margin: 0;
+    letter-spacing: -0.2px;
+    max-width: none;
+  }
+  .pullquote cite {
+    display: block;
+    margin-top: 16px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: var(--text-3);
+    font-style: normal;
+  }
+  .pullquote cite code {
+    font-style: normal;
+    font-size: 11px;
+    color: var(--brass);
+    background: none;
+    padding: 0;
+  }
+  @media (max-width: 560px) {
+    .pullquote { padding: 24px 20px 22px 48px; }
+    .pullquote::before { font-size: 72px; top: -2px; left: 8px; }
+    .pullquote p { font-size: 19px; line-height: 1.5; }
+  }
+
+  /* Quick start block */
+  .quick-start {
+    margin-top: 48px;
+    padding: 36px 32px;
+    border-radius: var(--r-xl);
+    background: linear-gradient(135deg, var(--brass-wash-2), rgba(212,160,74,0.02));
+    border: 1px solid rgba(212,160,74,0.3);
+    text-align: center;
+    box-shadow: var(--sh-2);
+  }
+  .quick-start h2 { margin-bottom: 8px; }
+  .quick-start .lede { max-width: 500px; margin-inline: auto; }
+
+  /* Payoff paragraph — follows the call-sig */
+  .payoff { margin-top: 20px; }
+
+  /* Scroll-reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity .7s var(--ease-reveal), transform .7s var(--ease-reveal);
+    will-change: opacity, transform;
+  }
+  .reveal.in { opacity: 1; transform: translateY(0); will-change: auto; }
+
+  /* Responsive */
+  @media (max-width: 720px) {
+    h1 { font-size: 56px; letter-spacing: -2.2px; }
+    h2 { font-size: 26px; letter-spacing: -0.7px; }
+    .answer-grid { grid-template-columns: 1fr; }
+    .guests-row { grid-template-columns: repeat(2, 1fr); }
+    .council-bot.claude { left: calc(50% - 180px); }
+    .council-bot.gemini { right: calc(50% - 180px); }
+    .guest-chair.g1 { left: calc(50% - 250px); }
+    .guest-chair.g2 { right: calc(50% - 250px); }
+  }
+  @media (max-width: 560px) {
+    .world { padding: 32px 18px 72px; }
+    h1 { font-size: 48px; letter-spacing: -2px; }
+    h2 { font-size: 24px; }
+    .hero .lede { font-size: 16px; }
+    .council-scene { height: 380px; }
+    .council-bot.claude { top: 0; left: 10px; }
+    .council-bot.gemini { top: 0; right: 10px; }
+    .council-bot.codex { bottom: 0; left: calc(50% - 32px); }
+    .council-table { width: 260px; height: 130px; }
+    .guest-chair.g1 { top: 80px; left: 0; }
+    .guest-chair.g2 { top: 80px; right: 0; }
+    .tools-row { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 420px) {
+    .guests-row { grid-template-columns: 1fr; }
+    .tools-row { grid-template-columns: 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal, .reveal.in {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+    .cta, .answer-card, .tool-badge { transition: none; }
+    .cta:hover, .answer-card:hover, .tool-badge:hover { transform: none; }
+    .answer-card { opacity: 1; animation: none; }
+    .answer-card .bot-avatar svg { transition: none; }
+    .answer-card:hover .bot-avatar svg,
+    .answer-card:focus-within .bot-avatar svg { transform: none; }
+    .verdict .light { animation: none; }
+    .termcast .cursor { animation: none; opacity: 1; }
+    .council-table::after { animation: none; opacity: 0.7; }
+  }
+</style>
+</head>
+<body>
+
+<main class="world">
+
+  <!-- HERO -->
+  <header class="hero" id="hero">
+    <span class="eyebrow">MCP server · multi-model consensus</span>
+    <h1>Roundtable</h1>
+    <p class="lede">Every model's take on your question — <strong>in one call</strong>. When they agree, good signal. When they <strong>disagree</strong>, that's where you should look twice.</p>
+
+    <div class="hero-prompt-wrap">
+      <div class="hero-prompt-label">Example usage</div>
+      <div class="hero-prompt" role="presentation">
+        <span class="sigil" aria-hidden="true">❯</span><span class="tool">/hivemind</span> <span class="question">"should we use a queue or a cron job here?"</span>
+      </div>
+    </div>
+
+    <div class="answer-grid-label">What comes back</div>
+    <div class="answer-grid" aria-label="Example responses from three models">
+      <article class="answer-card claude">
+        <header class="answer-head">
+          <span class="bot-avatar" role="img" aria-label="Claude bot" data-bot="claude"></span>
+          <span class="bot-name">claude</span>
+        </header>
+        <p>Use a message queue — decouples the producer from the consumer, handles backpressure cleanly.</p>
+      </article>
+      <article class="answer-card gemini">
+        <header class="answer-head">
+          <span class="bot-avatar" role="img" aria-label="Gemini bot" data-bot="gemini"></span>
+          <span class="bot-name">gemini</span>
+        </header>
+        <p>Queue with a dead-letter for retry resilience. Agree with claude's direction.</p>
+      </article>
+      <article class="answer-card codex">
+        <header class="answer-head">
+          <span class="bot-avatar" role="img" aria-label="Codex bot" data-bot="codex"></span>
+          <span class="bot-name">codex</span>
+        </header>
+        <p><span class="accent">Cron is simpler here</span> — the volume doesn't justify a queue.</p>
+      </article>
+    </div>
+
+    <div class="verdict" role="status" aria-label="2 of 3 agents agree, 1 dissents">
+      <span class="light" aria-hidden="true"></span>
+      <span class="light" aria-hidden="true"></span>
+      <span class="light dim" aria-hidden="true"></span>
+      <span class="count">2 agree · 1 dissents</span>
+      <span class="lbl">look twice</span>
+    </div>
+
+    <div class="cta-row">
+      <a class="cta primary" href="#quick-start">Install <span aria-hidden="true">→</span></a>
+      <a class="cta secondary" href="https://github.com/TejGandham/roundtable">See the repo</a>
+    </div>
+  </header>
+
+  <!-- THE COUNCIL -->
+  <section id="council" class="reveal">
+    <div class="section-head">
+      <span class="eyebrow">Who sits at the table</span>
+      <h2>Three models. One call. Independent takes.</h2>
+      <p>Each agent gets the same prompt in parallel. They never see each other's responses. The differences are real — not echo-chamber chatter. Guest chairs pull up for any OpenAI-compatible provider.</p>
+    </div>
+
+    <div class="council-scene" role="img" aria-label="A round brass table with Claude, Gemini, and Codex bots seated around it, plus two dashed guest chairs for additional providers">
+      <div class="council-table">
+        <span class="q-glow">your <em>question</em></span>
+      </div>
+      <div class="council-bot claude">
+        <span class="bot-avatar" aria-hidden="true" data-bot="claude" data-size="lg"></span>
+        <span class="name">Claude</span>
+      </div>
+      <div class="council-bot gemini">
+        <span class="bot-avatar" aria-hidden="true" data-bot="gemini" data-size="lg"></span>
+        <span class="name">Gemini</span>
+      </div>
+      <div class="council-bot codex">
+        <span class="bot-avatar" aria-hidden="true" data-bot="codex" data-size="lg"></span>
+        <span class="name">Codex</span>
+      </div>
+      <div class="guest-chair g1" aria-hidden="true">+</div>
+      <div class="guest-chair g2" aria-hidden="true">+</div>
+    </div>
+  </section>
+
+  <!-- THE PROBLEM -->
+  <section id="problem" class="reveal">
+    <div class="section-head">
+      <span class="eyebrow">The hallucination that hurts</span>
+      <h2>Correct pattern. Correct library. Wrong <em>detail</em>.</h2>
+    </div>
+    <p>A parameter that changed two versions ago. A concurrency fix that looks elegant and quietly reintroduces a race. An infra block that reads like real documentation but doesn't exist. <strong>It compiles. It passes your smell test. It ships.</strong> You find out at 2am.</p>
+    <p>Cross-checking in a second terminal is too much friction to do every time. So you only do it for decisions you <em>already</em> think are risky. <strong>The ones that burn you are the ones you didn't think were risky.</strong></p>
+  </section>
+
+  <!-- WHAT IT DOES -->
+  <section id="what" class="reveal">
+    <div class="section-head">
+      <span class="eyebrow">One call, all models</span>
+      <h2>One tool call from inside your agent.</h2>
+      <p>Roundtable is an MCP server. Your agent calls one tool; Roundtable dispatches to Claude, Gemini, and Codex in parallel and returns structured JSON. Uses the CLIs already in your PATH, already authenticated. No daemon, no open port, prompts stay on your machine.</p>
+    </div>
+
+    <div class="termcast" role="img" aria-label="Terminal output showing /hivemind dispatching to three agents in parallel">
+      <div class="bar">
+        <span class="dot r" aria-hidden="true"></span>
+        <span class="dot y" aria-hidden="true"></span>
+        <span class="dot g" aria-hidden="true"></span>
+        <span class="title">roundtable · /hivemind</span>
+      </div>
+<pre><span class="prompt">❯</span> <span class="cmd">/hivemind "design a job queue for this workload"</span>
+<span class="dim">  dispatching to 3 agents · stdio MCP · parallel</span>
+<span class="claude">●  claude</span>   <span class="dim">use a queue — decouples the producer from consumer...</span>
+<span class="gemini">●  gemini</span>   <span class="dim">queue with dead-letter for retry resilience...</span>
+<span class="codex">●  codex</span>    <span class="dim">cron is simpler here — volume doesn't justify...</span>
+<span class="brass">  → 2 agree, 1 dissents · verdict logged</span><span class="cursor" aria-hidden="true"></span></pre>
+    </div>
+
+    <blockquote class="pullquote">
+      <p>Use a message queue &mdash; decouples the producer from the consumer, handles backpressure cleanly.</p>
+      <cite>&mdash; claude, via <code>/hivemind</code></cite>
+    </blockquote>
+  </section>
+
+  <!-- WHY DISAGREEMENT -->
+  <section id="why" class="reveal">
+    <div class="section-head">
+      <span class="eyebrow">Where to look twice</span>
+      <h2>You don't need three models to be right. You need them <em>different enough</em> to catch each other.</h2>
+      <p>Agreement is useful triage — a strong signal you're on the right track. <strong>Disagreement is the real value.</strong> It surfaces tradeoffs you'd have missed, edge cases one sees and another doesn't, or a hallucination the others don't share.</p>
+    </div>
+
+    <div class="verdict-stack">
+      <div class="verdict" role="status" aria-label="3 agents agree, high confidence">
+        <span class="light" aria-hidden="true"></span>
+        <span class="light" aria-hidden="true"></span>
+        <span class="light" aria-hidden="true"></span>
+        <span class="count">3 agree · high confidence</span>
+        <span class="lbl">ship it</span>
+      </div>
+      <div class="verdict" role="status" aria-label="2 of 3 agree, 1 dissents">
+        <span class="light" aria-hidden="true"></span>
+        <span class="light" aria-hidden="true"></span>
+        <span class="light dim" aria-hidden="true"></span>
+        <span class="count">2 agree · 1 dissents</span>
+        <span class="lbl">look twice</span>
+      </div>
+      <div class="verdict" role="status" aria-label="1 agrees, 2 dissent">
+        <span class="light" aria-hidden="true"></span>
+        <span class="light dim" aria-hidden="true"></span>
+        <span class="light dim" aria-hidden="true"></span>
+        <span class="count">1 agrees · 2 dissent</span>
+        <span class="lbl">dig in</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TOOLS -->
+  <section id="tools" class="reveal">
+    <div class="section-head">
+      <span class="eyebrow">Five roles at the table</span>
+      <h2>Pick how the council deliberates.</h2>
+      <p>Each tool assigns a role to every agent — shaping the system prompt for the job at hand.</p>
+    </div>
+
+    <div class="tools-row" role="list">
+      <div class="tool-badge" role="listitem"><span class="nm">hivemind</span><span class="role">consensus</span></div>
+      <div class="tool-badge" role="listitem"><span class="nm">deepdive</span><span class="role">planner</span></div>
+      <div class="tool-badge" role="listitem"><span class="nm">architect</span><span class="role">designer</span></div>
+      <div class="tool-badge" role="listitem"><span class="nm">challenge</span><span class="role">critic</span></div>
+      <div class="tool-badge" role="listitem"><span class="nm">xray</span><span class="role">reviewer</span></div>
+    </div>
+  </section>
+
+  <!-- EXTEND THE TABLE -->
+  <section id="extend" class="reveal">
+    <div class="section-head">
+      <span class="eyebrow">Any OpenAI-compatible provider</span>
+      <h2>Pull up another chair.</h2>
+      <p>Claude, Gemini, Codex come built in. Kimi, MiniMax, GLM, DeepSeek — and any OpenAI-compatible endpoint — join with one env var. <strong>Your agent reads <code>INSTALL.md</code> and wires it up for you.</strong></p>
+    </div>
+
+    <div class="guests-row" role="list">
+      <div class="guest-badge" role="listitem">
+        <span class="nm">Kimi K2</span>
+        <span class="via">moonshot · fireworks</span>
+        <p class="note">Long-context, code-strong</p>
+      </div>
+      <div class="guest-badge" role="listitem">
+        <span class="nm">MiniMax M2</span>
+        <span class="via">fireworks</span>
+        <p class="note">Fast reasoning, cost-efficient</p>
+      </div>
+      <div class="guest-badge" role="listitem">
+        <span class="nm">GLM-4.6</span>
+        <span class="via">z.ai</span>
+        <p class="note">Different training distribution</p>
+      </div>
+      <div class="guest-badge" role="listitem">
+        <span class="nm">DeepSeek</span>
+        <span class="via">deepseek</span>
+        <p class="note">Strong on math &amp; code</p>
+      </div>
+    </div>
+
+    <div class="call-sig" role="img" aria-label="Example /hivemind call with mixed core and guest agents">
+<span class="prompt">❯</span> <span class="cmd">/hivemind</span> <span class="dim">agents:</span> <span class="a-claude">claude</span> · <span class="a-gemini">gemini</span> · <span class="a-guest">kimi</span> · <span class="a-guest">minimax</span>
+<span class="dim">  one call · four perspectives · four training distributions</span>
+    </div>
+
+    <p class="payoff"><strong>The real payoff:</strong> disagreement catches more when the panel has <em>different training distributions</em> — not three models from two US labs.</p>
+  </section>
+
+  <!-- HOW IT'S BUILT -->
+  <section id="how" class="reveal">
+    <div class="section-head">
+      <span class="eyebrow">The short version</span>
+      <h2>Single Go binary. Stdio MCP. No daemon.</h2>
+    </div>
+    <p>Your agent fork/execs Roundtable per session over stdin/stdout. It subprocesses Claude and Gemini per call, keeps a warm JSON-RPC link to Codex, and POSTs to OpenAI-compatible providers over HTTP. Atomic kill on timeout; processes die with the parent. Cross-platform: Linux, macOS.</p>
+    <p>Full architecture detail lives in <a href="https://github.com/TejGandham/roundtable/blob/main/docs/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a>. Tool parameters and dispatch options in <a href="https://github.com/TejGandham/roundtable/blob/main/SKILL.md"><code>SKILL.md</code></a>.</p>
+  </section>
+
+  <!-- QUICK START -->
+  <section id="quick-start" class="reveal">
+    <div class="quick-start">
+      <span class="eyebrow">Quick start</span>
+      <h2>Point your agent at <em>INSTALL.md</em>.</h2>
+      <p class="lede">Have Claude Code or any MCP-capable agent read the install guide — it's written to be executed directly. Then ask all three models the question you were about to ask just one.</p>
+      <div class="cta-row">
+        <a class="cta primary" href="https://github.com/TejGandham/roundtable/blob/main/INSTALL.md">INSTALL.md <span aria-hidden="true">→</span></a>
+        <a class="cta secondary" href="https://github.com/TejGandham/roundtable">GitHub repo</a>
+        <a class="cta secondary" href="https://github.com/TejGandham/roundtable/blob/main/SKILL.md">SKILL.md</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+(function(){
+  // Trusted-only SVG: every input value comes from static constants below.
+  // Uses DOMParser + adoptNode instead of innerHTML to satisfy CSP patterns.
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const CHROME = {
+    rim: cssVar('--text-3') || '#8A7F6C',
+    faceDark: cssVar('--surface-1') || '#1A140C',
+    glint: cssVar('--text') || '#EDE6D6',
+  };
+
+  function makeBot(accent, deep, size) {
+    const sizes = { sm: 24, md: 40, lg: 64 };
+    const w = sizes[size] || sizes.md;
+    const h = Math.round(w * 1.42);
+    const rim = CHROME.rim;
+    const faceDark = CHROME.faceDark;
+    const glint = CHROME.glint;
+
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 80 114');
+    svg.setAttribute('width', String(w));
+    svg.setAttribute('height', String(h));
+    svg.setAttribute('aria-hidden', 'true');
+
+    const add = (tag, attrs) => {
+      const n = document.createElementNS(SVG_NS, tag);
+      for (const k in attrs) n.setAttribute(k, attrs[k]);
+      svg.appendChild(n);
+      return n;
+    };
+
+    // antenna
+    add('line', { x1:40, y1:10, x2:40, y2:22, stroke:rim, 'stroke-width':2.5, 'stroke-linecap':'round' });
+    add('circle', { cx:40, cy:8, r:5.5, fill:accent });
+    add('circle', { cx:40, cy:7, r:2, fill:glint, opacity:0.6 });
+    // head
+    add('rect', { x:18, y:22, width:44, height:34, rx:11, fill:deep, stroke:accent, 'stroke-width':2.5 });
+    add('rect', { x:22, y:26, width:36, height:26, rx:8, fill:accent, opacity:0.12 });
+    // eyes
+    add('circle', { cx:33, cy:37, r:4, fill:faceDark });
+    add('circle', { cx:34.5, cy:35.5, r:1.5, fill:glint });
+    add('circle', { cx:47, cy:37, r:4, fill:faceDark });
+    add('circle', { cx:48.5, cy:35.5, r:1.5, fill:glint });
+    // mouth
+    add('path', { d:'M32 48Q40 54 48 48', fill:'none', stroke:faceDark, 'stroke-width':2, 'stroke-linecap':'round' });
+    // body
+    add('rect', { x:20, y:60, width:40, height:36, rx:8, fill:accent, stroke:accent, 'stroke-width':1.5 });
+    add('rect', { x:24, y:64, width:32, height:28, rx:5, fill:glint, opacity:0.18 });
+    add('circle', { cx:40, cy:76, r:5, fill:glint, opacity:0.3 });
+    add('circle', { cx:40, cy:76, r:2.5, fill:glint, opacity:0.55 });
+    // arms
+    add('rect', { x:4, y:64, width:14, height:8, rx:4, fill:accent });
+    add('rect', { x:62, y:64, width:14, height:8, rx:4, fill:accent });
+    // legs
+    add('rect', { x:27, y:96, width:11, height:14, rx:5, fill:accent });
+    add('rect', { x:42, y:96, width:11, height:14, rx:5, fill:accent });
+    add('rect', { x:24, y:106, width:16, height:6, rx:3, fill:accent, opacity:0.7 });
+    add('rect', { x:40, y:106, width:16, height:6, rx:3, fill:accent, opacity:0.7 });
+
+    return svg;
+  }
+
+  const AGENTS = {
+    claude: { accent: cssVar('--claude') || '#8EB0F5', deep: cssVar('--claude-deep') || '#5C8DEF' },
+    gemini: { accent: cssVar('--gemini') || '#58D2BD', deep: cssVar('--gemini-deep') || '#35B9A4' },
+    codex:  { accent: cssVar('--codex')  || '#E89559', deep: cssVar('--codex-deep')  || '#D67939' },
+  };
+
+  document.querySelectorAll('[data-bot]').forEach(el => {
+    const agent = AGENTS[el.dataset.bot];
+    const size = el.dataset.size || 'md';
+    if (!agent) return;
+    el.replaceChildren(makeBot(agent.accent, agent.deep, size));
+  });
+
+  // Scroll reveal
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const targets = document.querySelectorAll('.reveal');
+
+  if (reducedMotion || !('IntersectionObserver' in window)) {
+    targets.forEach(el => el.classList.add('in'));
+    return;
+  }
+
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+
+  targets.forEach(el => io.observe(el));
+
+  // Tiny nod to devs who open the console.
+  if (typeof console !== 'undefined' && console.log) {
+    console.log(
+      '%cRoundtable%c · three models looked at this page.',
+      'color:#D4A04A;font:700 14px/1.4 "JetBrains Mono",monospace;letter-spacing:.5px',
+      'color:#B8B0A0;font:400 12px/1.4 "JetBrains Mono",monospace'
+    );
+    console.log(
+      '%ctwo said it loads clean. one said to check again.',
+      'color:#8A7F6C;font:400 11px/1.4 "JetBrains Mono",monospace'
+    );
+    console.log(
+      '%cgithub.com/TejGandham/roundtable',
+      'color:#D4A04A;font:400 11px/1.4 "JetBrains Mono",monospace;text-decoration:underline'
+    );
+  }
+})();
+</script>
+
+</body>
+</html>
