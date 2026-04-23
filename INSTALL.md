@@ -119,18 +119,18 @@ cp ~/.local/share/roundtable/SKILL.md ~/.claude/skills/roundtable/
 Tell the user to restart Claude Code, then test with a tool call:
 
 ```
-Use the roundtable hivemind tool to ask: "What is the best way to handle errors in async Go code?"
+Use the roundtable-canvass tool to ask: "What is the best way to handle errors in async Go code?"
 ```
 
 All five tools should now be available:
 
 |Tool|Use|
 |-|-|
-|`hivemind`|General multi-model consensus|
-|`deepdive`|Deep analysis / extended reasoning|
-|`architect`|Implementation planning|
-|`challenge`|Devil's advocate / stress-test|
-|`xray`|Architecture + code quality review|
+|`roundtable-canvass`|Canvass the panel — independent parallel responses|
+|`roundtable-deliberate`|Deliberate a hard problem — conclusions + alternatives + confidence|
+|`roundtable-blueprint`|Blueprint an implementation — phases, deps, risks, milestones|
+|`roundtable-critique`|Adversarial critique — find flaws, risks, weaknesses|
+|`roundtable-crosscheck`|Crosscheck from multiple vantage points — mixed roles across the panel (built-in CLIs + any configured HTTP providers)|
 
 ## Default Agents (Optional)
 
@@ -190,7 +190,7 @@ per-model metric labels.
 | `api_key_env` | yes | Name of the env var holding the secret. The secret itself is **not** in this JSON — this indirection lets you rotate a key by updating the secret env var without re-encoding `ROUNDTABLE_PROVIDERS`, and keeps the blob safe to paste in bug reports. |
 | `default_model` | no | Used when `AgentSpec.Model` is empty. |
 | `max_concurrent` | no (default `3`) | Per-process concurrency cap (semaphore). Size this to match the provider's tier: Fireworks defaults to generous rate limits, Moonshot varies by account, etc. Check your provider's dashboard. |
-| `response_header_timeout` | no (default `"60s"`) | `http.Transport.ResponseHeaderTimeout`. With `stream: false` (always, for now) this effectively caps **total** response time — raise for slow providers running long-context deepdives. Accepts any `time.Duration` string (`90s`, `2m`, `500ms`). |
+| `response_header_timeout` | no (default `"60s"`) | `http.Transport.ResponseHeaderTimeout`. With `stream: false` (always, for now) this effectively caps **total** response time — raise for slow providers running long-context deliberations. Accepts any `time.Duration` string (`90s`, `2m`, `500ms`). |
 | `gate_slow_log_threshold` | no (default `"100ms"`) | Wait above which the concurrency-gate `Acquire` emits a debug log. Useful for operators tuning `max_concurrent`. |
 
 ### Agent-spec JSON examples

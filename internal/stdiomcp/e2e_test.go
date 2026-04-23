@@ -45,11 +45,11 @@ func TestStdioE2E(t *testing.T) {
 	}
 
 	want := map[string]bool{
-		"hivemind":  false,
-		"deepdive":  false,
-		"architect": false,
-		"challenge": false,
-		"xray":      false,
+		"roundtable-canvass":    false,
+		"roundtable-deliberate": false,
+		"roundtable-blueprint":  false,
+		"roundtable-critique":   false,
+		"roundtable-crosscheck": false,
 	}
 	for _, tool := range listResp.Tools {
 		if _, ok := want[tool.Name]; ok {

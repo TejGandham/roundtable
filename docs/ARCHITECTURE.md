@@ -7,7 +7,7 @@ Roundtable is a single static Go binary (`roundtable`) that serves the Model Con
 `roundtable` is a single Go binary that:
 
 1. Speaks MCP over stdin/stdout (the `modelcontextprotocol/go-sdk` stdio transport). There is no listening port and no HTTP endpoint.
-2. Registers five tools: `hivemind`, `deepdive`, `architect`, `challenge`, `xray`.
+2. Registers five tools: `roundtable-canvass`, `roundtable-deliberate`, `roundtable-blueprint`, `roundtable-critique`, `roundtable-crosscheck`.
 3. On each tool call, assembles a role-scoped prompt and dispatches it to the resolved set of backends in parallel.
 4. Normalizes each backend's output into a uniform JSON contract (`result.go::DispatchResult`) and returns the aggregate to the caller.
 
@@ -104,7 +104,7 @@ The Codex app-server is launched lazily under a `sync.Once` on the first tool ca
 
 ## Request flow
 
-Step-by-step for a single `hivemind` tool call:
+Step-by-step for a single `roundtable-canvass` tool call:
 
 1. **MCP frame arrives** on stdin. The go-sdk stdio transport parses it as an `mcp.CallToolRequest`.
 2. **Tool handler fires** in `stdiomcp/server.go` (registered by `registerTool`). It captures the progress token and launches a worker goroutine; the main goroutine selects on the worker's done channel, `ctx.Done()`, and a 5s ticker emitting keepalive progress notifications. An immediate `notify(0)` on tool-call start saves clients that default to a short deadline.

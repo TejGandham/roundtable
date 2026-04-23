@@ -21,9 +21,9 @@
 1. Hero — three answer-cards disagreeing on a real question (value-first opening)
 2. The Council — the round-table scene (name's metaphor made visual)
 3. The Problem — correct-pattern-wrong-detail hallucination
-4. What It Does — one termcast showing `/hivemind` dispatch
+4. What It Does — one termcast showing `/roundtable-canvass` dispatch
 5. Why Disagreement Matters — verdict-ribbon patterns, agreement vs. dissent
-6. Tools — five role-assigned dispatch tools (hivemind, deepdive, architect, challenge, xray)
+6. Tools — five role-assigned dispatch tools (roundtable-canvass, roundtable-deliberate, roundtable-blueprint, roundtable-critique, roundtable-crosscheck)
 7. Extend the Table — guest models (Kimi / MiniMax / GLM / DeepSeek), no config JSON
 8. How It's Built — one-paragraph technical summary
 9. Quick Start CTA — "point your agent at `INSTALL.md`"

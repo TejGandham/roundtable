@@ -67,11 +67,11 @@ func TestNewServerToolList(t *testing.T) {
 	}
 
 	want := map[string]bool{
-		"hivemind":  false,
-		"deepdive":  false,
-		"architect": false,
-		"challenge": false,
-		"xray":      false,
+		"roundtable-canvass":    false,
+		"roundtable-deliberate": false,
+		"roundtable-blueprint":  false,
+		"roundtable-critique":   false,
+		"roundtable-crosscheck": false,
 	}
 	for _, tool := range res.Tools {
 		if _, ok := want[tool.Name]; ok {
@@ -109,7 +109,7 @@ func TestNewServerCallTool(t *testing.T) {
 	defer cancel()
 
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "hivemind",
+		Name:      "roundtable-canvass",
 		Arguments: map[string]any{"prompt": "hello stdio"},
 	})
 	if err != nil {
@@ -128,8 +128,8 @@ func TestNewServerCallTool(t *testing.T) {
 	if !strings.Contains(text.Text, "stdio-dispatched") {
 		t.Errorf("unexpected response text: %q", text.Text)
 	}
-	if capturedSpec.Name != "hivemind" {
-		t.Errorf("spec name = %q, want hivemind", capturedSpec.Name)
+	if capturedSpec.Name != "roundtable-canvass" {
+		t.Errorf("spec name = %q, want roundtable-canvass", capturedSpec.Name)
 	}
 	if capturedInput.Prompt != "hello stdio" {
 		t.Errorf("input prompt = %q, want 'hello stdio'", capturedInput.Prompt)

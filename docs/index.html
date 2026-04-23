@@ -779,7 +779,7 @@
     <div class="hero-prompt-wrap">
       <div class="hero-prompt-label">Example usage</div>
       <div class="hero-prompt" role="presentation">
-        <span class="sigil" aria-hidden="true">❯</span><span class="tool">/hivemind</span> <span class="question">"should we use a queue or a cron job here?"</span>
+        <span class="sigil" aria-hidden="true">❯</span><span class="tool">/roundtable-canvass</span> <span class="question">"should we use a queue or a cron job here?"</span>
       </div>
     </div>
 
@@ -869,14 +869,14 @@
       <p>Roundtable is an MCP server. Your agent calls one tool; Roundtable dispatches to Claude, Gemini, and Codex in parallel and returns structured JSON. Uses the CLIs already in your PATH, already authenticated. No daemon, no open port, prompts stay on your machine.</p>
     </div>
 
-    <div class="termcast" role="img" aria-label="Terminal output showing /hivemind dispatching to three agents in parallel">
+    <div class="termcast" role="img" aria-label="Terminal output showing /roundtable-canvass dispatching to three agents in parallel">
       <div class="bar">
         <span class="dot r" aria-hidden="true"></span>
         <span class="dot y" aria-hidden="true"></span>
         <span class="dot g" aria-hidden="true"></span>
-        <span class="title">roundtable · /hivemind</span>
+        <span class="title">roundtable · /roundtable-canvass</span>
       </div>
-<pre><span class="prompt">❯</span> <span class="cmd">/hivemind "design a job queue for this workload"</span>
+<pre><span class="prompt">❯</span> <span class="cmd">/roundtable-canvass "design a job queue for this workload"</span>
 <span class="dim">  dispatching to 3 agents · stdio MCP · parallel</span>
 <span class="claude">●  claude</span>   <span class="dim">use a queue — decouples the producer from consumer...</span>
 <span class="gemini">●  gemini</span>   <span class="dim">queue with dead-letter for retry resilience...</span>
@@ -886,7 +886,7 @@
 
     <blockquote class="pullquote">
       <p>Use a message queue &mdash; decouples the producer from the consumer, handles backpressure cleanly.</p>
-      <cite>&mdash; claude, via <code>/hivemind</code></cite>
+      <cite>&mdash; claude, via <code>/roundtable-canvass</code></cite>
     </blockquote>
   </section>
 
@@ -932,11 +932,11 @@
     </div>
 
     <div class="tools-row" role="list">
-      <div class="tool-badge" role="listitem"><span class="nm">hivemind</span><span class="role">consensus</span></div>
-      <div class="tool-badge" role="listitem"><span class="nm">deepdive</span><span class="role">planner</span></div>
-      <div class="tool-badge" role="listitem"><span class="nm">architect</span><span class="role">designer</span></div>
-      <div class="tool-badge" role="listitem"><span class="nm">challenge</span><span class="role">critic</span></div>
-      <div class="tool-badge" role="listitem"><span class="nm">xray</span><span class="role">reviewer</span></div>
+      <div class="tool-badge" role="listitem" title="roundtable-canvass"><span class="nm">canvass</span><span class="role">panel</span></div>
+      <div class="tool-badge" role="listitem" title="roundtable-deliberate"><span class="nm">deliberate</span><span class="role">weigh</span></div>
+      <div class="tool-badge" role="listitem" title="roundtable-blueprint"><span class="nm">blueprint</span><span class="role">plan</span></div>
+      <div class="tool-badge" role="listitem" title="roundtable-critique"><span class="nm">critique</span><span class="role">red-team</span></div>
+      <div class="tool-badge" role="listitem" title="roundtable-crosscheck"><span class="nm">crosscheck</span><span class="role">mixed</span></div>
     </div>
   </section>
 
@@ -971,8 +971,8 @@
       </div>
     </div>
 
-    <div class="call-sig" role="img" aria-label="Example /hivemind call with mixed core and guest agents">
-<span class="prompt">❯</span> <span class="cmd">/hivemind</span> <span class="dim">agents:</span> <span class="a-claude">claude</span> · <span class="a-gemini">gemini</span> · <span class="a-guest">kimi</span> · <span class="a-guest">minimax</span>
+    <div class="call-sig" role="img" aria-label="Example /roundtable-canvass call with mixed core and guest agents">
+<span class="prompt">❯</span> <span class="cmd">/roundtable-canvass</span> <span class="dim">agents:</span> <span class="a-claude">claude</span> · <span class="a-gemini">gemini</span> · <span class="a-guest">kimi</span> · <span class="a-guest">minimax</span>
 <span class="dim">  one call · four perspectives · four training distributions</span>
     </div>
 

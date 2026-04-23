@@ -67,11 +67,11 @@ Each tool assigns a role to each agent, shaping its system prompt.
 
 | Tool | Role | Use Case |
 |-|-|-|
-|`hivemind`|default|General multi-model consensus|
-|`deepdive`|planner|Extended reasoning / deep analysis|
-|`architect`|planner|Implementation planning|
-|`challenge`|codereviewer|Devil's advocate / stress-test|
-|`xray`|gemini=planner, codex=codereviewer|Architecture + code quality review|
+|`roundtable-canvass`|default|Canvass the panel — independent parallel responses|
+|`roundtable-deliberate`|planner|Deliberate a hard problem — conclusions + alternatives + confidence|
+|`roundtable-blueprint`|planner|Blueprint an implementation — phases, deps, risks, milestones|
+|`roundtable-critique`|codereviewer|Adversarial critique — find flaws, risks, weaknesses|
+|`roundtable-crosscheck`|gemini=planner, codex=codereviewer, claude=default, http=default|Crosscheck from multiple vantage points — mixed roles across the panel|
 
 All tools support an `agents` parameter for selective dispatch. See [SKILL.md](SKILL.md) for full parameter docs.
 

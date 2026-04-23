@@ -1,10 +1,15 @@
 ---
 name: roundtable
 description: >-
-  Multi-model consensus MCP server. Call the hivemind, deepdive, architect, challenge, or xray
-  tools directly — no Bash tool needed. Dispatches to Gemini, Codex,
-  and Claude in parallel, then synthesizes. Commands: hivemind (consensus), deepdive (extended reasoning),
-  architect (implementation plan), challenge (devil's advocate), xray (codebase architecture + code quality).
+  Multi-model consensus MCP server. Call the roundtable-canvass, roundtable-deliberate,
+  roundtable-blueprint, roundtable-critique, or roundtable-crosscheck tools directly — no Bash
+  tool needed. Dispatches to Gemini, Codex, and Claude CLIs in parallel by default, and to any
+  configured OpenAI-compatible HTTP providers (Kimi, MiniMax, GLM, DeepSeek, etc.) that are
+  registered via ROUNDTABLE_PROVIDERS. Returns every response as structured JSON for synthesis.
+  Tools: roundtable-canvass (parallel panel query), roundtable-deliberate (structured deliberation
+  with alternatives + confidence), roundtable-blueprint (implementation plan: phases, deps, risks,
+  milestones), roundtable-critique (adversarial code/design review), roundtable-crosscheck (mixed
+  roles across the panel — planner + codereviewer + generalist on one prompt).
   Use this skill whenever the user wants a second opinion, consensus, validation, or external
   perspective on ANY technical decision — architecture reviews, design critiques, code quality
   checks, approach comparisons, sanity checks, tradeoff analysis, or stress-testing ideas.
@@ -23,19 +28,25 @@ Roundtable is an **MCP server**. Call its tools directly — no Bash tool needed
 
 ## Core Rule
 
-1. Call the appropriate MCP tool (`hivemind`, `deepdive`, etc.) on the `roundtable` server
+1. Call the appropriate MCP tool (`roundtable-canvass`, `roundtable-deliberate`, etc.) on the `roundtable` server
 2. Parse the JSON response
 3. Synthesize all model responses into unified output
+
+**Who's in the panel.** The default panel is the three built-in CLIs (Claude, Gemini, Codex).
+Any OpenAI-compatible HTTP provider registered via `ROUNDTABLE_PROVIDERS` (Kimi, MiniMax, GLM,
+DeepSeek, and so on) joins the panel too — so expect 3–N responses, not strictly 3. The exact
+set is controlled by `ROUNDTABLE_DEFAULT_AGENTS` (panel default) or the per-call `agents`
+parameter (override).
 
 ## Commands
 
 |Command|MCP Tool|Role Guidance|
 |-|-|-|
-|**hivemind**|`hivemind`|Ask the question directly|
-|**deepdive**|`deepdive`|Add: "Provide conclusions, assumptions, alternatives, and confidence level."|
-|**architect**|`architect`|Request: phases, dependencies, risks, milestones|
-|**challenge**|`challenge`|Prefix: "Act as critical reviewer. Find flaws, risks, weaknesses."|
-|**xray**|`xray`|Include `files`. Gemini analyzes architecture, Codex reviews code quality.|
+|**canvass**|`roundtable-canvass`|Ask the question directly. Each panelist answers independently under the default analyst role.|
+|**deliberate**|`roundtable-deliberate`|Add: "Provide conclusions, assumptions, alternatives, and confidence level."|
+|**blueprint**|`roundtable-blueprint`|Request: phases, dependencies, risks, milestones.|
+|**critique**|`roundtable-critique`|Prefix: "Act as critical reviewer. Find flaws, risks, weaknesses."|
+|**crosscheck**|`roundtable-crosscheck`|Include `files`. Gemini in planner role, Codex in codereviewer role, Claude as generalist, HTTP providers in default role — one prompt, mixed lenses.|
 
 ## MCP Invocation (Primary)
 
@@ -198,10 +209,10 @@ After calling a roundtable tool, synthesize the results:
 Each response includes `session_id` fields — use these for follow-up rounds.
 
 **First call** (MCP):
-Call `hivemind` with `prompt: "Review the auth architecture"` and `files: "src/auth.ts"`.
+Call `roundtable-canvass` with `prompt: "Review the auth architecture"` and `files: "src/auth.ts"`.
 
 **Follow-up call** (MCP):
-Call `hivemind` with `prompt: "What about the token refresh edge case you mentioned?"`, `gemini_resume: "latest"`, `codex_resume: "last"`, and `claude_resume: "<session-id from previous response>"`.
+Call `roundtable-canvass` with `prompt: "What about the token refresh edge case you mentioned?"`, `gemini_resume: "latest"`, `codex_resume: "last"`, and `claude_resume: "<session-id from previous response>"`.
 
 - `gemini_resume: "latest"` resumes Gemini's most recent session
 - `codex_resume: "last"` resumes Codex's most recent session
@@ -219,7 +230,7 @@ Call `hivemind` with `prompt: "What about the token refresh edge case you mentio
 
 ## Important: Gemini Workspace Constraint
 
-Gemini CLI restricts file access to its current working directory. When using `files` (especially with `xray`):
+Gemini CLI restricts file access to its current working directory. When using `files` (especially with `roundtable-crosscheck`):
 
 1. Use **relative paths** in `files` (not absolute paths).
 2. Gemini inherits its cwd from `roundtable`, which in turn inherits it from the MCP client that fork/exec'd it (Claude Code, etc.). Invoke your MCP client from the project root so Gemini can see the files.
@@ -231,8 +242,8 @@ This is a Gemini CLI constraint, not a roundtable issue. Codex and Claude do not
 The quality of roundtable output depends on prompt quality. Guidelines:
 
 - **Be specific about what you want evaluated.** "Review this auth flow" is weaker than "Review the token refresh logic in auth.ts — is the race condition between concurrent refresh calls handled correctly?"
-- **For xray**, list the files and state what you want each model to focus on.
-- **For challenge**, state the proposal clearly before asking for critique — the models need something concrete to push back on.
+- **For roundtable-crosscheck**, list the files and state what you want each model to focus on.
+- **For roundtable-critique**, state the proposal clearly before asking for critique — the models need something concrete to push back on.
 - **Include constraints.** If there are non-negotiable requirements (compliance, latency budgets, existing API contracts), state them so the models don't waste time proposing alternatives that violate them.
 
 ## Mistakes to Avoid

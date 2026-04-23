@@ -14,31 +14,31 @@ const keepaliveInterval = 5 * time.Second
 
 var toolSpecs = []ToolSpec{
 	{
-		Name:        "hivemind",
-		Description: "Run multi-model consensus with default role across all models.",
+		Name:        "roundtable-canvass",
+		Description: "Canvass the panel — each model answers the same question independently, in parallel, with the default analyst role. Responses stay separate; the caller synthesizes.",
 		Role:        "default",
 	},
 	{
-		Name:         "deepdive",
-		Description:  "Run deeper analysis consensus using planner role across all models.",
+		Name:         "roundtable-deliberate",
+		Description:  "Deliberate a hard problem — each model weighs alternatives and states confidence, under the planner role.",
 		Role:         "planner",
 		PromptSuffix: "\n\nProvide conclusions, assumptions, alternatives, and confidence level.",
 	},
 	{
-		Name:         "architect",
-		Description:  "Generate implementation architecture with planner role across models.",
+		Name:         "roundtable-blueprint",
+		Description:  "Blueprint an implementation — each model produces phases, dependencies, risks, and milestones, under the planner role.",
 		Role:         "planner",
 		PromptSuffix: "\n\nProvide phases, dependencies, risks, and milestones.",
 	},
 	{
-		Name:         "challenge",
-		Description:  "Run critical review consensus using codereviewer role across models.",
+		Name:         "roundtable-critique",
+		Description:  "Critique adversarially — each model hunts for flaws, risks, and weaknesses under the codereviewer role.",
 		Role:         "codereviewer",
 		PromptSuffix: "\n\nAct as a critical reviewer. Find flaws, risks, and weaknesses.",
 	},
 	{
-		Name:        "xray",
-		Description: "Run architecture and quality xray with per-model role assignments.",
+		Name:        "roundtable-crosscheck",
+		Description: "Crosscheck from multiple vantage points — gemini in planner role, codex in codereviewer role, claude as generalist analyst. Any configured HTTP providers (kimi, minimax, glm, deepseek, etc.) run with the default role. One prompt, mixed roles across the full panel.",
 		GeminiRole:  "planner",
 		CodexRole:   "codereviewer",
 		ClaudeRole:  "default",
