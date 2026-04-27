@@ -46,6 +46,11 @@ Each feature: read spec → write test → write code → verify.
   <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
   <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
 
+- [ ] **F05 prior_result input parameter schema accepting DispatchResult JSON shape**
+  PRD: roundtable-converge-tool
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 21dcf517a6d20641 -->
+
 ## Service
 
 <!-- CUSTOMIZE: Features that build on foundation — services, processes, coordination -->
@@ -71,6 +76,24 @@ Each feature: read spec → write test → write code → verify.
   PRD: dispatch-structured-output
   <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
   <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
+
+- [ ] **F06 Per-panelist peer-redaction transform over a prior dispatch result**
+  Needs: F05
+  PRD: roundtable-converge-tool
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 21dcf517a6d20641 -->
+
+- [ ] **F07 Convergence-prompt assembly wrapping original prompt, redacted peer view, and (a)/(b)/(c) instructions**
+  Needs: F06
+  PRD: roundtable-converge-tool
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 21dcf517a6d20641 -->
+
+- [ ] **F08 Register roundtable-converge MCP tool and wire convergence-prompt assembly through dispatch**
+  Needs: F07
+  PRD: roundtable-converge-tool
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 21dcf517a6d20641 -->
 
 ## UI
 
