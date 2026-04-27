@@ -310,4 +310,4 @@ make test
 make run        # builds and runs `./roundtable stdio` on stdin/stdout
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architecture details.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for architecture details.

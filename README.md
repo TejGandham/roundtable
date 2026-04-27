@@ -81,5 +81,5 @@ All tools support an `agents` parameter for selective dispatch. See [SKILL.md](S
 |-|-|
 |[INSTALL.md](INSTALL.md)|Install guide (written for AI agents to execute directly)|
 |[SKILL.md](SKILL.md)|Tool parameters, selective dispatch, output format, synthesis guide|
-|[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)|Architecture details, components, request flow, Codex RPC protocol, concurrency model|
+|[ARCHITECTURE.md](ARCHITECTURE.md)|Architecture details, components, request flow, Codex RPC protocol, concurrency model|
 |[docs/RELEASING.md](docs/RELEASING.md)|Release process — build, tag, publish|
