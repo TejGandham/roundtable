@@ -102,6 +102,12 @@ The Codex app-server is launched lazily under a `sync.Once` on the first tool ca
 | `result.go` | `Result`, `Meta`, `DispatchResult` types and JSON marshaling. `NotFoundResult`, `ProbeFailedResult`, `ConfigErrorResult` constructors. |
 | `output.go` | `BuildResult` status normalization (timeout / terminated / error / rate_limited / ok) and `BuildMeta` aggregation. |
 
+### `internal/roundtable/dispatchschema` — JSON-Schema-lite parser
+
+| File | Responsibility |
+|-|-|
+| `schema.go` | `Parse(raw json.RawMessage) (*Schema, error)` — JSON-Schema-lite subset parser. Accepts a top-level object with typed scalar fields (string/number/boolean), optional `enum` on string fields, and optional `required: [...]`. Rejects nested objects, arrays, `anyOf`/`oneOf`/`allOf`, `$ref`, `format`, `additionalProperties: true`, and any other keyword outside the supported subset, with a descriptive error that names the offending construct. Stdlib-only; preserves field order via `json.Decoder` token stream. |
+
 ## Request flow
 
 Step-by-step for a single `roundtable-canvass` tool call:
@@ -331,7 +337,3 @@ claude mcp add -s user roundtable -- ~/.local/share/roundtable/roundtable stdio
 ```
 
 See `INSTALL.md` for the full one-line install + registration flow.
-
-## History
-
-Roundtable began as an Elixir/OTP stdio MCP server, was ported to Go with an HTTP MCP transport for the v0.7.x–v0.8.0 line, and in Phase C (merged April 2026, shipped in v0.9.0) the HTTP transport was deleted in favor of stdio-only. The rename `roundtable-http-mcp` → `roundtable` landed in the same phase. The OpenAI-compatible outbound HTTP provider layer (added in v0.8.0, expanded through v0.9.0) is unrelated to the deleted inbound HTTP MCP transport — the binary serves only stdio, and uses HTTP only as a client to reach external providers like Fireworks, Moonshot, z.ai, and DeepSeek.

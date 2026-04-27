@@ -19,9 +19,8 @@ Each feature: read spec → write test → write code → verify.
 
 ## Foundation (backend pipeline starts here)
 
-- [ ] **F01 JSON-Schema-lite subset parser**
+- [x] **F01 JSON-Schema-lite subset parser**
   PRD: dispatch-structured-output
-  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
   <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
 
 - [ ] **F05 prior_result input parameter schema accepting DispatchResult JSON shape**
