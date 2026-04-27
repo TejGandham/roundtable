@@ -1,4 +1,5 @@
-# Agent Instructions
+@.claude/KEEL-CONTRACT.md
+
 # This is a production app which mean directly working on main git branch is prohibited. You are allowed to merge to main with permission after work is complete but never directly work on main, always branch and cleanup when done.
 
 ## Landing the Plane (Session Completion)
