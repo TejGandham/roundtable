@@ -9,7 +9,7 @@ requires editing this file — which is the whole point.
 """
 from __future__ import annotations
 
-KEEL_VERSION = "2026.04.0"
+KEEL_VERSION = "2026.04.3"
 RECEIPT_SCHEMA_VERSION = 2
 RECEIPT_PATH = ".claude/.keel-install.json"
 BUNDLED_UNINSTALLER = ".claude/keel-uninstall.py"
@@ -96,11 +96,24 @@ INTERNAL_SCRIPTS: set[str] = {
 }
 
 TEMPLATE_ROOT_FILES: list[str] = [
-    "CLAUDE.md", "ARCHITECTURE.md", "Dockerfile", "docker-compose.yml",
+    "NORTH-STAR.md", "CLAUDE.md", "ARCHITECTURE.md",
 ]
 
+# Optional root files — installed only when the user opts in at install
+# time. Currently: Docker scaffolding (Dockerfile + docker-compose.yml).
+# Driven by `install.py`'s `--with-docker` / `--no-docker` flag (or the
+# interactive prompt). When opted out, these files are not copied and
+# the receipt records the user's choice in `optional_features`.
+OPTIONAL_TEMPLATE_ROOT_FILES: dict[str, list[str]] = {
+    "docker": ["Dockerfile", "docker-compose.yml"],
+}
+
 TEMPLATE_DOCS: list[str] = [
-    "docs/north-star.md",
+    # KEEL-owned operating contract — heavy enforcement language for any
+    # agent working in the installed repo. CLAUDE.md @-imports it. Lives
+    # under .claude/ to avoid collision with whatever CLAUDE.md/AGENTS.md
+    # the user already has.
+    ".claude/KEEL-CONTRACT.md",
     "docs/design-docs/core-beliefs.md",
     "docs/design-docs/ui-design.md",
     "docs/design-docs/index.md",

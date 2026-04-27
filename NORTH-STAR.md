@@ -1,8 +1,8 @@
-# North Star: KEEL
+# North Star: roundtable
 
 
 
-KEEL — Knowledge-Encoded Engineering Lifecycle.
+Roundtable — multi-model consensus MCP server
 Adapted from [OpenAI's harness engineering article](https://openai.com/index/harness-engineering/).
 This document defines where we're heading — not where we are today.
 
@@ -14,7 +14,7 @@ system of record. Everything Claude needs to make decisions lives here.
 ## Framework Principles
 
 KEEL operates under seven principles anchored at
-[`docs/process/KEEL-PRINCIPLES.md`](process/KEEL-PRINCIPLES.md)
+[`docs/process/KEEL-PRINCIPLES.md`](docs/process/KEEL-PRINCIPLES.md)
 (copied into this project by `install.py`). Every agent and skill
 KEEL ships references these:
 
@@ -83,13 +83,15 @@ not for a human audience. Clear, scannable, with explicit cross-references.
 ## Target Folder Structure (Fully Realized)
 
 ```
+NORTH-STAR.md                       # This document — vision and principles
 CLAUDE.md                           # ~80 lines, table of contents
 ARCHITECTURE.md                     # Process model, layers, module map
-Dockerfile                          # Dev container
-docker-compose.yml                  # Orchestration
+
+<!-- CUSTOMIZE: keep the next two lines only if you opted into Docker at install time -->
+Dockerfile                          # Dev container (optional)
+docker-compose.yml                  # Orchestration (optional)
 
 docs/
-├── north-star.md                   # This document
 ├── product-specs/
 │   └── [YOUR-SPEC].md
 ├── design-docs/
@@ -115,8 +117,8 @@ docs/
 ## Growth Stages
 
 | Stage | Trigger | KEEL Additions |
-|-------|---------|----------------|
-| **0: Foundation** | Before first code | Folder structure, CLAUDE.md, ARCHITECTURE.md, core-beliefs, Docker |
+|-|-|-|
+| **0: Foundation** | Before first code | Folder structure, CLAUDE.md, ARCHITECTURE.md, core-beliefs |
 | **1: First Code** | Core module works | Tech debt updates, formatter checks |
 | **2: Working App** | App renders/serves | Quality tracking, structural tests for module coverage |
 | **3: MVP Complete** | All success criteria met | Move plans to completed/, garbage collection pass |
@@ -133,17 +135,11 @@ fixes failures → re-runs → repeats until green
 
 ### 2. Knowledge Boundary
 ```
-┌─────────────────────────────────┐
-│    What Claude CAN see          │
-│  Code, markdown, schemas,      │
-│  exec plans, tests, configs    │
-└─────────────────────────────────┘
+What Claude CAN see:
+  Code, markdown, schemas, exec plans, tests, configs.
         ↑ must encode ↑
-┌─────────────────────────────────┐
-│   What Claude CAN'T see        │
-│  Slack, verbal decisions,      │
-│  your head, Google Docs        │
-└─────────────────────────────────┘
+What Claude CAN'T see:
+  Slack, verbal decisions, your head, Google Docs.
 ```
 
 ### 3. Layered Architecture

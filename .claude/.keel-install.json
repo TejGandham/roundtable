@@ -1,9 +1,13 @@
 {
   "git_dirty": false,
-  "git_sha": "28c22e4",
-  "installed_at": "2026-04-27T13:19:30Z",
-  "keel_version": "2026.04.0",
+  "git_sha": "02b52d7",
+  "installed_at": "2026-04-27T14:54:31Z",
+  "keel_version": "2026.04.3",
   "managed_paths": {
+    ".claude/KEEL-CONTRACT.md": {
+      "installed_hash": "sha256:b1ebfbc3e79fc2269efb7cc3ca6ad50d1ba1f7b21c6238af05b2512cdfb8b943",
+      "kind": "template_doc"
+    },
     ".claude/agents/arch-advisor.md": {
       "installed_hash": "sha256:0eaf7b2ab438ff7c05880c85ae41b9621be131fca33fa2f6d9f962263e8747b8",
       "kind": "agent"
@@ -81,11 +85,11 @@
       "kind": "bundled_script"
     },
     ".claude/keel_manifest.py": {
-      "installed_hash": "sha256:2ebe5f289219fead65688bc525152e85225c9e5c19e8473ddd0f2c86fa93a986",
+      "installed_hash": "sha256:c4c24b875e71678c1ef95af0609efd4c936cf6a29f424d57184bbc43382678b4",
       "kind": "bundled_script"
     },
     ".claude/keel_receipt.py": {
-      "installed_hash": "sha256:fa900389a9d446cb2dd3c57a41277f3e2c15eac918cea363256d1da4cd80f3c1",
+      "installed_hash": "sha256:85d206eff9e1f1ec4ddac7b0a2c582503056ebce75b0cf3f3b7e758750a52a7b",
       "kind": "bundled_script"
     },
     ".claude/keel_settings.py": {
@@ -111,6 +115,10 @@
     ".claude/skills/keel-setup": {
       "installed_hash": "sha256:8eb0dc2b48fd5f442816c92973f1e71b438095c428c4bd23780abfd12a195064",
       "kind": "skill"
+    },
+    "NORTH-STAR.md": {
+      "installed_hash": "sha256:db043f147283997377703648d3fbf19603d52f5676a580d1575f339b035ad2a7",
+      "kind": "template_root"
     },
     "docs/design-docs/core-beliefs.md": {
       "installed_hash": "sha256:f457592abcb63b9e0b52dc124d8b5a04526ef99373ba85cd3de3cc1fa3500799",
@@ -138,10 +146,6 @@
     },
     "docs/exec-plans/tech-debt-tracker.md": {
       "installed_hash": "sha256:a0dbe96fe94f8ccb0de848dfd2544660076731e984527f75cec19b040fb1a0a7",
-      "kind": "template_doc"
-    },
-    "docs/north-star.md": {
-      "installed_hash": "sha256:276758d758a55dc72be91bb4bc0cc923b2e5f0f2c0e63f0733a026ae698db553",
       "kind": "template_doc"
     },
     "docs/process/ANTI-PATTERNS.md": {
@@ -209,6 +213,9 @@
       "kind": "script"
     }
   },
+  "optional_features": {
+    "docker": false
+  },
   "receipt_schema_version": 2,
   "settings_json": {
     "inserted_hook_commands": [
@@ -221,7 +228,11 @@
     {
       "path": "CLAUDE.md",
       "reason": "already_existed"
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "reason": "already_existed"
     }
   ],
-  "source_url": "https://brahma.myth-gecko.ts.net:3000/stackhouse/keel.git"
+  "source_url": "https://brahma.myth-gecko.ts.net:3000/stackhouse/keel"
 }

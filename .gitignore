@@ -23,6 +23,7 @@ erl_crash.dump
 !.claude/agents
 !.claude/skills
 !.claude/hooks
+!.claude/KEEL-CONTRACT.md
 !.claude/settings.json
 !.claude/.keel-install.json
 !.claude/keel-uninstall.py

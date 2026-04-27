@@ -52,6 +52,7 @@ def new_receipt(
     git_sha: str | None = None,
     git_dirty: bool = False,
     source_url: str | None = None,
+    optional_features: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     return {
         "receipt_schema_version": RECEIPT_SCHEMA_VERSION,
@@ -60,6 +61,7 @@ def new_receipt(
         "git_sha": git_sha,
         "git_dirty": git_dirty,
         "source_url": source_url,
+        "optional_features": dict(optional_features or {}),
         "managed_paths": {},
         "skipped_paths": [],
         "settings_json": None,
