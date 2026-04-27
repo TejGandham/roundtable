@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "id": "roundtable-converge-tool",
+  "title": "Roundtable converge MCP tool",
+  "motivation": "The orchestrator currently synthesizes 7-panelist canvass results by hand — read all freeform responses, identify the majority position, lift best-of-class language. A new `roundtable-converge` MCP tool offloads that synthesis: replay each prior dispatch through the same panelist set with redacted peer answers, and ask each panelist to (a) hold or revise its stance, (b) name peers it agrees with, and (c) draft one converged recommendation. The orchestrator then picks or merges drafts. Backwards-compatible — the change adds a tool and leaves the existing five dispatch tools untouched.",
+  "scope": {
+    "included": [
+      "New `roundtable-converge` MCP tool that replays prior dispatch results through redacted-peer convergence prompts.",
+      "Per-panelist peer redaction: own response excluded, peer identities anonymized to peer-1, peer-2, etc.",
+      "Convergence-prompt assembly that wraps the original prompt plus the redacted peer view plus the (a)/(b)/(c) instructions."
+    ],
+    "excluded": [
+      "Server-side session state — the prior dispatch is identified solely via the `prior_result` JSON parameter.",
+      "Modifications to the existing five dispatch MCP tools.",
+      "Schema-injected structured output for the panelist's (a)/(b)/(c) response — v1 emits free-text instructions; combining `roundtable-converge` with the `schema` parameter from the dispatch-structured-output PRD is future work."
+    ]
+  },
+  "design_facts": [
+    {
+      "topic": "Backwards compatibility",
+      "decision": "Add a new MCP tool; do not modify the five existing dispatch tools.",
+      "rationale": "Stated as a backwards-compatibility goal in intent."
+    },
+    {
+      "topic": "State model",
+      "decision": "No server-side session state; the caller passes the prior dispatch's JSON result via the `prior_result` parameter.",
+      "rationale": "Stated explicitly in intent."
+    },
+    {
+      "topic": "Peer redaction",
+      "decision": "Each panelist sees peer responses with peer identities anonymized to peer-1, peer-2, etc., and never sees its own response replayed.",
+      "rationale": null
+    },
+    {
+      "topic": "Dispatch mechanism",
+      "decision": "Run in parallel against the same backend set as the prior dispatch.",
+      "rationale": null
+    },
+    {
+      "topic": "Anonymization label scope",
+      "decision": "Peer-N labels are stable across all panelists' views — peer-1 always refers to the same source backend regardless of viewer.",
+      "rationale": "Enables panelists' (b) responses (peers-I-agree-with) to be cross-referenced consistently by the orchestrator."
+    },
+    {
+      "topic": "Original prompt plumbing",
+      "decision": "MCP input takes both `prior_result` and `original_prompt`; the original prompt cannot be derived from `DispatchResult` since the type does not preserve it.",
+      "rationale": "Verified against internal/roundtable/result.go — DispatchResult has Results and Meta but no Prompt field."
+    },
+    {
+      "topic": "Output shape consistency",
+      "decision": "Convergence runs return the same DispatchResult JSON shape as the existing five tools; per-panelist Result.Response carries the freeform (a)/(b)/(c) answer.",
+      "rationale": "Lets clients consume convergence output with the same JSON-handling code they already use for canvass/deliberate/blueprint/critique/crosscheck."
+    }
+  ],
+  "invariants_exercised": [],
+  "features": [
+    {
+      "id": "F05",
+      "title": "prior_result input parameter schema accepting DispatchResult JSON shape",
+      "layer": "foundation",
+      "needs": [],
+      "contract": {
+        "prior_result": "DispatchResult JSON shape produced by the existing five dispatch tools — parsed via the existing `roundtable.DispatchResult` Go type at the MCP boundary. Reuse the type; do not redeclare an MCP-input mirror.",
+        "negative_case": "Malformed JSON or missing required fields returns an MCP-level error before any backend dispatch (fast fail; never partial-dispatch with an invalid prior_result)."
+      },
+      "oracle": {
+        "type": "unit",
+        "tooling": "Go test (go test ./...)",
+        "assertions": [
+          "Given a `prior_result` value matching the JSON shape produced by any of the five existing dispatch tools, the schema parser accepts it.",
+          "Given a malformed `prior_result` (invalid JSON, missing required fields, or shape mismatch), the dispatch tool returns an MCP-level error before any backend is invoked."
+        ]
+      }
+    },
+    {
+      "id": "F06",
+      "title": "Per-panelist peer-redaction transform over a prior dispatch result",
+      "layer": "service",
+      "needs": ["F05"],
+      "contract": {
+        "entry_point": "RedactPeers(prior *roundtable.DispatchResult) map[string]PeerView",
+        "peer_view_shape": "PeerView{ Entries: []PeerEntry }, PeerEntry{ Label: string, Response: string }. Label is the anonymized peer-N identifier; Response is the original raw text from the prior dispatch's panelist.",
+        "label_scope": "Stable across all panelists — peer-1 always refers to the same source backend regardless of which panelist's view it appears in. Enables panelists' (b) responses (peers-I-agree-with) to be cross-referenced by the orchestrator.",
+        "own_response_excluded": "For each panelist P in prior.Results, P's own Response is not present in P's PeerView."
+      },
+      "oracle": {
+        "type": "unit",
+        "tooling": "Go test (go test ./...)",
+        "assertions": [
+          "Given a prior dispatch result with N panelists, the redaction produces, for each panelist P, exactly N-1 peer entries with P's own response excluded.",
+          "Each peer entry in the per-panelist output has its peer-panelist identity replaced with an anonymized label (peer-1, peer-2, ...) rather than the original panelist label.",
+          "Label assignment is stable across views — peer-1 resolves to the same source-panelist label regardless of which panelist's PeerView is being inspected."
+        ]
+      }
+    },
+    {
+      "id": "F07",
+      "title": "Convergence-prompt assembly wrapping original prompt, redacted peer view, and (a)/(b)/(c) instructions",
+      "layer": "service",
+      "needs": ["F06"],
+      "contract": {
+        "entry_point": "BuildConvergencePrompt(originalPrompt string, peerView PeerView) string",
+        "prompt_structure": "Original dispatch prompt verbatim, followed by the redacted peer view formatted as labeled blocks (one per peer-N), followed by the convergence instruction block.",
+        "instruction_block": "Three-part free-text instruction asking the panelist for (a) final stance — same or revised, with one-sentence justification, (b) which peers I agree with by anonymized peer-N label, (c) a single short converged-recommendation draft.",
+        "output_format": "Free-text. Panelist responses are returned as freeform text in Result.Response, identical to existing dispatch tools. Schema-injection is out of scope for v1 (per scope.excluded).",
+        "peer_block_format": "Each peer block is rendered as `--- peer-N ---\\n<response text>\\n` with stable peer-N labels from the redaction transform."
+      },
+      "oracle": {
+        "type": "unit",
+        "tooling": "Go test (go test ./...)",
+        "assertions": [
+          "Each per-panelist convergence prompt contains the original dispatch prompt verbatim.",
+          "Each per-panelist convergence prompt contains the redacted peer view produced for that panelist.",
+          "Each per-panelist convergence prompt contains instructions requesting (a) a final stance (same or revised), (b) which peers the panelist agrees with by panelist label, and (c) a single short converged-recommendation draft.",
+          "Output format is freeform text — the (a)/(b)/(c) structure is described in the instruction block but not schema-enforced; panelist responses return as raw text in Result.Response, identical to existing dispatch tools."
+        ]
+      }
+    },
+    {
+      "id": "F08",
+      "title": "Register roundtable-converge MCP tool and wire convergence-prompt assembly through dispatch",
+      "layer": "service",
+      "needs": ["F07"],
+      "contract": {
+        "mcp_tool_name": "roundtable-converge",
+        "registration_site": "internal/stdiomcp/server.go (alongside the five existing dispatch tools).",
+        "mcp_inputs": "prior_result (object, required) — DispatchResult JSON. original_prompt (string, required) — the original prompt that produced prior_result; required because DispatchResult does not preserve it.",
+        "backend_set": "Derived from prior_result.Results map keys. Convergence dispatches to exactly those backends in parallel; the caller does not pass the backend set separately.",
+        "convergence_run_shape": "Per-panelist parallel dispatch using the convergence-prompt assembly. Returns the same DispatchResult shape as the existing five tools — Result.Response per panelist carries the free-text (a)/(b)/(c) answer."
+      },
+      "oracle": {
+        "type": "integration",
+        "setup": "MCP server built from internal/stdiomcp/server.go with all six dispatch tools (the original five plus roundtable-converge) registered.",
+        "tooling": "Go integration tests against the MCP server entry point.",
+        "assertions": [
+          "Calling the `roundtable-converge` MCP tool with a valid `prior_result` and `original_prompt` returns per-panelist convergence results from the same backend set as the prior dispatch, dispatched in parallel.",
+          "After roundtable-converge is added, the five existing dispatch MCP tools remain registered and their behavior is unchanged.",
+          "The backend set used for convergence is derived from prior_result.Results map keys — the caller does not pass the backend set separately.",
+          "roundtable-converge returns a DispatchResult JSON value identical in shape to the existing five dispatch tools; Result.Response per panelist carries the panelist's convergence response as freeform text."
+        ]
+      }
+    }
+  ]
+}

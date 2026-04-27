@@ -1,5 +1,7 @@
 # Feature Backlog
 
+<!-- KEEL-BOOTSTRAP: not-applicable -->
+
 
 
 
@@ -15,55 +17,59 @@ Each feature: read spec → write test → write code → verify.
 
 ---
 
-## Bootstrap (orchestrator-direct, no test-writer/implementer pipeline)
-
-- [ ] **F01 Docker dev environment**
-  Spec: core-beliefs:Container | Agent: docker-builder
-  Test: `docker compose build` succeeds, container has required tools
-
-- [ ] **F02 Project scaffold**
-  Spec: [YOUR-SPEC]:technical | Needs: F01 | Agent: scaffolder
-  Test: App boots at expected port inside container
-
-- [ ] **F03 Test infrastructure**
-  Spec: core-beliefs:Testing | Needs: F02 | Agent: config-writer
-  Test: Mock framework configured, test helper compiles
-
 ## Foundation (backend pipeline starts here)
 
-<!-- CUSTOMIZE: List your foundation-layer features.
-     Each should be a single function/module, independently testable.
-     Include spec reference, dependencies, and test criteria. -->
+- [x] **F01 JSON-Schema-lite subset parser**
+  PRD: dispatch-structured-output
+  <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
 
-- [ ] **F04 [YOUR FOUNDATION FEATURE]**
-  Spec: [spec:section] | Needs: F02, F03
-  Test: [specific test criteria]
+- [ ] **F05 prior_result input parameter schema accepting DispatchResult JSON shape**
+  PRD: roundtable-converge-tool
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 21dcf517a6d20641 -->
 
 ## Service
 
-<!-- CUSTOMIZE: Features that build on foundation — services, processes, coordination -->
+- [ ] **F02 Schema-to-prompt-suffix builder**
+  Needs: F01
+  PRD: dispatch-structured-output
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
 
-- [ ] **F05 [YOUR SERVICE FEATURE]**
-  Spec: [spec:section] | Needs: F04
-  Test: [specific test criteria]
+- [ ] **F03 Per-panelist response validator with structured error surfacing**
+  Needs: F01, F02
+  PRD: dispatch-structured-output
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
+
+- [ ] **F04 Wire schema parameter into all five dispatch MCP tools**
+  Needs: F01, F02, F03
+  PRD: dispatch-structured-output
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
+
+- [ ] **F06 Per-panelist peer-redaction transform over a prior dispatch result**
+  Needs: F05
+  PRD: roundtable-converge-tool
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 21dcf517a6d20641 -->
+
+- [ ] **F07 Convergence-prompt assembly wrapping original prompt, redacted peer view, and (a)/(b)/(c) instructions**
+  Needs: F06
+  PRD: roundtable-converge-tool
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 21dcf517a6d20641 -->
+
+- [ ] **F08 Register roundtable-converge MCP tool and wire convergence-prompt assembly through dispatch**
+  Needs: F07
+  PRD: roundtable-converge-tool
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 21dcf517a6d20641 -->
 
 ## UI
 
-<!-- CUSTOMIZE: UI/frontend features.
-     UI entries may carry a Design: field listing committed wireframes,
-     comps, or flow diagrams. frontend-designer reads them via Claude
-     vision when generating code. Only paths under the repo — no live
-     Figma/Miro URLs. -->
-
-- [ ] **F06 [YOUR UI FEATURE]**
-  Spec: [spec:section] | Needs: F05
-  Design: docs/prds/drafts/[TS]/login-flow.png, docs/design-assets/shared/button-primary.svg
-  Test: [specific test criteria]
+(none yet)
 
 ## Cross-cutting
 
-<!-- CUSTOMIZE: Test fixtures, safety tests, shared infrastructure -->
-
-- [ ] **F07 [YOUR CROSS-CUTTING FEATURE]**
-  Spec: core-beliefs:Testing | Needs: F02
-  Test: [specific test criteria]
+(none yet)

@@ -31,6 +31,9 @@ erl_crash.dump
 !.claude/keel_receipt.py
 !.claude/keel_settings.py
 .codex
+.keel-refine-session/
+__pycache__/
+*.pyc
 SHA256SUMS
 
 # Built binaries
