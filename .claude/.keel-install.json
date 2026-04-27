@@ -1,0 +1,227 @@
+{
+  "git_dirty": false,
+  "git_sha": "28c22e4",
+  "installed_at": "2026-04-27T13:19:30Z",
+  "keel_version": "2026.04.0",
+  "managed_paths": {
+    ".claude/agents/arch-advisor.md": {
+      "installed_hash": "sha256:0eaf7b2ab438ff7c05880c85ae41b9621be131fca33fa2f6d9f962263e8747b8",
+      "kind": "agent"
+    },
+    ".claude/agents/backend-designer.md": {
+      "installed_hash": "sha256:53fddcafde38c637d70f5a35f58947a9086487ac6b608962831583df24b61676",
+      "kind": "agent"
+    },
+    ".claude/agents/backlog-drafter.md": {
+      "installed_hash": "sha256:6e5b395acf59d2be1f67308848cdcddc155d6d994dcc390c4182b65deb6d6571",
+      "kind": "agent"
+    },
+    ".claude/agents/code-reviewer.md": {
+      "installed_hash": "sha256:3ddb591fec81a91697b0ed86c5341aaf1ceda5f953ad13e7ce903d00985fa63e",
+      "kind": "agent"
+    },
+    ".claude/agents/config-writer.md": {
+      "installed_hash": "sha256:5f8826a67587fdcf3119f50fc3096e02102cb753d42b10d3dd6d931b9dd06f0c",
+      "kind": "agent"
+    },
+    ".claude/agents/doc-gardener.md": {
+      "installed_hash": "sha256:aea318a5184e804fb2066c9a16c5fc20d4085c9a6f6ef8b530ebc8f40e492ac4",
+      "kind": "agent"
+    },
+    ".claude/agents/docker-builder.md": {
+      "installed_hash": "sha256:a6ead4b2b1e9256fb0683a417b240f3fba7f161caaad88e32bdcf399d9158478",
+      "kind": "agent"
+    },
+    ".claude/agents/frontend-designer.md": {
+      "installed_hash": "sha256:1acc24b76b8b93be5980e2ff019c28133533b20d5846ee9aca846c9ed9837912",
+      "kind": "agent"
+    },
+    ".claude/agents/implementer.md": {
+      "installed_hash": "sha256:a56c59effcfb8e4629af924c9ec996fae3765d65f8784546dbf8a56475addecd",
+      "kind": "agent"
+    },
+    ".claude/agents/landing-verifier.md": {
+      "installed_hash": "sha256:87935f97182180c137ee45f0a993082b60b12436efdcf5b6dbc1cd94c45dfec8",
+      "kind": "agent"
+    },
+    ".claude/agents/pre-check.md": {
+      "installed_hash": "sha256:8e066371213471e4f5735e7ba4b17b72d3f0f29dc2464b432280538f6717b61b",
+      "kind": "agent"
+    },
+    ".claude/agents/researcher.md": {
+      "installed_hash": "sha256:ea6f0720aed249577963cd93fce7c413384b161861316fe20a932bf6055419ba",
+      "kind": "agent"
+    },
+    ".claude/agents/safety-auditor.md": {
+      "installed_hash": "sha256:d16d13218babe608996d9a7132c5748f07a362648ce529582200df91821c67b3",
+      "kind": "agent"
+    },
+    ".claude/agents/scaffolder.md": {
+      "installed_hash": "sha256:ac26a337e4cafcf0b2cb3ed9baf7ea97f19d76ef08fc53e30eb958f812fa8e30",
+      "kind": "agent"
+    },
+    ".claude/agents/spec-reviewer.md": {
+      "installed_hash": "sha256:42b4576d33e6d108ca84f02dee0dae823e3ad332eee2f8a72159b532204c6a2e",
+      "kind": "agent"
+    },
+    ".claude/agents/test-writer.md": {
+      "installed_hash": "sha256:62c301ac4dcabc843463bda5810cd386fbec165d3ddaa357cff77447704d12e0",
+      "kind": "agent"
+    },
+    ".claude/hooks/keel-doc-gate.py": {
+      "installed_hash": "sha256:b7942560636754fe20c3c5ed6c054d8d58fead58c8cdd37af6de56962923010f",
+      "kind": "hook"
+    },
+    ".claude/hooks/keel-safety-gate.py": {
+      "installed_hash": "sha256:accd8b7e4a54355592ad9afbabbe8bc5dd62d6d24221dbc0754c5a570903379c",
+      "kind": "hook"
+    },
+    ".claude/keel-uninstall.py": {
+      "installed_hash": "sha256:99d662fd19a326e3e77ca77b4525e7a23e9d304698a2cf44e0993d593513dfa7",
+      "kind": "bundled_script"
+    },
+    ".claude/keel_manifest.py": {
+      "installed_hash": "sha256:2ebe5f289219fead65688bc525152e85225c9e5c19e8473ddd0f2c86fa93a986",
+      "kind": "bundled_script"
+    },
+    ".claude/keel_receipt.py": {
+      "installed_hash": "sha256:fa900389a9d446cb2dd3c57a41277f3e2c15eac918cea363256d1da4cd80f3c1",
+      "kind": "bundled_script"
+    },
+    ".claude/keel_settings.py": {
+      "installed_hash": "sha256:35b95af9143a6555d64ee86cbabebd37de7466b03507a443d90192bdf5391e2b",
+      "kind": "bundled_script"
+    },
+    ".claude/skills/keel-adopt": {
+      "installed_hash": "sha256:869a21f6ce790ee2bd7eefc0ba5ab872aebbc6159b6a597aaa22d361207831bb",
+      "kind": "skill"
+    },
+    ".claude/skills/keel-pipeline": {
+      "installed_hash": "sha256:462be81e86b8124f9e9f1e2bd098617f4b9e01373be2f32caf0d3e70fec23383",
+      "kind": "skill"
+    },
+    ".claude/skills/keel-refine": {
+      "installed_hash": "sha256:5a880ed1f85da9c1079ad75fa09583b45eb79640ec7a84e082651237067428a9",
+      "kind": "skill"
+    },
+    ".claude/skills/keel-safety-check": {
+      "installed_hash": "sha256:f986c1b8a3a1d1015266a81559b38e7a0a3002876e3317d7cf79c397bcc7f270",
+      "kind": "skill"
+    },
+    ".claude/skills/keel-setup": {
+      "installed_hash": "sha256:8eb0dc2b48fd5f442816c92973f1e71b438095c428c4bd23780abfd12a195064",
+      "kind": "skill"
+    },
+    "docs/design-docs/core-beliefs.md": {
+      "installed_hash": "sha256:f457592abcb63b9e0b52dc124d8b5a04526ef99373ba85cd3de3cc1fa3500799",
+      "kind": "template_doc"
+    },
+    "docs/design-docs/index.md": {
+      "installed_hash": "sha256:7fc6183992fbf579f56f022aeb5902891b090c3ae8d3086f68651650fb2bc482",
+      "kind": "template_doc"
+    },
+    "docs/design-docs/ui-design.md": {
+      "installed_hash": "sha256:8c6d69fe8abb71857fa161b2cb1c1532c89825cc35eaf3c7a0d7be6ab9ccbfa4",
+      "kind": "template_doc"
+    },
+    "docs/exec-plans/active/feature-backlog.md": {
+      "installed_hash": "sha256:ae4aedaad6403913cc93e733b32c18148db2b7369240ae129139aeb6d084a0fe",
+      "kind": "template_doc"
+    },
+    "docs/exec-plans/active/handoffs/_TEMPLATE.md": {
+      "installed_hash": "sha256:e50109a6312558934c58b7f2ef471d1703884b896c89365cbbb712d834ca4fc8",
+      "kind": "template_doc"
+    },
+    "docs/exec-plans/prds/.gitkeep": {
+      "installed_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "template_doc"
+    },
+    "docs/exec-plans/tech-debt-tracker.md": {
+      "installed_hash": "sha256:a0dbe96fe94f8ccb0de848dfd2544660076731e984527f75cec19b040fb1a0a7",
+      "kind": "template_doc"
+    },
+    "docs/north-star.md": {
+      "installed_hash": "sha256:276758d758a55dc72be91bb4bc0cc923b2e5f0f2c0e63f0733a026ae698db553",
+      "kind": "template_doc"
+    },
+    "docs/process/ANTI-PATTERNS.md": {
+      "installed_hash": "sha256:84ff5106638b06a924644ebeae8e2580c1c999a5d9c8212242326fef62728aa8",
+      "kind": "process_doc"
+    },
+    "docs/process/AUTONOMY-PROGRESSION.md": {
+      "installed_hash": "sha256:afd6e4a7bfcfbdd462620ce24a5a324f0999f2c99905c842910731f753f24430",
+      "kind": "process_doc"
+    },
+    "docs/process/BROWNFIELD.md": {
+      "installed_hash": "sha256:33af7c19fb18446b7822c4175edf42c0d6d65674437f0f00db0ad828e4218f78",
+      "kind": "process_doc"
+    },
+    "docs/process/FAILURE-PLAYBOOK.md": {
+      "installed_hash": "sha256:4e034db7126c0ddb72e751c73a5b2c5b48fb901b4724c6e1ba52ce02b9f96163",
+      "kind": "process_doc"
+    },
+    "docs/process/GLOSSARY.md": {
+      "installed_hash": "sha256:2f41792d3b03cf0cf685f78718f68d70fd725964d704768bb3c0404dc192528b",
+      "kind": "process_doc"
+    },
+    "docs/process/KEEL-PRINCIPLES.md": {
+      "installed_hash": "sha256:db9196e3c35b32ac2a621918499e94a753c214137c648a1b4d044fcea51acd9e",
+      "kind": "process_doc"
+    },
+    "docs/process/QUICK-START.md": {
+      "installed_hash": "sha256:a4237bcef7f87c251259d2a27e86ad2ca2920337d6ded6696e06f86bf4382195",
+      "kind": "process_doc"
+    },
+    "docs/process/THE-KEEL-PROCESS.md": {
+      "installed_hash": "sha256:93123489d537ffad9a191292e71b88165f5e3514a041a4a61210cb9faeda541c",
+      "kind": "process_doc"
+    },
+    "docs/references/README.md": {
+      "installed_hash": "sha256:c8c3bb63ad2c16ca9e8b30c144cd07704c3843df805cca18ee00f3d87e135f7f",
+      "kind": "template_doc"
+    },
+    "schemas/prd.schema.json": {
+      "installed_hash": "sha256:6614a7cd136bbbd0b58bfb305650e5ebb2e24aa909a29214e4c900e1a0237d6a",
+      "kind": "schema"
+    },
+    "scripts/keel-feature-resolve.py": {
+      "installed_hash": "sha256:820a57af9d3a9e5a3b537a6f6dbeeae12a856f1a2e1b80ec2646123ddd8204bf",
+      "kind": "script"
+    },
+    "scripts/keel-prd-view.py": {
+      "installed_hash": "sha256:673610a14012226fea3fa8c8ad18b4ccaeeae3cd01e58797166d5884381799a6",
+      "kind": "script"
+    },
+    "scripts/keel_features.py": {
+      "installed_hash": "sha256:91d2d495cd4f49e3320523a81c95d1c64d25f893f845a2bbe6bae48e2e24c2a1",
+      "kind": "script"
+    },
+    "scripts/upgrade-invariant-7.py": {
+      "installed_hash": "sha256:5d4f66eeba76bde9c64ce226432a77cb81a3eda0204956c2d7e71d66c7f54190",
+      "kind": "script"
+    },
+    "scripts/validate-prd-json.py": {
+      "installed_hash": "sha256:cb6d06cd9c2247cfbf7ccf203ce71350b2d227eeda0d19db46de17f6b207b11e",
+      "kind": "script"
+    },
+    "scripts/validate-prds.py": {
+      "installed_hash": "sha256:d0f6c2442b073c3353c7d752d5fde29f63aaf95bc5a9f91dcd3f7a71a0b4bfab",
+      "kind": "script"
+    }
+  },
+  "receipt_schema_version": 2,
+  "settings_json": {
+    "inserted_hook_commands": [
+      "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/keel-doc-gate.py\"",
+      "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/keel-safety-gate.py\""
+    ],
+    "mode": "created"
+  },
+  "skipped_paths": [
+    {
+      "path": "CLAUDE.md",
+      "reason": "already_existed"
+    }
+  ],
+  "source_url": "https://brahma.myth-gecko.ts.net:3000/stackhouse/keel.git"
+}

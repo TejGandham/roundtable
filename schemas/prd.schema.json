@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keel.framework/schemas/prd.schema.json",
+  "title": "KEEL PRD",
+  "description": "Framework-frame schema for a KEEL PRD. Validates PRD-level structure, the feature frame, oracle shape, and cross-reference integrity. The per-feature `contract` object is intentionally open-shape — contract content is case-by-case and not generalizable. Feature-specific contract gaps are detected by downstream agents (test-writer) via expected-vs-declared key introspection, not by schema enforcement. See docs/design-docs/2026-04-24-structured-prds.md.",
+  "type": "object",
+  "required": ["schema_version", "id", "title", "motivation", "scope", "design_facts", "invariants_exercised", "features"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "PRD schema version. Bumps only on breaking shape changes; validators pin to a supported set. If a PRD declares a version this validator doesn't know, the halt message names the mismatch and the schema path the PRD needs to be valid against."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+      "description": "Slug form; mirrors the PRD filename stem and the slug alphabet in scripts/keel-prd-view.py."
+    },
+    "title": {"type": "string", "minLength": 1},
+    "motivation": {
+      "type": "string",
+      "maxLength": 800,
+      "description": "Single narrative field. One short paragraph on why this feature set exists. Not a dumping ground — if it exceeds 800 chars, the content belongs in design_facts or scope.included."
+    },
+    "scope": {
+      "type": "object",
+      "required": ["included", "excluded"],
+      "additionalProperties": false,
+      "properties": {
+        "included": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+        "excluded": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "design_facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic", "decision"],
+        "additionalProperties": false,
+        "properties": {
+          "topic": {"type": "string", "minLength": 1},
+          "decision": {"type": "string", "minLength": 1},
+          "rationale": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "invariants_exercised": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["invariant_id", "how_exercised"],
+        "additionalProperties": false,
+        "properties": {
+          "invariant_id": {"type": "string", "pattern": "^INV-[0-9]{3,}$"},
+          "name": {"type": "string"},
+          "how_exercised": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "features": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/feature"}
+    }
+  },
+  "$defs": {
+    "feature": {
+      "type": "object",
+      "required": ["id", "title", "layer", "needs", "contract", "oracle"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^F[0-9]{2,}$"},
+        "title": {"type": "string", "minLength": 1},
+        "layer": {"type": "string", "enum": ["service", "ui", "cross-cutting", "foundation"]},
+        "needs": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^F[0-9]{2,}$"},
+          "description": "Other feature IDs this one depends on. Cross-reference integrity (each ref must resolve to an existing feature) is enforced by the post-schema validator, not by the schema alone."
+        },
+        "contract": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Feature-specific contract content. Intentionally open-shape: a trigger feature needs channel+payload_fields; a REST endpoint needs route+auth+response; a UI module needs module_path+public_api. No cross-feature generalization survives, so no required keys are declared here. Feature-specific gaps (e.g. a trigger feature missing 'channel') are detected by test-writer via expected-vs-declared key introspection at pipeline time."
+        },
+        "oracle": {
+          "type": "object",
+          "required": ["type", "assertions"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["unit", "integration", "e2e", "smoke"],
+              "description": "Test abstraction level. Framework/runner identity (vitest, pytest, etc.) belongs in `tooling`, not here."
+            },
+            "tooling": {"type": "string", "description": "Free-form: framework, mocks, fixtures, timers, etc."},
+            "setup": {"type": ["string", "null"]},
+            "actions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "assertions": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+            "gating": {"type": "string", "description": "Free-form note e.g. 'CI merge-blocking' when the test is a required gate, or scope clarifications."}
+          }
+        }
+      }
+    }
+  }
+}

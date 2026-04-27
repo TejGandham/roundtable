@@ -16,7 +16,19 @@
 .superpowers/
 docs/superpowers/
 erl_crash.dump
-.claude/
+# KEEL framework: track the install per docs/INSTALL.md ("committed to your repo").
+# `.claude/*` ignores immediate children so the re-includes below take effect;
+# `settings.local.json` stays ignored as personal Claude Code state.
+.claude/*
+!.claude/agents
+!.claude/skills
+!.claude/hooks
+!.claude/settings.json
+!.claude/.keel-install.json
+!.claude/keel-uninstall.py
+!.claude/keel_manifest.py
+!.claude/keel_receipt.py
+!.claude/keel_settings.py
 .codex
 SHA256SUMS
 
