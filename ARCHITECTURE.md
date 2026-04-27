@@ -99,15 +99,16 @@ The Codex app-server is launched lazily under a `sync.Once` on the first tool ca
 | `roles.go` | `LoadRolePrompt` with three-level fallback: project dir → global dir → `go:embed roles/*.txt` defaults. |
 | `roles/` | Embedded defaults: `default.txt`, `planner.txt`, `codereviewer.txt`. |
 | `request.go` | `Request` — transport-neutral input to a backend. |
-| `result.go` | `Result`, `Meta`, `DispatchResult` types and JSON marshaling. `NotFoundResult`, `ProbeFailedResult`, `ConfigErrorResult` constructors. |
+| `result.go` | `Result`, `Meta`, `DispatchResult` types and JSON marshaling. `NotFoundResult`, `ProbeFailedResult`, `ConfigErrorResult` constructors. Carries `Structured json.RawMessage` (omitempty — parsed validated payload from `dispatchschema.Validate`) and `StructuredError *dispatchschema.ValidationError` (omitempty — per-panelist validation failure). When no schema is supplied, both fields are nil and elided from marshaled JSON — wire format unchanged. |
 | `output.go` | `BuildResult` status normalization (timeout / terminated / error / rate_limited / ok) and `BuildMeta` aggregation. |
 
-### `internal/roundtable/dispatchschema` — JSON-Schema-lite parser + prompt suffix
+### `internal/roundtable/dispatchschema` — JSON-Schema-lite parser + prompt suffix + response validator
 
 | File | Responsibility |
 |-|-|
 | `schema.go` | `Parse(raw json.RawMessage) (*Schema, error)` — JSON-Schema-lite subset parser. Accepts a top-level object with typed scalar fields (string/number/boolean), optional `enum` on string fields, and optional `required: [...]`. Rejects nested objects, arrays, `anyOf`/`oneOf`/`allOf`, `$ref`, `format`, `additionalProperties: true`, and any other keyword outside the supported subset, with a descriptive error that names the offending construct. Stdlib-only; preserves field order via `json.Decoder` token stream. |
 | `prompt.go` | `BuildPromptSuffix(schema *Schema) string` — deterministic prompt-suffix builder. Enumerates schema fields with type; lists enum values verbatim for string-enum fields; emits `(string, free-text)` for free-text strings and `(number)` / `(boolean)` for typed scalars. Instructs panelists to wrap structured response in a single fenced ` ```json ` block (last block is canonical payload). Sanitizes field names and enum values against prompt-injection vectors (LF, triple-backticks, control chars). Stdlib-only (`fmt`, `strings`). |
+| `validate.go` | `Validate(response string, schema *Schema) (parsed json.RawMessage, vErr *ValidationError)` — per-panelist response validator. Extracts the **last** fenced ` ```json ` block from `response`, JSON-decodes, and validates against `schema` (typed-scalar conformance, string-enum membership, required-field presence). Fails closed on closed-then-unclosed fence sequences (no stale-block fallback). Rejects literal `null` for scalars (no zero-value coercion). Returns `ValidationError{Kind, Field, Message, Excerpt}` with `Kind ∈ {missing_fence, json_parse, schema_violation}` exposed as exported untyped string constants. `Excerpt` is rune-aware capped at 200 runes. Stdlib-only; no panics on hostile input; no retry. Package is a leaf — must not import `internal/roundtable` (enforced by `imports_test.go`). |
 
 ## Request flow
 

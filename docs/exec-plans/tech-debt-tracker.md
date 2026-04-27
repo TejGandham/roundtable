@@ -2,8 +2,9 @@
 
 Known shortcuts, deferred improvements, and open questions.
 
-<!-- Items get added as features land. Mark resolved items with [x].
-     Review this file during garbage collection sweeps. -->
+<!-- Items get added as features land. Resolved items are deleted —
+     git log records the landing. Review this file during garbage
+     collection sweeps. -->
 
 ## Pre-Implementation
 
@@ -30,6 +31,10 @@ Known shortcuts, deferred improvements, and open questions.
 - [ ] **U+2028 / U+2029 line separators in prompt sanitize.** `internal/roundtable/dispatchschema/prompt.go` sanitize pass covers ASCII control chars 0x00–0x1F but not Unicode line separators U+2028 / U+2029. Markdown fences only close on LF (per CommonMark), so this isn't a current vulnerability — but if downstream consumers ever interpret these as line breaks, the sanitize layer should cover them. Defense-in-depth, deferred from F02 safety audit.
 
 - [ ] **Safety-auditor agent template has placeholder invariants.** `.claude/agents/safety-auditor.md` references `[YOUR INVARIANT RULE 1-3]` placeholders that were never replaced. Causes the agent to fail-closed on tight-prompt re-reviews even when the underlying code is fine (observed during F02 roundtable retry — agent passed thoroughly on attempt 1 but fail-closed on the mechanical-fix retry). Should be replaced with this project's actual invariant rules once INV-001 (parser bounded-allocation contract) is registered.
+
+- [ ] **PRD `dispatch-structured-output.json` F03 `result_extension` lists pointer type.** `docs/exec-plans/prds/dispatch-structured-output.json` says `Structured *json.RawMessage`. Backend-designer + arch-advisor ratified value-type `json.RawMessage` (with `omitempty`) during F03 design — the pointer-to-slice is a Go anti-pattern with no functional difference under `omitempty`. F03 implementation uses the value type. PRD is now stale on this key. Resolve by re-running `/keel-refine docs/exec-plans/prds/dispatch-structured-output.json` (re-run mode walks Card 0 + cards) and updating the F03 contract's `result_extension` text to drop the asterisk.
+
+- [ ] **PRD `dispatch-structured-output.json` F04 `backwards_compat_bar` says "byte-equivalent".** Should clarify to "key-set equivalent" — F03 design ratified the reframe (provable via `omitempty` key-absence; literal byte-identity is brittle to stdlib field-ordering or whitespace changes). Resolve via the same `/keel-refine` re-run that fixes the F03 entry above.
 
 ## Post-MVP
 

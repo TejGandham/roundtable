@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/TejGandham/roundtable/internal/roundtable/dispatchschema"
 )
 
 func TestResultJSON(t *testing.T) {
@@ -130,5 +132,68 @@ func TestConfigErrorResult_DefaultModel(t *testing.T) {
 	r := ConfigErrorResult("fireworks", "", "no model configured")
 	if r.Model != "cli-default" {
 		t.Errorf("model = %q, want cli-default", r.Model)
+	}
+}
+
+// TestResultJSON_StructuredFieldsAbsent covers /features/2/oracle/assertions/3:
+// When Result.Structured and Result.StructuredError are both nil, the marshaled
+// JSON must contain neither "structured" nor "structured_error" as keys.
+// omitempty on both fields is the mechanism; this test enforces it.
+func TestResultJSON_StructuredFieldsAbsent(t *testing.T) {
+	r := &Result{
+		Response: "panelist text",
+		Model:    "o3-pro",
+		Status:   "ok",
+		// Structured and StructuredError intentionally left nil.
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	if strings.Contains(s, `"structured"`) {
+		t.Errorf("marshaled JSON contains %q key; want it absent when field is nil.\nJSON: %s",
+			"structured", s)
+	}
+	if strings.Contains(s, `"structured_error"`) {
+		t.Errorf("marshaled JSON contains %q key; want it absent when field is nil.\nJSON: %s",
+			"structured_error", s)
+	}
+}
+
+// TestResultJSON_StructuredFieldsPresent verifies that when both new Result
+// fields are populated, both keys appear in the marshaled JSON with their values.
+func TestResultJSON_StructuredFieldsPresent(t *testing.T) {
+	payload := json.RawMessage(`{"verdict":"approve","score":9}`)
+	vErr := &dispatchschema.ValidationError{
+		Kind:    "schema_violation",
+		Field:   "verdict",
+		Message: "value not in enum",
+		Excerpt: "bad_value",
+	}
+
+	r := &Result{
+		Response:        "some text",
+		Model:           "o3-pro",
+		Status:          "ok",
+		Structured:      payload,
+		StructuredError: vErr,
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"structured"`) {
+		t.Errorf("marshaled JSON missing %q key; want it present when field is populated.\nJSON: %s",
+			"structured", s)
+	}
+	if !strings.Contains(s, `"structured_error"`) {
+		t.Errorf("marshaled JSON missing %q key; want it present when field is populated.\nJSON: %s",
+			"structured_error", s)
+	}
+	// Verify nested StructuredError fields appear.
+	if !strings.Contains(s, `"schema_violation"`) {
+		t.Errorf("marshaled JSON missing Kind value %q.\nJSON: %s", "schema_violation", s)
 	}
 }

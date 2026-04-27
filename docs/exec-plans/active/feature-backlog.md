@@ -35,10 +35,9 @@ Each feature: read spec → write test → write code → verify.
   PRD: dispatch-structured-output
   <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
 
-- [ ] **F03 Per-panelist response validator with structured error surfacing**
+- [x] **F03 Per-panelist response validator with structured error surfacing**
   Needs: F01, F02
   PRD: dispatch-structured-output
-  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
   <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
 
 - [ ] **F04 Wire schema parameter into all five dispatch MCP tools**

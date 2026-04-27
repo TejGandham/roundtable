@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "id": "provider-request-extras",
+  "title": "Per-provider request_extras for OpenAI-compat HTTP backend",
+  "motivation": "OpenAIHTTPBackend hardcodes the chat-completions request body to {model, messages, stream:false} and the ROUNDTABLE_PROVIDERS parser rejects unknown JSON keys, so operators have no way to inject provider-specific body parameters at config time. Concrete blocker: Fireworks DeepSeek V4 max-thinking mode requires reasoning_effort=max in the wire body and cannot be enabled today without a code change. The same gap blocks every future provider parameter without first-class support (temperature, top_p, response_format, vendor reasoning controls). A typed per-provider request_extras map merged into the body, with model/messages/stream reserved against override, closes this without giving operators a way to break the dispatcher's prefix-cache and routing invariants.",
+  "scope": {
+    "included": [
+      "request_extras field on each ROUNDTABLE_PROVIDERS entry, parsed as an arbitrary JSON object of string keys to JSON values.",
+      "Shallow merge of request_extras into the OpenAI chat-completions request body, with model, messages, and stream as reserved keys that cannot be overridden by operator-supplied entries.",
+      "Startup-time rejection of reserved keys in request_extras so operators get a clear LoadProviderRegistry error rather than a silently-ignored override.",
+      "INSTALL.md ROUNDTABLE_PROVIDERS reference and a worked Fireworks DeepSeek V4 reasoning_effort=max example."
+    ],
+    "excluded": [
+      "Per-call override of request_extras from the dispatch site or MCP tool input. Extras are operator-config only, never request-controlled.",
+      "Schema validation of extras values against any provider-specific contract. Extras are passed through verbatim to the upstream.",
+      "Streaming or response-shape changes. stream stays false and the response parser is unchanged.",
+      "A retroactive policy on existing providers. Absent or empty request_extras keeps every existing config working unchanged."
+    ]
+  },
+  "design_facts": [
+    {
+      "topic": "Reserved keys",
+      "decision": "model, messages, and stream are reserved and rejected by LoadProviderRegistry when present in any entry's request_extras, regardless of value.",
+      "rationale": "Allowing model override would let config silently retarget dispatch; messages would defeat the prefix-cache layout established by buildMessages; stream would change the response parser contract."
+    },
+    {
+      "topic": "Merge order",
+      "decision": "request_extras keys are written into the body map first, then the three reserved keys are written last so they always overwrite any colliding key.",
+      "rationale": "Defense in depth alongside parse-time rejection. Even if reserved-key validation regresses, the runtime values still win on the wire."
+    },
+    {
+      "topic": "Schema of extras",
+      "decision": "request_extras is a free-form JSON object (map[string]any). No type validation against any provider-specific contract.",
+      "rationale": "The OpenAI-compat surface across Fireworks, Moonshot, z.ai, DeepSeek, Groq, etc. diverges field-by-field. Pinning a schema here would either be over-restrictive or perpetually behind."
+    },
+    {
+      "topic": "Backwards compatibility",
+      "decision": "request_extras is optional. Absent or empty produces a wire body byte-equivalent to today's encoding.",
+      "rationale": "Every existing ROUNDTABLE_PROVIDERS configuration keeps working without edits and existing prefix-cache hits are preserved."
+    },
+    {
+      "topic": "DisallowUnknownFields scope",
+      "decision": "Add request_extras to the providerJSON struct and keep DisallowUnknownFields in force. Do not relax the policy globally.",
+      "rationale": "Catching typos in operator config (e.g. max_concurent) is load-bearing for operability. The right fix is registering the new field, not weakening the parser."
+    },
+    {
+      "topic": "Logging posture",
+      "decision": "request_extras values are NOT logged at any level. Existing SECURITY rule in openai_http.go (no body logging) extends naturally; only key names are safe to surface in startup logs if anything.",
+      "rationale": "Operators may put sensitive routing hints (account ids, regional shards) in extras; the body-log prohibition already in place must continue to apply."
+    }
+  ],
+  "invariants_exercised": [],
+  "features": [
+    {
+      "id": "F09",
+      "title": "request_extras parser field on providerJSON with reserved-key rejection",
+      "layer": "foundation",
+      "needs": [],
+      "contract": {
+        "file_path": "internal/roundtable/providers.go",
+        "wire_field": "request_extras",
+        "wire_shape": "object<string, any>",
+        "providerJSON_field": "RequestExtras map[string]any `json:\"request_extras,omitempty\"`",
+        "providerConfig_field": "RequestExtras map[string]any",
+        "reserved_keys": ["model", "messages", "stream"],
+        "rejection_mode": "LoadProviderRegistry returns an error of the form 'ROUNDTABLE_PROVIDERS[<i>] (<id>): request_extras: key %q is reserved (model/messages/stream are set per-call by the dispatcher)' when any reserved key appears in an entry's request_extras.",
+        "default_behavior": "Absent or empty request_extras parses to a nil or empty map on ProviderConfig and the body merge is a no-op.",
+        "strictness": "DisallowUnknownFields remains in force on providerJSON so unrecognized top-level keys (typos like request_extra or requst_extras) still fail parse with the existing strict-decode error."
+      },
+      "oracle": {
+        "type": "unit",
+        "tooling": "Go test (go test ./internal/roundtable/...)",
+        "assertions": [
+          "LoadProviderRegistry parses ROUNDTABLE_PROVIDERS entries whose request_extras carries assorted JSON value types (string, number, boolean, nested object, array) and exposes the values verbatim on ProviderConfig.RequestExtras.",
+          "LoadProviderRegistry returns a descriptive error when an entry's request_extras contains the key model, the key messages, or the key stream, naming both the offending key and the provider id.",
+          "LoadProviderRegistry treats a missing request_extras and an explicit empty object {} as equivalent, both producing a ProviderConfig whose RequestExtras is nil or empty so the downstream merge is a no-op.",
+          "LoadProviderRegistry continues to reject unknown top-level fields on providerJSON with the same strict-decode error as today, even when request_extras is registered (regression guard for typos like requst_extras at the top level)."
+        ]
+      }
+    },
+    {
+      "id": "F10",
+      "title": "request_extras body merge in OpenAIHTTPBackend.Run with reserved-key precedence",
+      "layer": "service",
+      "needs": ["F09"],
+      "contract": {
+        "file_path": "internal/roundtable/openai_http.go",
+        "entry_point": "OpenAIHTTPBackend.Run",
+        "current_body": "{model, messages, stream:false} encoded at line 147-155",
+        "new_body_shape": "map[string]any seeded from cfg.RequestExtras (shallow copy), then model/messages/stream written last so the runtime values always win.",
+        "precedence_rule": "model, messages, and stream are written after the merge and overwrite any colliding key from request_extras. This holds even if F09's parse-time rejection is somehow bypassed (defense in depth).",
+        "caching_invariant": "buildMessages output and its byte layout are unchanged; request_extras can only add top-level fields, never reorder messages or alter the prefix layout that providers cache on.",
+        "logging_invariant": "request_extras values are not logged at any level (extends the existing SECURITY rule in openai_http.go that forbids logging bodyBytes or response bodies)."
+      },
+      "oracle": {
+        "type": "unit",
+        "tooling": "Go httptest server matching the pattern in internal/roundtable/openai_http_test.go (capture the raw request body and assert on its parsed JSON shape).",
+        "assertions": [
+          "When ProviderConfig.RequestExtras is nil or empty, the wire request body is byte-equivalent to today's {model, messages, stream:false} encoding (regression guard for prefix-cache invariants on existing providers).",
+          "When ProviderConfig.RequestExtras carries reasoning_effort=max, the wire request body contains reasoning_effort=max as a top-level key alongside the unchanged model, messages, and stream fields.",
+          "When ProviderConfig.RequestExtras includes the key model (synthetic test bypassing F09 parse-time rejection), the wire body's model field equals the runtime-resolved model from req.Model or cfg.DefaultModel, not the request_extras value.",
+          "When ProviderConfig.RequestExtras includes the keys messages and stream (synthetic test bypassing F09), the wire body's messages and stream fields equal the runtime values from buildMessages and the constant false, not the request_extras values.",
+          "When ProviderConfig.RequestExtras carries a nested object value (e.g. response_format={type: json_object}), the nested structure is preserved verbatim in the encoded body without flattening or coercion."
+        ]
+      }
+    },
+    {
+      "id": "F11",
+      "title": "INSTALL.md ROUNDTABLE_PROVIDERS reference and Fireworks DeepSeek V4 max-thinking example",
+      "layer": "cross-cutting",
+      "needs": ["F09", "F10"],
+      "contract": {
+        "file_path": "INSTALL.md",
+        "additions": [
+          "request_extras row in the existing ROUNDTABLE_PROVIDERS field reference table, with type 'object', default 'absent', and a one-line description matching the provider implementation.",
+          "Note in the same section that model, messages, and stream are reserved and that LoadProviderRegistry rejects them at startup if present in request_extras.",
+          "Worked Fireworks DeepSeek V4 example: a complete provider entry for accounts/fireworks/models/deepseek-v4-pro with request_extras: {reasoning_effort: max} and a one-paragraph caption explaining the field comes from the Fireworks reasoning_effort contract."
+        ]
+      },
+      "oracle": {
+        "type": "smoke",
+        "tooling": "Manual review of rendered INSTALL.md after the change.",
+        "assertions": [
+          "INSTALL.md ROUNDTABLE_PROVIDERS field reference table lists request_extras with its type, default, and a one-line description that names the reserved keys.",
+          "INSTALL.md contains a complete copy-pasteable ROUNDTABLE_PROVIDERS JSON example for accounts/fireworks/models/deepseek-v4-pro that uses request_extras to set reasoning_effort=max."
+        ],
+        "gating": "Doc-only feature; no test runner gates it. Verified by reading INSTALL.md after the change."
+      }
+    }
+  ]
+}
