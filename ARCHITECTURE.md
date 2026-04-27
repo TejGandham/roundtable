@@ -102,11 +102,12 @@ The Codex app-server is launched lazily under a `sync.Once` on the first tool ca
 | `result.go` | `Result`, `Meta`, `DispatchResult` types and JSON marshaling. `NotFoundResult`, `ProbeFailedResult`, `ConfigErrorResult` constructors. |
 | `output.go` | `BuildResult` status normalization (timeout / terminated / error / rate_limited / ok) and `BuildMeta` aggregation. |
 
-### `internal/roundtable/dispatchschema` — JSON-Schema-lite parser
+### `internal/roundtable/dispatchschema` — JSON-Schema-lite parser + prompt suffix
 
 | File | Responsibility |
 |-|-|
 | `schema.go` | `Parse(raw json.RawMessage) (*Schema, error)` — JSON-Schema-lite subset parser. Accepts a top-level object with typed scalar fields (string/number/boolean), optional `enum` on string fields, and optional `required: [...]`. Rejects nested objects, arrays, `anyOf`/`oneOf`/`allOf`, `$ref`, `format`, `additionalProperties: true`, and any other keyword outside the supported subset, with a descriptive error that names the offending construct. Stdlib-only; preserves field order via `json.Decoder` token stream. |
+| `prompt.go` | `BuildPromptSuffix(schema *Schema) string` — deterministic prompt-suffix builder. Enumerates schema fields with type; lists enum values verbatim for string-enum fields; emits `(string, free-text)` for free-text strings and `(number)` / `(boolean)` for typed scalars. Instructs panelists to wrap structured response in a single fenced ` ```json ` block (last block is canonical payload). Sanitizes field names and enum values against prompt-injection vectors (LF, triple-backticks, control chars). Stdlib-only (`fmt`, `strings`). |
 
 ## Request flow
 

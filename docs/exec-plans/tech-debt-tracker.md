@@ -25,6 +25,12 @@ Known shortcuts, deferred improvements, and open questions.
 
 - [ ] **Stale `errAs` doc comment.** `internal/roundtable/dispatchschema/schema.go` `errAs` helper's doc comment still references `strings` import that was removed in the F01 roundtable-attempt-1 fix. Roundtable landing review attempt 2 flagged as advisory (Claude). Cleanup is a one-line edit.
 
+- [ ] **`prompt.go` redundant rune lower-bound check.** `internal/roundtable/dispatchschema/prompt.go:93` uses `r >= 0x00 && r <= 0x1F` — the lower bound is tautological for Go `rune` (always ≥ 0). Drop to `r <= 0x1F`. Code-reviewer flagged as NITPICK during F02; non-blocking.
+
+- [ ] **U+2028 / U+2029 line separators in prompt sanitize.** `internal/roundtable/dispatchschema/prompt.go` sanitize pass covers ASCII control chars 0x00–0x1F but not Unicode line separators U+2028 / U+2029. Markdown fences only close on LF (per CommonMark), so this isn't a current vulnerability — but if downstream consumers ever interpret these as line breaks, the sanitize layer should cover them. Defense-in-depth, deferred from F02 safety audit.
+
+- [ ] **Safety-auditor agent template has placeholder invariants.** `.claude/agents/safety-auditor.md` references `[YOUR INVARIANT RULE 1-3]` placeholders that were never replaced. Causes the agent to fail-closed on tight-prompt re-reviews even when the underlying code is fine (observed during F02 roundtable retry — agent passed thoroughly on attempt 1 but fail-closed on the mechanical-fix retry). Should be replaced with this project's actual invariant rules once INV-001 (parser bounded-allocation contract) is registered.
+
 ## Post-MVP
 
 <!-- Improvements to make after core features land -->
