@@ -23,3 +23,8 @@
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
+
+## Doc conventions
+
+- **`docs/superpowers/` is transitional.** Anything under that path is in-flight scaffolding for an active design or workflow — not durable architectural truth. Treat it as scratch: acceptable to delete once the design has landed and the rationale lives in code/ARCHITECTURE.md or in a permanent spec elsewhere. Do not point load-bearing code at files under this path; if you must, log it in `docs/exec-plans/tech-debt-tracker.md` with the migration plan.
+- **Snapshot, not timeline.** `docs/` describes current state and active future intent. Phase plans, dogfood results, post-mortems, completed reviews → belong in `git log`, not in `docs/`. KEEL principle P5.
