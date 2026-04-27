@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "id": "dispatch-structured-output",
+  "title": "Dispatch tools accept optional schema for structured output",
+  "motivation": "Roundtable dispatch tools currently emit freeform markdown from each panelist. Extracting placement votes, confidence ratings, or counter-arguments across 7 panelists requires manual re-reading. Allowing callers to pass an optional JSON-Schema-lite shape lets panelists return validated structured output, making jq-style extraction trivial. When the parameter is omitted, behavior is unchanged — current freeform markdown remains the default — so the feature is purely additive.",
+  "scope": {
+    "included": [
+      "JSON-Schema-lite subset definition and parser supporting typed scalar fields with optional enum constraints.",
+      "Schema-to-prompt-suffix construction so panelists know what shape to emit.",
+      "Per-panelist response validation against the schema with structured error surfacing on failure.",
+      "Wiring the schema parameter into all five dispatch MCP tools (canvass, deliberate, blueprint, critique, crosscheck)."
+    ],
+    "excluded": [
+      "Full JSON Schema support (only a typed-scalar + enum subset is in scope).",
+      "Silent retry on validation failure — failures surface raw text plus structured error to the caller.",
+      "CLI flag surface — dispatch tools are MCP-invoked; the parameter is an MCP input field, not a CLI flag."
+    ]
+  },
+  "design_facts": [
+    {
+      "topic": "Schema subset",
+      "decision": "Support typed scalar fields (string/number/bool) with optional enum constraints, modeled after the feedback example {placement: a|b|c|d, deliverable: markdown, confidence: low|med|high, counter_argument: text}.",
+      "rationale": "Minimum viable subset to cover the placement-vote / confidence / counter-argument extraction use case driving the request."
+    },
+    {
+      "topic": "Backwards compatibility",
+      "decision": "When schema is omitted, dispatch tools behave exactly as today (freeform markdown).",
+      "rationale": "Adding the param must be non-breaking for existing callers."
+    },
+    {
+      "topic": "Validation failure handling",
+      "decision": "On validation failure, surface raw panelist text with a structured error; do not silently retry.",
+      "rationale": null
+    },
+    {
+      "topic": "Invocation surface",
+      "decision": "Schema is an MCP tool input parameter, not a CLI flag — dispatch tools are MCP-invoked only.",
+      "rationale": null
+    },
+    {
+      "topic": "Output fence convention",
+      "decision": "Panelists wrap their structured response in a fenced JSON code block; the validator extracts the last fenced JSON block in the response.",
+      "rationale": "Aligns with how Claude/Gemini/Codex reliably emit JSON; permits panelists to write narrative before the final payload."
+    },
+    {
+      "topic": "Result wire-format extension",
+      "decision": "Add Result.Structured (*json.RawMessage, omitempty) and Result.StructuredError (*ValidationError, omitempty); both nil on the omitted-schema path so the wire format is byte-equivalent to current output.",
+      "rationale": "Keeps backwards compatibility verifiable by byte-equivalence rather than shape-equivalence."
+    },
+    {
+      "topic": "MCP input-schema typing",
+      "decision": "MCP tool input schemas advertise the schema field as a free-form object; the JSON-Schema-lite subset is enforced at parse time by the parser, not at the MCP boundary.",
+      "rationale": "Avoids forcing every MCP client to import a schema-of-schema for marginal validation benefit."
+    }
+  ],
+  "invariants_exercised": [],
+  "features": [
+    {
+      "id": "F01",
+      "title": "JSON-Schema-lite subset parser",
+      "layer": "foundation",
+      "needs": [],
+      "contract": {
+        "package_path": "internal/roundtable/dispatchschema",
+        "entry_point": "Parse(raw json.RawMessage) (*Schema, error)",
+        "supported_constructs": "Top-level object with typed scalar fields (string, number, boolean); optional enum constraint on string fields; optional required: [field, ...] array.",
+        "rejection_modes": "Returns a descriptive error for nested objects, arrays, anyOf/oneOf/allOf, $ref, format, additionalProperties: true, or any keyword outside the supported subset."
+      },
+      "oracle": {
+        "type": "unit",
+        "tooling": "Go test (go test ./...)",
+        "assertions": [
+          "Parser accepts a schema object with typed scalar fields and returns a parsed schema value without error.",
+          "Parser accepts enum constraints on string fields per the feedback example shape (placement: a|b|c|d, confidence: low|med|high) and exposes the allowed values for downstream validation.",
+          "Parser rejects schema constructs outside the supported subset with a descriptive error.",
+          "Parser rejects nested objects, arrays, $ref, anyOf/oneOf/allOf, format, and additionalProperties:true with errors that name the offending construct."
+        ]
+      }
+    },
+    {
+      "id": "F02",
+      "title": "Schema-to-prompt-suffix builder",
+      "layer": "service",
+      "needs": ["F01"],
+      "contract": {
+        "entry_point": "BuildPromptSuffix(schema *Schema) string",
+        "output_fence_style": "Fenced JSON code block (```json ... ```). Validator extracts the last fenced JSON block in the response — panelists may write narrative before the final payload.",
+        "suffix_contents": "Enumerates each schema field with type; for enum fields, lists allowed values verbatim; explicit instruction to emit one final fenced JSON block matching the schema.",
+        "determinism": "Same parsed schema input produces byte-equivalent suffix output."
+      },
+      "oracle": {
+        "type": "unit",
+        "tooling": "Go test (go test ./...)",
+        "assertions": [
+          "Given a parsed schema with enum-constrained fields, the builder produces a prompt suffix that names every field and its allowed values.",
+          "Given a parsed schema with free-text fields, the builder produces a prompt suffix that names every field and indicates free-text expected.",
+          "Suffix instructs panelists to wrap their structured response in a single fenced JSON code block; downstream validation treats the last such block as the canonical payload.",
+          "Builder is deterministic — repeated invocation with the same parsed schema returns byte-identical suffix output."
+        ]
+      }
+    },
+    {
+      "id": "F03",
+      "title": "Per-panelist response validator with structured error surfacing",
+      "layer": "service",
+      "needs": ["F01", "F02"],
+      "contract": {
+        "entry_point": "Validate(response string, schema *Schema) (parsed json.RawMessage, vErr *ValidationError)",
+        "result_extension": "Two new fields on Result: Structured *json.RawMessage (json:\"structured,omitempty\") and StructuredError *ValidationError (json:\"structured_error,omitempty\"). Both nil when no schema was supplied — no wire-format change for the omitted-schema path.",
+        "validation_input": "Operates on the last fenced JSON code block in response (per F02). If no fenced block is found, emits a missing_fence error.",
+        "error_shape": "ValidationError{ Kind: string, Field: string, Message: string, Excerpt: string }. Kind in {\"missing_fence\", \"json_parse\", \"schema_violation\"}. Field is a dotted path (empty for top-level errors). Excerpt is at most 200 characters of the offending text.",
+        "no_retry": "Validation failure leaves Result.Response unchanged, Result.Structured nil, and Result.StructuredError populated; dispatch continues with no resend and no fallback prompt."
+      },
+      "oracle": {
+        "type": "unit",
+        "tooling": "Go test (go test ./...)",
+        "assertions": [
+          "Given a panelist response that conforms to the schema, the validator returns the parsed structured value attached to the per-panelist result.",
+          "Given a panelist response that violates the schema, the validator surfaces the original raw text plus a structured error indicating which field(s) failed; no retry is invoked.",
+          "On validation failure, Result.Response retains the raw text unchanged, Result.Structured is nil, and Result.StructuredError carries Kind/Field/Message/Excerpt describing the failure.",
+          "When the dispatcher invokes the validator with a nil schema (omitted-schema path), the validator is not called; Result.Structured and Result.StructuredError remain nil and the wire format is byte-equivalent to current dispatch output."
+        ]
+      }
+    },
+    {
+      "id": "F04",
+      "title": "Wire schema parameter into all five dispatch MCP tools",
+      "layer": "service",
+      "needs": ["F01", "F02", "F03"],
+      "contract": {
+        "mcp_param_name": "schema",
+        "mcp_param_type": "object (free-form at the MCP input-schema level). The JSON-Schema-lite subset constraint is enforced at parse time by the parser; surfacing it at the MCP level would force every client to import the same schema-of-schema for marginal benefit.",
+        "affected_tools": "roundtable-canvass, roundtable-deliberate, roundtable-blueprint, roundtable-critique, roundtable-crosscheck",
+        "default_when_omitted": "Parameter is optional. When absent: no prompt-suffix change, validator not invoked, Structured and StructuredError fields absent from per-panelist results.",
+        "backwards_compat_bar": "Byte-equivalent JSON output on the omitted-schema path. Verified by (a) the existing integration tests pass unmodified, (b) one new regression test asserts byte-equivalence between current dispatch and schema-omitted dispatch on identical inputs.",
+        "error_propagation": "A schema that fails parsing causes the dispatch tool to return an MCP-level error before any backend is invoked (fast fail; never partial dispatch with an invalid schema)."
+      },
+      "oracle": {
+        "type": "integration",
+        "setup": "MCP server built from internal/stdiomcp/server.go with all five dispatch tools registered.",
+        "tooling": "Go integration tests against the MCP server entry point.",
+        "assertions": [
+          "Each of the five dispatch MCP tools (roundtable-canvass, roundtable-deliberate, roundtable-blueprint, roundtable-critique, roundtable-crosscheck) accepts an optional schema input parameter declared in its MCP tool input schema.",
+          "When the schema parameter is omitted, each dispatch tool produces freeform markdown output identical to current behavior (backwards-compatible).",
+          "When the schema parameter is supplied, each dispatch tool composes the prompt suffix from F02, validates panelist responses via F03, and returns structured per-panelist values on the DispatchResult.",
+          "Backwards-compat regression: a new integration test asserts byte-equivalent JSON output between dispatch with schema omitted and current dispatch on identical inputs across all five tools.",
+          "When a malformed schema is supplied (fails the parser), the dispatch tool returns an MCP error before any backend is invoked."
+        ]
+      }
+    }
+  ]
+}

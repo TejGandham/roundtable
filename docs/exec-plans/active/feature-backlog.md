@@ -41,6 +41,11 @@ Each feature: read spec → write test → write code → verify.
   Spec: [spec:section] | Needs: F02, F03
   Test: [specific test criteria]
 
+- [ ] **F01 JSON-Schema-lite subset parser**
+  PRD: dispatch-structured-output
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
+
 ## Service
 
 <!-- CUSTOMIZE: Features that build on foundation — services, processes, coordination -->
@@ -48,6 +53,24 @@ Each feature: read spec → write test → write code → verify.
 - [ ] **F05 [YOUR SERVICE FEATURE]**
   Spec: [spec:section] | Needs: F04
   Test: [specific test criteria]
+
+- [ ] **F02 Schema-to-prompt-suffix builder**
+  Needs: F01
+  PRD: dispatch-structured-output
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
+
+- [ ] **F03 Per-panelist response validator with structured error surfacing**
+  Needs: F01, F02
+  PRD: dispatch-structured-output
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
+
+- [ ] **F04 Wire schema parameter into all five dispatch MCP tools**
+  Needs: F01, F02, F03
+  PRD: dispatch-structured-output
+  <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 5d2e0c8e3f1a4b9c -->
 
 ## UI
 
