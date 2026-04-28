@@ -3,6 +3,8 @@ package roundtable
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/TejGandham/roundtable/internal/roundtable/dispatchschema"
 )
 
 type Result struct {
@@ -18,6 +20,18 @@ type Result struct {
 	StderrTruncated bool           `json:"stderr_truncated"`
 	SessionID       *string        `json:"session_id"`
 	Metadata        map[string]any `json:"metadata,omitempty"`
+	// Structured carries the parsed JSON payload produced by
+	// dispatchschema.Validate when a schema was supplied for this dispatch.
+	// VALUE-type json.RawMessage (not pointer): json.RawMessage is already
+	// a slice and omitempty elides it when nil, avoiding a double indirection.
+	// Discipline guardrail: never assigned a literal-null payload by the
+	// validator — a null-parse result is surfaced as StructuredError instead.
+	Structured json.RawMessage `json:"structured,omitempty"`
+	// StructuredError carries per-panelist validation failure metadata when
+	// dispatchschema.Validate rejects the panelist's response. Pointer so
+	// omitempty elides it on the success / nil-schema path. Same egress
+	// policy as Response — Excerpt may contain sensitive panelist content.
+	StructuredError *dispatchschema.ValidationError `json:"structured_error,omitempty"`
 }
 
 func NotFoundResult(providerID, model string) *Result {
