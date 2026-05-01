@@ -72,7 +72,7 @@ The Codex app-server is launched lazily under a `sync.Once` on the first tool ca
 
 | File | Responsibility |
 |-|-|
-| `server.go` | MCP tool registration against `mcp.Server`, 5s keepalive progress notifications, tool-handler panic recovery, server startup logging. |
+| `server.go` | MCP tool registration against `mcp.Server`, 5s keepalive progress notifications, tool-handler panic recovery, server startup logging; schema fast-fail parse before dispatch closure (invalid `input.Schema` → `IsError: true`, no backend invoked). |
 | `types.go` | `ToolSpec`, `ToolInput`, `ToolRequest`, `DispatchFunc` — transport-neutral contracts shared with the domain layer. |
 | `discipline.go` | Structured-output discipline helpers (prompt suffix handling). |
 
@@ -116,12 +116,12 @@ Step-by-step for a single `roundtable-canvass` tool call:
 
 1. **MCP frame arrives** on stdin. The go-sdk stdio transport parses it as an `mcp.CallToolRequest`.
 2. **Tool handler fires** in `stdiomcp/server.go` (registered by `registerTool`). It captures the progress token and launches a worker goroutine; the main goroutine selects on the worker's done channel, `ctx.Done()`, and a 5s ticker emitting keepalive progress notifications. An immediate `notify(0)` on tool-call start saves clients that default to a short deadline.
-3. **DispatchFunc is invoked** (`buildStdioDispatch` in `main.go`). It parses the `agents` JSON, splits `files` on commas, resolves the timeout (default 900s, capped at 900s), builds a `roundtable.ToolRequest`, and calls `roundtable.Run`.
+3. **DispatchFunc is invoked** (`buildStdioDispatch` in `main.go`). It parses the `agents` JSON, splits `files` on commas, resolves the timeout (default 900s, capped at 900s); if `input.Schema` is non-empty and non-null (after `bytes.TrimSpace`), calls `dispatchschema.Parse` and returns immediately with `fmt.Errorf("invalid schema parameter: %w", err)` on parse failure (surfaces as `IsError: true` before any backend is invoked); builds a `roundtable.ToolRequest` (carrying the parsed `*Schema` when present), and calls `roundtable.Run`.
 4. **`Run` resolves agents** — explicit `Agents` > `ROUNDTABLE_DEFAULT_AGENTS` env > the default three (`gemini`, `codex`, `claude`).
 5. **Per-agent config** — for each agent, `Run` resolves role (agent spec > per-CLI > tool default > `"default"`), model, and resume ID; loads the role prompt via `LoadRolePrompt`; calls `AssemblePrompt(rolePrompt, basePrompt+suffix, files)`; finds the matching backend by provider id.
 6. **Probe phase** — one goroutine per agent calls `backend.Healthy(ctx)` with `ProbeTimeout=5s`. Results collect from a buffered channel into a fixed-index slice. `Healthy` is cheap for all backends (Codex uses a lock-free liveness check against the cached start state; subprocess backends cache `execPath` via `ResolveExecutable`).
 7. **Run phase** — for each agent that passed the probe, a goroutine calls `backend.Run(runCtx, req)` where `runCtx` has a `timeout + 30s` grace deadline. Panics are recovered into error `Result`s. Unhealthy agents get `ProbeFailedResult` or `NotFoundResult`.
-8. **Result aggregation** — `Run` assembles a `map[string]*Result` keyed by agent name, calls `BuildMeta` to compute max elapsed, files referenced, and per-agent role names, and JSON-marshals a `DispatchResult`.
+8. **Result aggregation** — `Run` assembles a `map[string]*Result` keyed by agent name. When `req.Schema != nil`, iterates results and calls `dispatchschema.Validate(result.Response, req.Schema)` for each result with `Status == "ok"`, populating `result.Structured` (parsed payload) on success or `result.StructuredError` (`Kind/Field/Message/Excerpt`) on failure. Non-`ok` statuses skip validation; both fields stay nil. Then calls `BuildMeta` and JSON-marshals a `DispatchResult`.
 9. **Response** — the bytes are sent back through the worker's done channel to the tool handler, wrapped in an `mcp.CallToolResult` with a single `TextContent`, and written out over stdio.
 
 If the context is cancelled (client disconnect or deadline), the handler returns an error result. Each backend's `Run` is expected to honor `ctx.Done()` and return a `timeout` or `error` `Result`.
@@ -309,9 +309,11 @@ Go test layout:
 |File|Coverage|
 |-|-|
 |`internal/stdiomcp/server_test.go`|Tool registration, handler dispatch wiring, panic recovery.|
+|`internal/stdiomcp/server_schema_test.go`|F04 schema parameter integration: all five tools accept optional `schema`, malformed-schema fast-fail (`IsError: true`, `callCount == 0`), absent/null/whitespace detection, omitted-schema byte-equivalence regression.|
 |`internal/stdiomcp/discipline_test.go`|Structured-output discipline.|
 |`internal/stdiomcp/e2e_test.go`|End-to-end stdio MCP flow with mock dispatch.|
 |`internal/roundtable/run_test.go`|`Run()` with mock backends, agent resolution, per-agent roles, probe failure.|
+|`internal/roundtable/run_schema_test.go`|F04 Schema threading inside `Run`: suffix append with `\n\n` separator, per-panelist Validate gate (`req.Schema != nil && Status == "ok"`), non-ok statuses skip validation, omitted-schema byte-equivalence + no-`structured`-keys regression, race-detector-clean concurrent shared `*Schema`.|
 |`internal/roundtable/runner_test.go`|Fake CLI scripts, timeout kill, truncation.|
 |`internal/roundtable/gemini_test.go`|Arg ordering, JSON + stderr fallback, rate-limit detection.|
 |`internal/roundtable/claude_test.go`|Arg ordering, ANSI stripping, `is_error`.|

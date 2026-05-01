@@ -1,6 +1,9 @@
 package stdiomcp
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 // ToolInput is the MCP tool input schema shared by all five Roundtable
 // tools.
@@ -15,6 +18,13 @@ type ToolInput struct {
 	CodexResume  string `json:"codex_resume,omitempty"`
 	ClaudeResume string `json:"claude_resume,omitempty"`
 	Agents       string `json:"agents,omitempty"`
+	// Schema is an optional JSON-Schema-lite document (per F01) carried
+	// verbatim from the MCP wire as RawMessage. Absent / null / empty is
+	// treated as "no schema": no parse, no prompt suffix append, no
+	// validation. The dispatch glue (cmd/roundtable/main.go) parses this
+	// before invoking roundtable.Run; a parse failure surfaces as
+	// IsError: true before any backend is invoked.
+	Schema json.RawMessage `json:"schema,omitempty"`
 }
 
 type ToolSpec struct {

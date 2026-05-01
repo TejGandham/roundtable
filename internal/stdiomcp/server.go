@@ -1,6 +1,7 @@
 package stdiomcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/TejGandham/roundtable/internal/roundtable/dispatchschema"
 )
 
 const keepaliveInterval = 5 * time.Second
@@ -58,7 +61,8 @@ var toolInputSchema = json.RawMessage(`{
     "gemini_resume": {"type": "string"},
     "codex_resume": {"type": "string"},
     "claude_resume": {"type": "string"},
-    "agents": {"type": "string"}
+    "agents": {"type": "string"},
+    "schema": {"type": ["object", "null"]}
   },
   "required": ["prompt"]
 }`)
@@ -94,6 +98,28 @@ func registerTool(srv *mcp.Server, spec ToolSpec, dispatch DispatchFunc, logger 
 		InputSchema: toolInputSchema,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ToolInput) (*mcp.CallToolResult, any, error) {
 		token := req.Params.GetProgressToken()
+
+		// F04 schema fast-fail: parse the optional schema parameter BEFORE
+		// invoking dispatch so a malformed schema surfaces as IsError: true
+		// with no backend invocation (PRD oracle assertion 4). Absent /
+		// null / empty bytes are treated as "no schema"; other JSON
+		// literals (false / 0 / [] / "" / bare {}) reach Parse and surface
+		// here. The dispatch closure (buildStdioDispatch) re-parses the
+		// validated bytes to populate ToolRequest.Schema; the redundancy
+		// is intentional and idempotent — Parse is a pure function on
+		// canonical bytes.
+		trimmedSchema := bytes.TrimSpace(input.Schema)
+		if len(trimmedSchema) != 0 && !bytes.Equal(trimmedSchema, []byte("null")) {
+			if _, err := dispatchschema.Parse(trimmedSchema); err != nil {
+				logger.Error("schema parse error", "tool", spec.Name, "error", err)
+				return &mcp.CallToolResult{
+					IsError: true,
+					Content: []mcp.Content{&mcp.TextContent{
+						Text: fmt.Sprintf("roundtable dispatch error: invalid schema parameter: %v", err),
+					}},
+				}, nil, nil
+			}
+		}
 
 		type callResult struct {
 			text    string

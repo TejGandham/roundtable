@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/TejGandham/roundtable/internal/roundtable/dispatchschema"
 )
 
 const (
@@ -52,6 +54,14 @@ type ToolRequest struct {
 
 	RolesDir        string
 	ProjectRolesDir string
+
+	// Schema is the parsed JSON-Schema-lite document supplied by the MCP
+	// caller (F04). The dispatch glue parses ToolInput.Schema before
+	// invoking Run so a parse failure fast-fails before any backend is
+	// dispatched. nil means "no schema": Run skips the F02 prompt suffix
+	// append and the F03 per-panelist Validate gate. Read-only after
+	// Parse — shared across N panelist goroutines without synchronization.
+	Schema *dispatchschema.Schema
 }
 
 var reservedNames = map[string]bool{"meta": true}
@@ -250,6 +260,13 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 	if req.PromptSuffix != "" {
 		basePrompt += req.PromptSuffix
 	}
+	// F04 schema suffix: append the F02 BuildPromptSuffix output when a
+	// schema was supplied. Unconditional "\n\n" prefix because existing
+	// PromptSuffix values end with non-newline prose and BuildPromptSuffix
+	// does not self-pad.
+	if req.Schema != nil {
+		basePrompt += "\n\n" + dispatchschema.BuildPromptSuffix(req.Schema)
+	}
 
 	type agentConfig struct {
 		spec    AgentSpec
@@ -391,6 +408,24 @@ func Run(ctx context.Context, req ToolRequest, backends map[string]Backend) ([]b
 	for range runCount {
 		rr := <-runCh
 		results[rr.name] = rr.result
+	}
+
+	// F04 per-panelist Validate gate: only when a schema was supplied AND
+	// the panelist's status is "ok". Six non-ok statuses (error,
+	// rate_limited, timeout, terminated, not_found, probe_failed) leave
+	// Structured / StructuredError nil so omitempty elides them.
+	if req.Schema != nil {
+		for _, result := range results {
+			if result == nil || result.Status != "ok" {
+				continue
+			}
+			parsed, vErr := dispatchschema.Validate(result.Response, req.Schema)
+			if vErr != nil {
+				result.StructuredError = vErr
+				continue
+			}
+			result.Structured = parsed
+		}
 	}
 
 	dr := &DispatchResult{
