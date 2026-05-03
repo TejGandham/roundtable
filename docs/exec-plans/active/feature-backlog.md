@@ -28,6 +28,10 @@ Each feature: read spec → write test → write code → verify.
   <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
   <!-- SOURCE: 21dcf517a6d20641 -->
 
+- [ ] **F09 request_extras parser field on providerJSON with reserved-key rejection**
+  PRD: provider-request-extras
+  <!-- SOURCE: orphan-prd-reconciliation -->
+
 ## Service
 
 - [x] **F02 Schema-to-prompt-suffix builder**
@@ -64,10 +68,19 @@ Each feature: read spec → write test → write code → verify.
   <!-- DRAFTED: 2026-04-27 by backlog-drafter; 0 markers remain -->
   <!-- SOURCE: 21dcf517a6d20641 -->
 
+- [ ] **F10 request_extras body merge in OpenAIHTTPBackend.Run with reserved-key precedence**
+  Needs: F09
+  PRD: provider-request-extras
+  <!-- SOURCE: orphan-prd-reconciliation -->
+
 ## UI
 
 (none yet)
 
 ## Cross-cutting
 
-(none yet)
+- [ ] **F11 INSTALL.md ROUNDTABLE_PROVIDERS reference and Fireworks DeepSeek V4 max-thinking example**
+  Needs: F09, F10
+  PRD: provider-request-extras
+  <!-- SOURCE: orphan-prd-reconciliation -->
+
