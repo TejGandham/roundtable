@@ -1,7 +1,6 @@
 package stdiomcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -101,24 +100,19 @@ func registerTool(srv *mcp.Server, spec ToolSpec, dispatch DispatchFunc, logger 
 
 		// F04 schema fast-fail: parse the optional schema parameter BEFORE
 		// invoking dispatch so a malformed schema surfaces as IsError: true
-		// with no backend invocation (PRD oracle assertion 4). Absent /
-		// null / empty bytes are treated as "no schema"; other JSON
-		// literals (false / 0 / [] / "" / bare {}) reach Parse and surface
-		// here. The dispatch closure (buildStdioDispatch) re-parses the
-		// validated bytes to populate ToolRequest.Schema; the redundancy
-		// is intentional and idempotent — Parse is a pure function on
-		// canonical bytes.
-		trimmedSchema := bytes.TrimSpace(input.Schema)
-		if len(trimmedSchema) != 0 && !bytes.Equal(trimmedSchema, []byte("null")) {
-			if _, err := dispatchschema.Parse(trimmedSchema); err != nil {
-				logger.Error("schema parse error", "tool", spec.Name, "error", err)
-				return &mcp.CallToolResult{
-					IsError: true,
-					Content: []mcp.Content{&mcp.TextContent{
-						Text: fmt.Sprintf("roundtable dispatch error: invalid schema parameter: %v", err),
-					}},
-				}, nil, nil
-			}
+		// with no backend invocation (PRD oracle assertion 4). SafeParse
+		// owns the byte cap, the trim, and the absent/null/empty short-
+		// circuit ((nil, nil) for "no schema"); the dispatch closure
+		// (buildStdioDispatch) re-parses the validated bytes to populate
+		// ToolRequest.Schema, which is intentional and idempotent.
+		if _, err := dispatchschema.SafeParse(input.Schema); err != nil {
+			logger.Error("schema parse error", "tool", spec.Name, "error", err)
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{
+					Text: fmt.Errorf("roundtable dispatch error: invalid schema parameter: %w", err).Error(),
+				}},
+			}, nil, nil
 		}
 
 		type callResult struct {

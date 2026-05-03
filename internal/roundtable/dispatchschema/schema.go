@@ -18,6 +18,52 @@ import (
 	"fmt"
 )
 
+// Bounded-allocation caps on the lite-subset parser. Enforced inside
+// Parse (count caps) and SafeParse (byte cap). See F12 PRD.
+const (
+	// MaxProperties caps the number of declared top-level properties.
+	MaxProperties = 256
+	// MaxEnumEntries caps the number of values in a single field's enum.
+	MaxEnumEntries = 256
+	// MaxRequiredEntries caps the length of the top-level "required" array.
+	MaxRequiredEntries = 256
+	// MaxSchemaBytes caps the raw byte length of a schema document at the
+	// untrusted-input boundary (SafeParse).
+	MaxSchemaBytes = 65536
+)
+
+// ParseError describes a Parse failure. Distinct from ValidationError —
+// ValidationError reports per-panelist response failures; ParseError
+// reports schema-document failures. Schema bytes are attacker-controlled
+// at the MCP boundary, so ParseError deliberately omits any field that
+// would echo schema content (info-leak audit item).
+//
+// Callers discriminate via errors.As(err, &pErr) then branch on pErr.Kind.
+// The Cause field carries the inner error (if any) so errors.As can
+// reach through to e.g. *json.SyntaxError.
+type ParseError struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+	Cause   error  `json:"-"` // optional inner error; not serialized
+}
+
+// Error returns the human-readable message. Inner errors are not
+// re-stringified here; the Cause field carries them for errors.As/Is.
+func (e *ParseError) Error() string { return e.Message }
+
+// Unwrap exposes the inner error so errors.As / errors.Is can walk
+// through ParseError to e.g. *json.SyntaxError.
+func (e *ParseError) Unwrap() error { return e.Cause }
+
+// Kind values for ParseError. KindBoundExceeded covers all four caps
+// (byte cap + three count caps); the Message field carries the specific
+// cap identity. KindMalformed is the umbrella for everything else
+// Parse rejects.
+const (
+	KindBoundExceeded = "bound_exceeded"
+	KindMalformed     = "malformed"
+)
+
 // Schema is the parsed representation of a JSON-Schema-lite document.
 // Field order matches the property order in the input JSON.
 type Schema struct {
@@ -83,12 +129,44 @@ var allowedScalarTypes = map[string]struct{}{
 	"boolean": {},
 }
 
+// SafeParse is the sanctioned entry point for schemas sourced from
+// untrusted bytes (MCP input, network, file — anything not a literal
+// in our own source). It enforces MaxSchemaBytes on the RAW (pre-trim)
+// length to bound allocation against whitespace-flood DoS, then trims
+// surrounding whitespace and short-circuits absent / null / empty input
+// to (nil, nil) — the canonical "no schema" sentinel.
+//
+// The byte cap is measured BEFORE bytes.TrimSpace.
+//
+// Return semantics:
+//   - (nil, nil)                                       — no schema (empty / "null" / whitespace-only after trim)
+//   - (nil, *ParseError{KindBoundExceeded, ...})       — byte cap or count cap violated
+//   - (nil, *ParseError{KindMalformed, ..., Cause})    — any other Parse rejection
+//   - (*Schema, nil)                                   — success
+func SafeParse(raw json.RawMessage) (*Schema, error) {
+	if len(raw) > MaxSchemaBytes {
+		return nil, &ParseError{
+			Kind:    KindBoundExceeded,
+			Message: fmt.Sprintf("schema exceeds maximum size of %d bytes", MaxSchemaBytes),
+		}
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil
+	}
+	return Parse(trimmed)
+}
+
 // Parse decodes raw into a *Schema, rejecting any construct outside the
 // supported lite subset. The returned error names the offending
 // construct (keyword, field, or type) so callers can route on it.
+//
+// Parse expects already-trimmed, non-empty bytes from a trusted
+// in-process source. Untrusted input MUST go through SafeParse, which
+// enforces the byte cap and short-circuits absent/null/empty input.
 func Parse(raw json.RawMessage) (*Schema, error) {
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("dispatchschema: empty input")
+		return nil, &ParseError{Kind: KindMalformed, Message: "dispatchschema: empty input"}
 	}
 
 	// Two-stage decode (mirrors internal/roundtable/result.go:80-101):
@@ -102,7 +180,10 @@ func Parse(raw json.RawMessage) (*Schema, error) {
 	}
 	if top == nil {
 		// JSON `null` decodes to a nil map without error.
-		return nil, fmt.Errorf("dispatchschema: top-level value must be an object, got null")
+		return nil, &ParseError{
+			Kind:    KindMalformed,
+			Message: "dispatchschema: top-level value must be an object, got null",
+		}
 	}
 
 	// Reject any unknown / unsupported top-level keyword by name. This
@@ -110,27 +191,43 @@ func Parse(raw json.RawMessage) (*Schema, error) {
 	// definitions, etc., per the rejection-mode contract.
 	for kw := range top {
 		if _, ok := allowedTopLevel[kw]; !ok {
-			return nil, fmt.Errorf("dispatchschema: unsupported keyword %q at top level", kw)
+			return nil, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: unsupported keyword %q at top level", kw),
+			}
 		}
 	}
 
 	// "type" is required and must be "object".
 	rawType, ok := top["type"]
 	if !ok {
-		return nil, fmt.Errorf("dispatchschema: missing top-level %q keyword", "type")
+		return nil, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: missing top-level %q keyword", "type"),
+		}
 	}
 	var topType string
 	if err := json.Unmarshal(rawType, &topType); err != nil {
-		return nil, fmt.Errorf("dispatchschema: top-level %q must be a string: %w", "type", err)
+		return nil, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: top-level %q must be a string: %v", "type", err),
+			Cause:   err,
+		}
 	}
 	if topType != "object" {
-		return nil, fmt.Errorf("dispatchschema: top-level type must be %q, got %q", "object", topType)
+		return nil, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: top-level type must be %q, got %q", "object", topType),
+		}
 	}
 
 	// "properties" is required (we accept empty {} but require the key).
 	rawProps, ok := top["properties"]
 	if !ok {
-		return nil, fmt.Errorf("dispatchschema: missing top-level %q keyword", "properties")
+		return nil, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: missing top-level %q keyword", "properties"),
+		}
 	}
 
 	fields, err := parseProperties(rawProps)
@@ -159,27 +256,45 @@ func parseProperties(raw json.RawMessage) ([]Field, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	tok, err := dec.Token()
 	if err != nil {
-		return nil, fmt.Errorf("dispatchschema: %q must be an object: %w", "properties", err)
+		return nil, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: %q must be an object: %v", "properties", err),
+			Cause:   err,
+		}
 	}
 	delim, ok := tok.(json.Delim)
 	if !ok || delim != '{' {
-		return nil, fmt.Errorf("dispatchschema: %q must be an object", "properties")
+		return nil, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: %q must be an object", "properties"),
+		}
 	}
 
 	var fields []Field
 	for dec.More() {
 		nameTok, err := dec.Token()
 		if err != nil {
-			return nil, fmt.Errorf("dispatchschema: malformed %q object: %w", "properties", err)
+			return nil, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: malformed %q object: %v", "properties", err),
+				Cause:   err,
+			}
 		}
 		name, ok := nameTok.(string)
 		if !ok {
-			return nil, fmt.Errorf("dispatchschema: malformed %q object key", "properties")
+			return nil, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: malformed %q object key", "properties"),
+			}
 		}
 
 		var body json.RawMessage
 		if err := dec.Decode(&body); err != nil {
-			return nil, fmt.Errorf("dispatchschema: malformed value for field %q: %w", name, err)
+			return nil, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: malformed value for field %q: %v", name, err),
+				Cause:   err,
+			}
 		}
 
 		field, err := parseField(name, body)
@@ -187,6 +302,16 @@ func parseProperties(raw json.RawMessage) ([]Field, error) {
 			return nil, err
 		}
 		fields = append(fields, field)
+
+		// Properties cap: fail-fast at N+1. Reporting len(fields) after
+		// the append yields the over-cap count (e.g. 257 with max 256)
+		// per the F12 design contract.
+		if n := len(fields); n > MaxProperties {
+			return nil, &ParseError{
+				Kind:    KindBoundExceeded,
+				Message: fmt.Sprintf("dispatchschema: %q has too many entries: %d (max %d)", "properties", n, MaxProperties),
+			}
+		}
 	}
 
 	// Consume closing '}'. Errors here only matter for malformed JSON,
@@ -198,15 +323,25 @@ func parseProperties(raw json.RawMessage) ([]Field, error) {
 // parseField validates a single property descriptor.
 func parseField(name string, raw json.RawMessage) (Field, error) {
 	if len(raw) == 0 || string(raw) == "null" {
-		return Field{}, fmt.Errorf("dispatchschema: field %q has null or empty descriptor", name)
+		return Field{}, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: field %q has null or empty descriptor", name),
+		}
 	}
 
 	var body map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &body); err != nil {
-		return Field{}, fmt.Errorf("dispatchschema: field %q descriptor must be an object: %w", name, err)
+		return Field{}, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: field %q descriptor must be an object: %v", name, err),
+			Cause:   err,
+		}
 	}
 	if body == nil {
-		return Field{}, fmt.Errorf("dispatchschema: field %q descriptor must be an object, got null", name)
+		return Field{}, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: field %q descriptor must be an object, got null", name),
+		}
 	}
 
 	// Ordering note: when "type" is present, validate it first so that
@@ -218,10 +353,17 @@ func parseField(name string, raw json.RawMessage) (Field, error) {
 	if rawType, ok := body["type"]; ok {
 		var typ string
 		if err := json.Unmarshal(rawType, &typ); err != nil {
-			return Field{}, fmt.Errorf("dispatchschema: field %q has non-string %q: %w", name, "type", err)
+			return Field{}, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: field %q has non-string %q: %v", name, "type", err),
+				Cause:   err,
+			}
 		}
 		if _, ok := allowedScalarTypes[typ]; !ok {
-			return Field{}, fmt.Errorf("dispatchschema: field %q has unsupported type %q", name, typ)
+			return Field{}, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: field %q has unsupported type %q", name, typ),
+			}
 		}
 	}
 
@@ -231,29 +373,56 @@ func parseField(name string, raw json.RawMessage) (Field, error) {
 	// signal we have, so the error names the offending keyword verbatim.
 	for kw := range body {
 		if _, ok := allowedFieldKeys[kw]; !ok {
-			return Field{}, fmt.Errorf("dispatchschema: unsupported keyword %q at field %q", kw, name)
+			return Field{}, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: unsupported keyword %q at field %q", kw, name),
+			}
 		}
 	}
 
 	// "type" is required for accepted fields.
 	rawType, ok := body["type"]
 	if !ok {
-		return Field{}, fmt.Errorf("dispatchschema: field %q missing %q keyword", name, "type")
+		return Field{}, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: field %q missing %q keyword", name, "type"),
+		}
 	}
 	var typ string
 	if err := json.Unmarshal(rawType, &typ); err != nil {
-		return Field{}, fmt.Errorf("dispatchschema: field %q has non-string %q: %w", name, "type", err)
+		return Field{}, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: field %q has non-string %q: %v", name, "type", err),
+			Cause:   err,
+		}
 	}
 
 	field := Field{name: name, typ: typ}
 
 	if rawEnum, ok := body["enum"]; ok {
 		if typ != "string" {
-			return Field{}, fmt.Errorf("dispatchschema: field %q has enum on non-string type %q", name, typ)
+			return Field{}, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: field %q has enum on non-string type %q", name, typ),
+			}
 		}
 		var values []string
 		if err := json.Unmarshal(rawEnum, &values); err != nil {
-			return Field{}, fmt.Errorf("dispatchschema: field %q enum must be a string array: %w", name, err)
+			return Field{}, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: field %q enum must be a string array: %v", name, err),
+				Cause:   err,
+			}
+		}
+		// Enum cap: bounded by outer MaxSchemaBytes so worst-case decode
+		// allocation is bounded; the cap is enforced post-Unmarshal
+		// because counting JSON array entries pre-decode would require
+		// re-tokenizing the input.
+		if n := len(values); n > MaxEnumEntries {
+			return Field{}, &ParseError{
+				Kind:    KindBoundExceeded,
+				Message: fmt.Sprintf("dispatchschema: field %q enum has too many entries: %d (max %d)", name, n, MaxEnumEntries),
+			}
 		}
 		field.enum = values
 	}
@@ -266,7 +435,19 @@ func parseField(name string, raw json.RawMessage) (Field, error) {
 func parseRequired(raw json.RawMessage, fields []Field) ([]string, error) {
 	var names []string
 	if err := json.Unmarshal(raw, &names); err != nil {
-		return nil, fmt.Errorf("dispatchschema: %q must be a string array: %w", "required", err)
+		return nil, &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: %q must be a string array: %v", "required", err),
+			Cause:   err,
+		}
+	}
+	// Required cap fires BEFORE the cross-ref loop so an attacker cannot
+	// inflate the cross-ref allocation via a 100K-name "required" array.
+	if n := len(names); n > MaxRequiredEntries {
+		return nil, &ParseError{
+			Kind:    KindBoundExceeded,
+			Message: fmt.Sprintf("dispatchschema: %q has too many entries: %d (max %d)", "required", n, MaxRequiredEntries),
+		}
 	}
 	declared := make(map[string]struct{}, len(fields))
 	for _, f := range fields {
@@ -274,22 +455,33 @@ func parseRequired(raw json.RawMessage, fields []Field) ([]string, error) {
 	}
 	for _, n := range names {
 		if _, ok := declared[n]; !ok {
-			return nil, fmt.Errorf("dispatchschema: %q references field %q not declared in properties", "required", n)
+			return nil, &ParseError{
+				Kind:    KindMalformed,
+				Message: fmt.Sprintf("dispatchschema: %q references field %q not declared in properties", "required", n),
+			}
 		}
 	}
 	return names, nil
 }
 
-// classifyTopLevelDecodeErr returns a descriptive error for a top-level
-// decode failure. encoding/json reports type mismatches via
+// classifyTopLevelDecodeErr returns a descriptive ParseError for a
+// top-level decode failure. encoding/json reports type mismatches via
 // *json.UnmarshalTypeError; we use that to name the actual JSON kind
 // (array, string, number, ...) so the error is useful to callers.
 func classifyTopLevelDecodeErr(raw json.RawMessage, err error) error {
 	var typeErr *json.UnmarshalTypeError
 	if errAs(err, &typeErr) {
-		return fmt.Errorf("dispatchschema: top-level value must be an object, got %s", typeErr.Value)
+		return &ParseError{
+			Kind:    KindMalformed,
+			Message: fmt.Sprintf("dispatchschema: top-level value must be an object, got %s", typeErr.Value),
+			Cause:   err,
+		}
 	}
-	return fmt.Errorf("dispatchschema: malformed input: %w", err)
+	return &ParseError{
+		Kind:    KindMalformed,
+		Message: fmt.Sprintf("dispatchschema: malformed input: %v", err),
+		Cause:   err,
+	}
 }
 
 // errAs is a tiny wrapper so we don't import "errors" just for As; keeps

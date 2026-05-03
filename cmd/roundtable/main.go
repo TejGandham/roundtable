@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -195,17 +194,12 @@ func buildStdioDispatch(
 		}
 		// F04 schema parameter: parse before invoking roundtable.Run so a
 		// malformed schema fast-fails as IsError: true with no backend
-		// invocation (PRD oracle assertion 4). Absent / null / empty bytes
-		// are treated as "no schema"; other JSON literals (false / 0 / [] /
-		// "" / bare {}) reach Parse and surface as parse errors.
-		var parsedSchema *dispatchschema.Schema
-		trimmedSchema := bytes.TrimSpace(input.Schema)
-		if len(trimmedSchema) != 0 && !bytes.Equal(trimmedSchema, []byte("null")) {
-			s, err := dispatchschema.Parse(trimmedSchema)
-			if err != nil {
-				return nil, fmt.Errorf("invalid schema parameter: %w", err)
-			}
-			parsedSchema = s
+		// invocation (PRD oracle assertion 4). SafeParse owns the byte
+		// cap, trim, and absent/null/empty short-circuit ((nil, nil)
+		// "no schema" sentinel).
+		parsedSchema, err := dispatchschema.SafeParse(input.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("invalid schema parameter: %w", err)
 		}
 		req := roundtable.ToolRequest{
 			Prompt:          input.Prompt,

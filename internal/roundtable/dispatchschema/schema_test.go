@@ -2,6 +2,8 @@ package dispatchschema_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -313,4 +315,398 @@ func stringSliceEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// --- F12: count-cap boundary tests ---
+// Assertion traceability:
+//   /features/0/oracle/assertions/2 → TestParse_PropertiesCap_BoundaryAtCap,
+//                                     TestParse_PropertiesCap_OverCapFails
+//   /features/0/oracle/assertions/0 → TestParse_EnumCap_BoundaryAtCap,
+//                                     TestParse_EnumCap_OverCapFails
+//   /features/0/oracle/assertions/1 → TestParse_RequiredCap_BoundaryAtCap,
+//                                     TestParse_RequiredCap_OverCapFails
+//   /features/0/oracle/assertions/4 → all cap tests (errors.As discrimination,
+//                                     no strings.Contains for Kind discrimination)
+//   /features/0/oracle/assertions/4 → TestParse_KindMalformedPreservesCause
+//                                     (Cause chain via errors.As)
+
+// buildPropertiesSchema returns a JSON schema with n string-typed properties.
+// Property names are "p0", "p1", ..., "p<n-1>".
+func buildPropertiesSchema(n int) json.RawMessage {
+	buf := []byte(`{"type":"object","properties":{`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = append(buf, fmt.Sprintf("%q:{\"type\":\"string\"}", fmt.Sprintf("p%d", i))...)
+	}
+	buf = append(buf, '}', '}')
+	return json.RawMessage(buf)
+}
+
+// buildEnumSchema returns a JSON schema with a single string field "x" whose
+// enum has n entries (values "v0", "v1", ..., "v<n-1>").
+func buildEnumSchema(n int) json.RawMessage {
+	buf := []byte(`{"type":"object","properties":{"x":{"type":"string","enum":[`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = append(buf, fmt.Sprintf("%q", fmt.Sprintf("v%d", i))...)
+	}
+	buf = append(buf, ']', '}', '}', '}')
+	return json.RawMessage(buf)
+}
+
+// buildRequiredSchema returns a JSON schema with n string-typed properties and
+// a "required" array referencing all n of them. n must be ≤ MaxProperties so
+// the properties cap does not fire before the required cap is tested.
+func buildRequiredSchema(n int) json.RawMessage {
+	buf := []byte(`{"type":"object","properties":{`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = append(buf, fmt.Sprintf("%q:{\"type\":\"string\"}", fmt.Sprintf("p%d", i))...)
+	}
+	buf = append(buf, '}', ',', '"', 'r', 'e', 'q', 'u', 'i', 'r', 'e', 'd', '"', ':')
+	buf = append(buf, '[')
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = append(buf, fmt.Sprintf("%q", fmt.Sprintf("p%d", i))...)
+	}
+	buf = append(buf, ']', '}')
+	return json.RawMessage(buf)
+}
+
+// TestParse_PropertiesCap_BoundaryAtCap verifies that a schema with exactly
+// MaxProperties (256) properties is accepted without error.
+// Covers /features/0/oracle/assertions/2.
+func TestParse_PropertiesCap_BoundaryAtCap(t *testing.T) {
+	raw := buildPropertiesSchema(dispatchschema.MaxProperties)
+	schema, err := dispatchschema.Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse with %d properties returned unexpected error: %v", dispatchschema.MaxProperties, err)
+	}
+	if schema == nil {
+		t.Fatal("Parse returned nil schema")
+	}
+	if len(schema.Fields()) != dispatchschema.MaxProperties {
+		t.Errorf("Fields() = %d, want %d", len(schema.Fields()), dispatchschema.MaxProperties)
+	}
+}
+
+// TestParse_PropertiesCap_OverCapFails verifies that a schema with MaxProperties+1
+// (257) properties returns a *ParseError with Kind == KindBoundExceeded and a
+// message containing "257 (max 256)".
+// Covers /features/0/oracle/assertions/2 and /features/0/oracle/assertions/4.
+func TestParse_PropertiesCap_OverCapFails(t *testing.T) {
+	raw := buildPropertiesSchema(dispatchschema.MaxProperties + 1)
+	_, err := dispatchschema.Parse(raw)
+	if err == nil {
+		t.Fatalf("Parse with %d properties returned nil error; want *ParseError{KindBoundExceeded}", dispatchschema.MaxProperties+1)
+	}
+
+	var pErr *dispatchschema.ParseError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("errors.As(*ParseError) failed; got error type %T: %v", err, err)
+	}
+	if pErr.Kind != dispatchschema.KindBoundExceeded {
+		t.Errorf("pErr.Kind = %q, want %q", pErr.Kind, dispatchschema.KindBoundExceeded)
+	}
+	if !strings.Contains(pErr.Message, "257 (max 256)") {
+		t.Errorf("pErr.Message = %q, want it to contain %q", pErr.Message, "257 (max 256)")
+	}
+}
+
+// TestParse_EnumCap_BoundaryAtCap verifies that a schema with exactly
+// MaxEnumEntries (256) enum values on a string field is accepted.
+// Covers /features/0/oracle/assertions/0.
+func TestParse_EnumCap_BoundaryAtCap(t *testing.T) {
+	raw := buildEnumSchema(dispatchschema.MaxEnumEntries)
+	schema, err := dispatchschema.Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse with %d enum entries returned unexpected error: %v", dispatchschema.MaxEnumEntries, err)
+	}
+	if schema == nil {
+		t.Fatal("Parse returned nil schema")
+	}
+}
+
+// TestParse_EnumCap_OverCapFails verifies that a schema with MaxEnumEntries+1
+// (257) enum values on a string field returns a *ParseError with Kind ==
+// KindBoundExceeded and a message containing "257 (max 256)".
+// Covers /features/0/oracle/assertions/0 and /features/0/oracle/assertions/4.
+func TestParse_EnumCap_OverCapFails(t *testing.T) {
+	raw := buildEnumSchema(dispatchschema.MaxEnumEntries + 1)
+	_, err := dispatchschema.Parse(raw)
+	if err == nil {
+		t.Fatalf("Parse with %d enum entries returned nil error; want *ParseError{KindBoundExceeded}", dispatchschema.MaxEnumEntries+1)
+	}
+
+	var pErr *dispatchschema.ParseError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("errors.As(*ParseError) failed; got error type %T: %v", err, err)
+	}
+	if pErr.Kind != dispatchschema.KindBoundExceeded {
+		t.Errorf("pErr.Kind = %q, want %q", pErr.Kind, dispatchschema.KindBoundExceeded)
+	}
+	if !strings.Contains(pErr.Message, "257 (max 256)") {
+		t.Errorf("pErr.Message = %q, want it to contain %q", pErr.Message, "257 (max 256)")
+	}
+}
+
+// TestParse_RequiredCap_BoundaryAtCap verifies that a schema with exactly
+// MaxRequiredEntries (256) required fields (and 256 matching properties) is
+// accepted.
+// Covers /features/0/oracle/assertions/1.
+func TestParse_RequiredCap_BoundaryAtCap(t *testing.T) {
+	// buildRequiredSchema uses n ≤ MaxProperties so the properties cap does
+	// not fire before the required cap is tested.
+	raw := buildRequiredSchema(dispatchschema.MaxRequiredEntries)
+	schema, err := dispatchschema.Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse with %d required entries returned unexpected error: %v", dispatchschema.MaxRequiredEntries, err)
+	}
+	if schema == nil {
+		t.Fatal("Parse returned nil schema")
+	}
+	if len(schema.Required()) != dispatchschema.MaxRequiredEntries {
+		t.Errorf("Required() = %d, want %d", len(schema.Required()), dispatchschema.MaxRequiredEntries)
+	}
+}
+
+// TestParse_RequiredCap_OverCapFails verifies that a schema with
+// MaxRequiredEntries+1 (257) required entries returns a *ParseError with Kind
+// == KindBoundExceeded and a message containing "257 (max 256)".
+// The schema has MaxRequiredEntries+1 properties so the properties cap
+// (also 256) would fire first; we therefore use exactly 257 properties to
+// trigger properties cap — but the required cap test must isolate the required
+// cap, so we use 256 properties + a "required" array of 257 names where one
+// name is fabricated to bypass the cross-ref check. Wait: the cross-ref check
+// fires after the cap check, per the execution brief ("BEFORE cross-ref
+// loop"). So we can use 257 names against the cap and it will fire before
+// referential validation.
+// NOTE: Because MaxRequiredEntries == MaxProperties == 256, and we need 257
+// required entries, we must have ≥257 properties to satisfy cross-ref — which
+// itself triggers the properties cap. So we build 256 properties but 257
+// required names (one non-existent property name): the required cap fires
+// before cross-ref validation per the design constraint.
+// Covers /features/0/oracle/assertions/1 and /features/0/oracle/assertions/4.
+func TestParse_RequiredCap_OverCapFails(t *testing.T) {
+	// 256 properties + required array of 257 names (includes one non-existent
+	// "overflow" name). Required cap fires before the cross-ref check.
+	buf := []byte(`{"type":"object","properties":{`)
+	for i := 0; i < dispatchschema.MaxRequiredEntries; i++ {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = append(buf, fmt.Sprintf("%q:{\"type\":\"string\"}", fmt.Sprintf("p%d", i))...)
+	}
+	buf = append(buf, '}', ',', '"', 'r', 'e', 'q', 'u', 'i', 'r', 'e', 'd', '"', ':')
+	buf = append(buf, '[')
+	for i := 0; i <= dispatchschema.MaxRequiredEntries; i++ { // 257 entries: p0..p255 + "overflow"
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		if i < dispatchschema.MaxRequiredEntries {
+			buf = append(buf, fmt.Sprintf("%q", fmt.Sprintf("p%d", i))...)
+		} else {
+			buf = append(buf, '"', 'o', 'v', 'e', 'r', 'f', 'l', 'o', 'w', '"')
+		}
+	}
+	buf = append(buf, ']', '}')
+	raw := json.RawMessage(buf)
+
+	_, err := dispatchschema.Parse(raw)
+	if err == nil {
+		t.Fatalf("Parse with %d required entries returned nil error; want *ParseError{KindBoundExceeded}", dispatchschema.MaxRequiredEntries+1)
+	}
+
+	var pErr *dispatchschema.ParseError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("errors.As(*ParseError) failed; got error type %T: %v", err, err)
+	}
+	if pErr.Kind != dispatchschema.KindBoundExceeded {
+		t.Errorf("pErr.Kind = %q, want %q", pErr.Kind, dispatchschema.KindBoundExceeded)
+	}
+	if !strings.Contains(pErr.Message, "257 (max 256)") {
+		t.Errorf("pErr.Message = %q, want it to contain %q", pErr.Message, "257 (max 256)")
+	}
+}
+
+// TestParse_KindMalformedPreservesCause verifies that Parse on truncated JSON
+// returns a *ParseError with Kind == KindMalformed and that Cause contains the
+// underlying json error recoverable via errors.As.
+// Covers /features/0/oracle/assertions/4 (Unwrap chain / Cause field).
+func TestParse_KindMalformedPreservesCause(t *testing.T) {
+	_, err := dispatchschema.Parse(json.RawMessage(`{`))
+	if err == nil {
+		t.Fatal("Parse returned nil error for truncated JSON; want *ParseError{KindMalformed}")
+	}
+
+	var pErr *dispatchschema.ParseError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("errors.As(*ParseError) failed; got error type %T: %v", err, err)
+	}
+	if pErr.Kind != dispatchschema.KindMalformed {
+		t.Errorf("pErr.Kind = %q, want %q", pErr.Kind, dispatchschema.KindMalformed)
+	}
+
+	// Cause must be non-nil and must wrap a json syntax/IO error.
+	if pErr.Cause == nil {
+		t.Fatal("pErr.Cause is nil; want inner json error preserved via Unwrap()")
+	}
+
+	// Verify errors.As can reach the inner json.SyntaxError through the
+	// ParseError.Unwrap() chain (proves the %w wrapping is wired through).
+	var syntaxErr *json.SyntaxError
+	if !errors.As(pErr.Cause, &syntaxErr) {
+		// Acceptable alternative: errors.As on the outer error also works.
+		if !errors.As(err, &syntaxErr) {
+			t.Errorf("errors.As(*json.SyntaxError) failed on both pErr.Cause and outer err; Cause type = %T, Cause = %v", pErr.Cause, pErr.Cause)
+		}
+	}
+}
+
+// --- F12: SafeParse direct tests ---
+// Assertion traceability:
+//   /features/0/oracle/assertions/3 → TestSafeParse_BytecapAtBoundary,
+//                                     TestSafeParse_BytecapOverCapFails,
+//                                     TestSafeParse_WhitespaceFloodDoS
+//   /features/0/oracle/assertions/4 → TestSafeParse_BytecapOverCapFails (errors.As)
+
+// safeParseBoundarySchema returns a valid schema JSON padded to exactly
+// targetBytes bytes by using a property name long enough to reach the target.
+// The schema is {"type":"object","properties":{"<name>":{"type":"string"}}}.
+// prefix+suffix account for all JSON scaffolding around the property name.
+func safeParseBoundarySchema(targetBytes int) json.RawMessage {
+	// Scaffolding: {"type":"object","properties":{"<name>":{"type":"string"}}}
+	// prefix before name: {"type":"object","properties":{"   = 32 bytes
+	// suffix after name:  ":{"type":"string"}}}              = 21 bytes
+	// total overhead: 53 bytes
+	const prefix = `{"type":"object","properties":{"`
+	const suffix = `":{"type":"string"}}}`
+	overhead := len(prefix) + len(suffix)
+	nameLen := targetBytes - overhead
+	if nameLen < 1 {
+		panic(fmt.Sprintf("safeParseBoundarySchema: targetBytes %d too small (overhead %d)", targetBytes, overhead))
+	}
+	name := make([]byte, nameLen)
+	for i := range name {
+		name[i] = 'a'
+	}
+	buf := make([]byte, 0, targetBytes)
+	buf = append(buf, prefix...)
+	buf = append(buf, name...)
+	buf = append(buf, suffix...)
+	return json.RawMessage(buf)
+}
+
+// TestSafeParse_BytecapAtBoundary verifies that SafeParse accepts a valid
+// schema of exactly MaxSchemaBytes (65536) bytes.
+// Covers /features/0/oracle/assertions/3.
+func TestSafeParse_BytecapAtBoundary(t *testing.T) {
+	raw := safeParseBoundarySchema(dispatchschema.MaxSchemaBytes)
+	if len(raw) != dispatchschema.MaxSchemaBytes {
+		t.Fatalf("test fixture has wrong length: got %d, want %d", len(raw), dispatchschema.MaxSchemaBytes)
+	}
+	schema, err := dispatchschema.SafeParse(raw)
+	if err != nil {
+		t.Fatalf("SafeParse with exactly %d bytes returned unexpected error: %v", dispatchschema.MaxSchemaBytes, err)
+	}
+	if schema == nil {
+		t.Fatal("SafeParse returned nil schema for valid boundary input")
+	}
+}
+
+// TestSafeParse_BytecapOverCapFails verifies that SafeParse rejects input of
+// MaxSchemaBytes+1 (65537) bytes with a *ParseError{Kind: KindBoundExceeded}.
+// Covers /features/0/oracle/assertions/3 and /features/0/oracle/assertions/4.
+func TestSafeParse_BytecapOverCapFails(t *testing.T) {
+	raw := safeParseBoundarySchema(dispatchschema.MaxSchemaBytes + 1)
+	if len(raw) != dispatchschema.MaxSchemaBytes+1 {
+		t.Fatalf("test fixture has wrong length: got %d, want %d", len(raw), dispatchschema.MaxSchemaBytes+1)
+	}
+	_, err := dispatchschema.SafeParse(raw)
+	if err == nil {
+		t.Fatalf("SafeParse with %d bytes returned nil error; want *ParseError{KindBoundExceeded}", dispatchschema.MaxSchemaBytes+1)
+	}
+
+	var pErr *dispatchschema.ParseError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("errors.As(*ParseError) failed; got error type %T: %v", err, err)
+	}
+	if pErr.Kind != dispatchschema.KindBoundExceeded {
+		t.Errorf("pErr.Kind = %q, want %q", pErr.Kind, dispatchschema.KindBoundExceeded)
+	}
+}
+
+// TestSafeParse_WhitespaceFloodDoS verifies that SafeParse measures the byte
+// cap on the RAW (pre-trim) length. 65537 bytes of pure whitespace must return
+// KindBoundExceeded and must never reach bytes.TrimSpace or Parse.
+// This is the Gemini pre-trim DoS regression witness.
+// Covers /features/0/oracle/assertions/3.
+func TestSafeParse_WhitespaceFloodDoS(t *testing.T) {
+	// MaxSchemaBytes+1 bytes of pure whitespace. Post-trim this is empty
+	// (would be "no schema" = nil,nil). Pre-trim cap must fire first.
+	flood := make([]byte, dispatchschema.MaxSchemaBytes+1)
+	for i := range flood {
+		flood[i] = ' '
+	}
+	_, err := dispatchschema.SafeParse(json.RawMessage(flood))
+	if err == nil {
+		t.Fatalf("SafeParse with %d whitespace bytes returned nil error; want *ParseError{KindBoundExceeded} (pre-trim cap must fire)", dispatchschema.MaxSchemaBytes+1)
+	}
+
+	var pErr *dispatchschema.ParseError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("errors.As(*ParseError) failed; got error type %T: %v", err, err)
+	}
+	if pErr.Kind != dispatchschema.KindBoundExceeded {
+		t.Errorf("pErr.Kind = %q, want %q (whitespace flood must trigger pre-trim cap, not reach Parse)", pErr.Kind, dispatchschema.KindBoundExceeded)
+	}
+}
+
+// TestSafeParse_WhitespaceUnderCapReturnsNilNil verifies that whitespace
+// input under the byte cap is treated as "no schema" (nil, nil).
+// Covers the null/empty/whitespace short-circuit in SafeParse.
+func TestSafeParse_WhitespaceUnderCapReturnsNilNil(t *testing.T) {
+	ws := make([]byte, 100)
+	for i := range ws {
+		ws[i] = ' '
+	}
+	schema, err := dispatchschema.SafeParse(json.RawMessage(ws))
+	if err != nil {
+		t.Fatalf("SafeParse(100 spaces) returned unexpected error: %v", err)
+	}
+	if schema != nil {
+		t.Errorf("SafeParse(100 spaces) returned non-nil schema; want nil (no schema)")
+	}
+}
+
+// TestSafeParse_NullReturnsNilNil verifies that []byte("null") is treated as
+// "no schema" and returns (nil, nil).
+func TestSafeParse_NullReturnsNilNil(t *testing.T) {
+	schema, err := dispatchschema.SafeParse(json.RawMessage("null"))
+	if err != nil {
+		t.Fatalf("SafeParse(null) returned unexpected error: %v", err)
+	}
+	if schema != nil {
+		t.Errorf("SafeParse(null) returned non-nil schema; want nil")
+	}
+}
+
+// TestSafeParse_EmptyReturnsNilNil verifies that empty bytes are treated as
+// "no schema" and return (nil, nil).
+func TestSafeParse_EmptyReturnsNilNil(t *testing.T) {
+	schema, err := dispatchschema.SafeParse(json.RawMessage(nil))
+	if err != nil {
+		t.Fatalf("SafeParse(nil) returned unexpected error: %v", err)
+	}
+	if schema != nil {
+		t.Errorf("SafeParse(nil) returned non-nil schema; want nil")
+	}
 }
