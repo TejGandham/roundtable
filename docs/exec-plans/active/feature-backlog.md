@@ -32,6 +32,12 @@ Each feature: read spec → write test → write code → verify.
   PRD: provider-request-extras
   <!-- SOURCE: orphan-prd-reconciliation -->
 
+- [ ] **F12 Bounded-allocation guards in dispatchschema parser and MCP schema-input boundary**
+  Needs: F01, F04
+  PRD: dispatchschema-bounded-allocation
+  <!-- DRAFTED: 2026-05-03 by backlog-drafter; 0 markers remain -->
+  <!-- SOURCE: 9c4e8a1f7b2d5e63 -->
+
 ## Service
 
 - [x] **F02 Schema-to-prompt-suffix builder**

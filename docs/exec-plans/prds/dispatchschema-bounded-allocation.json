@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "id": "dispatchschema-bounded-allocation",
+  "title": "Dispatchschema bounded allocation",
+  "motivation": "The JSON-Schema-lite parser shipped under the dispatch-structured-output PRD enforces no upper bound on per-field enum length, top-level required[] length, or top-level properties count, and the MCP schema-input boundary accepts unbounded byte payloads. A hostile or buggy client can submit a 50 MB schema with a million-entry enum and the parser will allocate it. Two safety-auditor runs and a unanimous pre-check roundtable flagged this; the prior tech-debt entry to add bounded-decode guards did not land before the schema parameter wiring shipped. This PRD closes that gap with a layered defense: byte cap at the MCP boundary, structural caps inside the parser, and typed errors on each reject path.",
+  "scope": {
+    "included": [
+      "Bounded-allocation guards inside the JSON-Schema-lite parser for enum length, required[] length, and top-level properties count.",
+      "Byte-size cap on the MCP boundary's schema input ahead of parser invocation, mirroring the existing invalid-schema error path.",
+      "Typed bound-violation errors distinguishable from generic malformed-JSON errors.",
+      "Test coverage of each cap including exact-at-boundary cases."
+    ],
+    "excluded": [
+      "Pattern-validation (schema regex).",
+      "Cross-field constraints.",
+      "Nested object recursion limits beyond the three structural caps.",
+      "Registering an INV-### entry in CLAUDE.md (no Safety Rules section exists yet; tracked separately as a cross-cutting chore)."
+    ]
+  },
+  "design_facts": [
+    {
+      "topic": "Defense layering",
+      "decision": "Apply a byte-size cap at the MCP boundary AND structural caps inside the parser, not one or the other.",
+      "rationale": "Byte cap rejects pathological payloads before allocation; structural caps catch crafted-small-but-deep schemas that pass the byte cap."
+    },
+    {
+      "topic": "Cap values",
+      "decision": "MaxProperties=256, MaxEnumEntries=256, MaxRequiredEntries=256, MaxSchemaBytes=65536.",
+      "rationale": "Round numbers chosen as obviously enough room for any real schema while bounding worst-case allocation."
+    },
+    {
+      "topic": "Error shape",
+      "decision": "Reject paths return a typed structured error distinguishable from malformed JSON; choice of unified KindBoundExceeded vs per-cap kinds is implementer's call.",
+      "rationale": "Existing dispatchschema package already has a Kind-enum ParseError envelope; the test oracle asserts structure, not specific Kind names."
+    },
+    {
+      "topic": "Single-feature scope",
+      "decision": "Parser caps and MCP byte cap ship as one cohesive feature touching two packages.",
+      "rationale": "They enforce a single layered defense; splitting would be artificial."
+    },
+    {
+      "topic": "Invariant registration",
+      "decision": "Do not cite or invent an invariant ID for this work.",
+      "rationale": "Repo currently has no registered invariants; adding a Safety Rules section is a separate cross-cutting chore."
+    }
+  ],
+  "invariants_exercised": [],
+  "features": [
+    {
+      "id": "F12",
+      "title": "Bounded-allocation guards in dispatchschema parser and MCP schema-input boundary",
+      "layer": "foundation",
+      "needs": [],
+      "contract": {
+        "MaxProperties": 256,
+        "MaxEnumEntries": 256,
+        "MaxRequiredEntries": 256,
+        "MaxSchemaBytes": 65536,
+        "mcp_boundary_error_prefix": "invalid schema parameter:",
+        "parser_sites": [
+          "internal/roundtable/dispatchschema/schema.go"
+        ],
+        "boundary_sites": [
+          "internal/stdiomcp/server.go",
+          "cmd/roundtable/main.go"
+        ]
+      },
+      "oracle": {
+        "type": "unit",
+        "assertions": [
+          "Calling `Parse` with a schema whose enum has 257 entries returns the typed bound-exceeded error; 256 entries passes.",
+          "Calling `Parse` with a schema whose top-level `required` has 257 entries returns the typed bound-exceeded error; 256 entries passes.",
+          "Calling `Parse` with a schema whose top-level `properties` count is 257 returns the typed bound-exceeded error; 256 entries passes.",
+          "Calling the MCP boundary with `input.Schema` of 65537 bytes returns the wrapped `invalid schema parameter:` error before Parse runs; 65536 bytes passes.",
+          "Bound-violation errors from `Parse` are structurally distinguishable from generic malformed-JSON errors (caller can branch on a typed Kind, not a string match).",
+          "Existing parser, prompt-suffix, validator, and five-tool MCP wiring tests continue to pass."
+        ],
+        "tooling": "Go testing package; table-driven tests for each cap with exact-at-boundary cases (N=256 pass, N=257 fail; bytes=65536 pass, bytes=65537 fail)."
+      }
+    }
+  ]
+}
