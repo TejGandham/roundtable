@@ -1,0 +1,20 @@
+{
+  "name": "roundtable-local",
+  "interface": {
+    "displayName": "roundtable local"
+  },
+  "plugins": [
+    {
+      "name": "roundtable",
+      "source": {
+        "source": "local",
+        "path": "./plugins/roundtable"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "name": "roundtable",
+  "version": "2.0.0",
+  "description": "Multi-model consensus MCP server. Dispatches one prompt to the local Antigravity, Copilot, Codex, and Claude CLIs in parallel — and to any configured OpenAI-compatible HTTP providers — then returns every response as structured JSON for synthesis. On Codex the plugin ships the roundtable usage skill; register the MCP server itself with `codex mcp add roundtable -- roundtable stdio`.",
+  "author": {
+    "name": "Tej Gandham",
+    "email": "tej@engen.tech"
+  },
+  "homepage": "https://github.com/TejGandham/roundtable",
+  "repository": "https://github.com/TejGandham/roundtable",
+  "license": "UNLICENSED",
+  "keywords": [
+    "mcp",
+    "consensus",
+    "multi-model",
+    "panel",
+    "codex",
+    "claude",
+    "second-opinion",
+    "code-review"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "roundtable",
+    "shortDescription": "Dispatch one prompt to a panel of models in parallel and synthesize the answers.",
+    "longDescription": "roundtable is a multi-model consensus MCP server. It sends one prompt to the local Antigravity, Copilot, Codex, and Claude CLIs at once — plus any configured OpenAI-compatible HTTP providers — and returns every response as structured JSON for synthesis. This Codex plugin ships the roundtable usage skill; the MCP server is registered separately with `codex mcp add roundtable -- roundtable stdio`. The roundtable binary must be on PATH (see INSTALL.md).",
+    "developerName": "Tej Gandham",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "websiteURL": "https://github.com/TejGandham/roundtable",
+    "defaultPrompt": [
+      "Get a second opinion from the roundtable panel on this design.",
+      "Run this approach through roundtable and synthesize the panel.",
+      "Use roundtable to critique this code from multiple models."
+    ]
+  }
+}

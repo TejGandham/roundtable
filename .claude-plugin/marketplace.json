@@ -1,0 +1,23 @@
+{
+  "name": "roundtable",
+  "description": "Multi-model consensus MCP server — dispatch one prompt to Codex, Claude, and OpenAI-compatible HTTP providers in parallel and synthesize the panel.",
+  "owner": {
+    "name": "Tej Gandham",
+    "email": "tej@engen.tech"
+  },
+  "metadata": {
+    "description": "Roundtable packaged as a Claude Code plugin: the roundtable MCP server (registered via .mcp.json) plus the roundtable usage skill, in one install.",
+    "version": "2.0.0"
+  },
+  "plugins": [
+    {
+      "name": "roundtable",
+      "description": "Multi-model consensus MCP server. Dispatches one prompt to the local Antigravity, Copilot, Codex, and Claude CLIs in parallel — and to any configured OpenAI-compatible HTTP providers — then returns every response as structured JSON for synthesis. Tools: roundtable-canvass, roundtable-deliberate, roundtable-blueprint, roundtable-critique, roundtable-crosscheck, roundtable-converge. Installing this plugin registers the MCP server (via .mcp.json) and the roundtable usage skill together; the roundtable binary must be on PATH (see INSTALL.md).",
+      "source": "./",
+      "strict": true,
+      "skills": [
+        "./skills/roundtable"
+      ]
+    }
+  ]
+}
