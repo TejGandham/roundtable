@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "roundtable": {
-      "command": "roundtable",
+      "command": "${ROUNDTABLE_BIN:-roundtable}",
       "args": ["stdio"]
     }
   }
