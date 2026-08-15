@@ -1,6 +1,6 @@
 {
   "name": "roundtable",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Multi-model consensus MCP server. Dispatches one prompt to the local Antigravity, Copilot, Codex, and Claude CLIs in parallel — and to any configured OpenAI-compatible HTTP providers — then returns every response as structured JSON for synthesis. On Codex the plugin ships the roundtable usage skill; register the MCP server itself with `codex mcp add roundtable -- roundtable stdio`.",
   "author": {
     "name": "Tej Gandham",
