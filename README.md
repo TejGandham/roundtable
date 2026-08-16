@@ -94,6 +94,30 @@ Each tool assigns a role to each agent, shaping its system prompt.
 
 All tools (except `roundtable-converge`) support an `agents` parameter for selective dispatch. `roundtable-converge` derives its panel set from the `prior_result` it replays.
 
+## Pi
+
+The Pi package registers all six Roundtable tools as native Pi tools and ships the same usage skill as the Claude Code and Codex plugins. It owns its stdio MCP child directly, so it does not need `pi-mcp-adapter`, a shared `.mcp.json`, or a second copy of the skill.
+
+The install downloads the matching Roundtable 2.1.3 release binary into the Pi package and verifies its published SHA-256 checksum. It supports macOS and Linux on x64 and arm64. If GitHub requires authentication for the release, authenticate `gh` first.
+
+Mac or Linux, local terminal:
+
+```sh
+pi install git:github.com/TejGandham/roundtable
+```
+
+Restart Pi after installation. The package leaves Claude Code and Codex configuration untouched.
+
+Each provider may run for up to 900 seconds. The Pi bridge gives the MCP request another 120 seconds for startup, serialization, and cleanup, so a provider reaching its full deadline does not lose the whole panel to a client-side timeout.
+
+Set `ROUNDTABLE_BIN` to override the package-owned binary. Remove only the Pi package with:
+
+Mac or Linux, local terminal:
+
+```sh
+pi remove git:github.com/TejGandham/roundtable
+```
+
 ## Get it
 
 Grab the latest build for your platform from the [Releases](../../releases) page — each archive contains the binary plus its skill file. Point your favorite agent at it, then ask all of them the question you were about to ask just one. See where they disagree. That's where you should look twice.
