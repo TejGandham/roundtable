@@ -110,7 +110,22 @@ Restart Pi after installation. The package leaves Claude Code and Codex configur
 
 Each provider may run for up to 900 seconds. The Pi bridge gives the MCP request another 120 seconds for startup, serialization, and cleanup, so a provider reaching its full deadline does not lose the whole panel to a client-side timeout.
 
-Set `ROUNDTABLE_BIN` to override the package-owned binary. Remove only the Pi package with:
+Pi has no `.mcp.json` entry to hang an `env` block on, so the package reads one registration file — `roundtable.json` in the active Pi agent directory (`~/.pi/agent/roundtable.json` by default). It carries the same two fields an MCP server entry would:
+
+```json
+{
+  "command": "/home/you/.local/share/roundtable/roundtable",
+  "env": {
+    "ROUNDTABLE_CLAUDE_PATH": "/home/you/.local/bin/claude",
+    "ROUNDTABLE_PROVIDERS": "[ ... ]",
+    "ROUNDTABLE_DEFAULT_AGENTS": "[ ... ]"
+  }
+}
+```
+
+Both fields are optional, `env` is merged over Pi's own environment, and the secrets those entries name stay in your shell. A present but malformed file stops the call instead of quietly dispatching a smaller panel. Without the file Pi uses the built-in default panel of whatever CLIs are on `PATH`.
+
+`ROUNDTABLE_BIN` overrides both the registered command and the package-owned binary. Remove only the Pi package with:
 
 Mac or Linux, local terminal:
 

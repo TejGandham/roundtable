@@ -7,6 +7,8 @@ import {
   type StdioServerParameters,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+import { loadRoundtableConfig, roundtableConfigPath, type RoundtableConfig } from "./config.ts";
+
 export const ROUNDTABLE_SERVER_NAME = "roundtable";
 export const ROUNDTABLE_SERVER_VERSION = "2.1.3";
 export const DEFAULT_AGENT_TIMEOUT_SECONDS = 900;
@@ -30,6 +32,7 @@ export interface RoundtableBridgeOptions {
   createClient?: () => ClientLike;
   createTransport?: (parameters: StdioServerParameters) => TransportLike;
   environment?: NodeJS.ProcessEnv;
+  loadConfig?: () => RoundtableConfig;
 }
 
 interface ActiveConnection {
@@ -47,9 +50,11 @@ function stringEnvironment(environment: NodeJS.ProcessEnv): Record<string, strin
 export function resolveRoundtableCommand(
   environment: NodeJS.ProcessEnv = process.env,
   bundledBinary?: string,
+  configuredCommand?: string,
 ): string {
-  const configured = environment.ROUNDTABLE_BIN?.trim();
-  if (configured) return configured;
+  const override = environment.ROUNDTABLE_BIN?.trim();
+  if (override) return override;
+  if (configuredCommand) return configuredCommand;
   if (bundledBinary && existsSync(bundledBinary)) return bundledBinary;
   return "roundtable";
 }
@@ -63,11 +68,13 @@ export function mcpRequestTimeoutMilliseconds(arguments_: RoundtableArguments): 
 }
 
 export class RoundtableBridge {
-  readonly command: string;
-
+  private readonly explicitCommand?: string;
+  private readonly loadConfig: () => RoundtableConfig;
   private readonly createClient: () => ClientLike;
   private readonly createTransport: (parameters: StdioServerParameters) => TransportLike;
-  private readonly environment: Record<string, string>;
+  private readonly processEnvironment: Record<string, string>;
+  private readonly sourceEnvironment: NodeJS.ProcessEnv;
+  private registration?: { command: string; env: Record<string, string> };
   private active?: ActiveConnection;
   private connecting?: Promise<ActiveConnection>;
   private connectingCwd?: string;
@@ -75,8 +82,11 @@ export class RoundtableBridge {
 
   constructor(options: RoundtableBridgeOptions = {}) {
     const sourceEnvironment = options.environment ?? process.env;
-    this.command = options.command ?? resolveRoundtableCommand(sourceEnvironment, BUNDLED_ROUNDTABLE_BINARY);
-    this.environment = stringEnvironment(sourceEnvironment);
+    this.explicitCommand = options.command;
+    this.sourceEnvironment = sourceEnvironment;
+    this.processEnvironment = stringEnvironment(sourceEnvironment);
+    this.loadConfig = options.loadConfig
+      ?? (() => loadRoundtableConfig(roundtableConfigPath(sourceEnvironment)));
     this.createClient = options.createClient ?? (() => new Client(
       { name: "roundtable-pi", version: ROUNDTABLE_SERVER_VERSION },
       { capabilities: {} },
@@ -155,13 +165,30 @@ export class RoundtableBridge {
     }
   }
 
+  /**
+   * Resolve the command and the child environment once per session. The
+   * registration file supplies the provider and CLI-path block; the ambient
+   * process environment still supplies the secrets those entries name.
+   */
+  private resolveRegistration(): { command: string; env: Record<string, string> } {
+    if (this.registration) return this.registration;
+    const config = this.loadConfig();
+    this.registration = {
+      command: this.explicitCommand
+        ?? resolveRoundtableCommand(this.sourceEnvironment, BUNDLED_ROUNDTABLE_BINARY, config.command),
+      env: { ...this.processEnvironment, ...config.env },
+    };
+    return this.registration;
+  }
+
   private async open(cwd: string, signal?: AbortSignal): Promise<ActiveConnection> {
     this.stderr = "";
+    const registration = this.resolveRegistration();
     const transport = this.createTransport({
-      command: this.command,
+      command: registration.command,
       args: ["stdio"],
       cwd,
-      env: this.environment,
+      env: registration.env,
       stderr: "pipe",
       maxBufferSize: 10 * 1024 * 1024,
     });
@@ -208,8 +235,9 @@ export class RoundtableBridge {
     const stderr = this.stderr.trim();
     const detail = stderr ? `${message}\n${stderr}` : message;
     if (/ENOENT|not found|spawn/i.test(detail)) {
+      const command = this.registration?.command ?? "roundtable";
       return new Error(
-        `Roundtable could not start '${this.command}'. Install the matching release binary or set ROUNDTABLE_BIN. ${detail}`,
+        `Roundtable could not start '${command}'. Install the matching release binary or set ROUNDTABLE_BIN. ${detail}`,
       );
     }
     return new Error(`Roundtable MCP call failed: ${detail}`);

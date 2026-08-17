@@ -23,11 +23,60 @@ class FakeTransport {
   }
 }
 
-test("uses an explicit override, then the bundled binary, then PATH", () => {
+test("uses the env override, then the registered command, then the bundled binary, then PATH", () => {
   const fixture = new URL("./fixtures/fake-roundtable.mjs", import.meta.url).pathname;
-  assert.equal(resolveRoundtableCommand({ ROUNDTABLE_BIN: " /opt/roundtable " }, fixture), "/opt/roundtable");
+  assert.equal(resolveRoundtableCommand({ ROUNDTABLE_BIN: " /opt/roundtable " }, fixture, "/etc/rt"), "/opt/roundtable");
+  assert.equal(resolveRoundtableCommand({}, fixture, "/etc/rt"), "/etc/rt");
   assert.equal(resolveRoundtableCommand({}, fixture), fixture);
   assert.equal(resolveRoundtableCommand({}, "/missing/bundled-roundtable"), "roundtable");
+});
+
+test("the registration file supplies providers while the process keeps the secrets", async () => {
+  const transportParameters: StdioServerParameters[] = [];
+  const bridge = new RoundtableBridge({
+    environment: { PATH: "/bin", FIREWORKS_API_KEY: "secret", ROUNDTABLE_PROVIDERS: "[]" },
+    loadConfig: () => ({
+      command: "/registered/roundtable",
+      env: { ROUNDTABLE_PROVIDERS: '[{"id":"fireworks-kimi"}]', ROUNDTABLE_DEFAULT_AGENTS: "[]" },
+    }),
+    createTransport(parameters) {
+      transportParameters.push(parameters);
+      return new FakeTransport() as unknown as StdioClientTransport;
+    },
+    createClient() {
+      return {
+        async connect() {},
+        async close() {},
+        async callTool() {
+          return { content: [{ type: "text", text: "ok" }] };
+        },
+      };
+    },
+  });
+
+  await bridge.callTool("roundtable-canvass", { prompt: "x" }, "/repo");
+  await bridge.close();
+
+  assert.equal(transportParameters[0]?.command, "/registered/roundtable");
+  assert.equal(transportParameters[0]?.env?.ROUNDTABLE_PROVIDERS, '[{"id":"fireworks-kimi"}]');
+  assert.equal(transportParameters[0]?.env?.ROUNDTABLE_DEFAULT_AGENTS, "[]");
+  assert.equal(transportParameters[0]?.env?.FIREWORKS_API_KEY, "secret");
+});
+
+test("a malformed registration file blocks the call instead of shrinking the panel", async () => {
+  const bridge = new RoundtableBridge({
+    loadConfig: () => {
+      throw new Error("Roundtable config /x/roundtable.json is not valid JSON: bad");
+    },
+    createTransport() {
+      return new FakeTransport() as unknown as StdioClientTransport;
+    },
+  });
+
+  await assert.rejects(
+    bridge.callTool("roundtable-canvass", { prompt: "x" }, "/repo"),
+    /is not valid JSON/,
+  );
 });
 
 test("keeps MCP alive beyond the provider deadline", () => {
@@ -51,6 +100,7 @@ test("starts one cwd-bound MCP server and forwards cancellation and the outer ti
   const bridge = new RoundtableBridge({
     command: "/tmp/roundtable",
     environment: { PATH: "/bin", ROUNDTABLE_PROVIDERS: "[]" },
+    loadConfig: () => ({ env: {} }),
     createTransport(parameters) {
       transportParameters.push(parameters);
       const transport = new FakeTransport();
@@ -96,6 +146,7 @@ test("restarts the server when Pi changes project cwd", async () => {
   let closeCalls = 0;
 
   const bridge = new RoundtableBridge({
+    loadConfig: () => ({ env: {} }),
     createTransport() {
       return new FakeTransport() as unknown as StdioClientTransport;
     },
@@ -125,6 +176,7 @@ test("restarts the server when Pi changes project cwd", async () => {
 test("missing binaries produce an actionable Pi error", async () => {
   const bridge = new RoundtableBridge({
     command: "/missing/roundtable",
+    loadConfig: () => ({ env: {} }),
     createTransport() {
       return new FakeTransport() as unknown as StdioClientTransport;
     },

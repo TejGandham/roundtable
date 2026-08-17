@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -19,7 +21,9 @@ interface CapturedTool {
 
 test("the native Pi tool crosses stdio MCP and closes on session shutdown", async () => {
   const originalBinary = process.env.ROUNDTABLE_BIN;
+  const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.ROUNDTABLE_BIN = fileURLToPath(new URL("./fixtures/fake-roundtable.mjs", import.meta.url));
+  process.env.PI_CODING_AGENT_DIR = mkdtempSync(`${tmpdir()}/roundtable-agent-`);
 
   const tools = new Map<string, CapturedTool>();
   const handlers = new Map<string, () => Promise<void>>();
@@ -56,5 +60,7 @@ test("the native Pi tool crosses stdio MCP and closes on session shutdown", asyn
   } finally {
     if (originalBinary === undefined) delete process.env.ROUNDTABLE_BIN;
     else process.env.ROUNDTABLE_BIN = originalBinary;
+    if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
   }
 });
