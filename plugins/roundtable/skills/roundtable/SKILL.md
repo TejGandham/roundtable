@@ -1,9 +1,10 @@
 ---
 name: roundtable
 description: >-
-  Multi-model consensus MCP server. Call the roundtable-canvass, roundtable-deliberate,
-  roundtable-blueprint, roundtable-critique, roundtable-crosscheck, or roundtable-converge tools
-  directly — no Bash tool needed. Dispatches to Antigravity, Copilot, Codex, and Claude CLIs in parallel by default,
+  Multi-model consensus tools backed by the Roundtable MCP server. Call roundtable-canvass,
+  roundtable-deliberate, roundtable-blueprint, roundtable-critique, roundtable-crosscheck, or
+  roundtable-converge directly — no Bash tool needed. The Pi package exposes native tools through
+  its package-owned stdio bridge. Dispatches to Antigravity, Copilot, Codex, and Claude CLIs in parallel by default,
   and to any configured OpenAI-compatible HTTP providers (Kimi, MiniMax, GLM, DeepSeek, etc.) that are
   registered via ROUNDTABLE_PROVIDERS. Returns every response as structured JSON for synthesis.
   Tools: roundtable-canvass (parallel panel query), roundtable-deliberate (structured deliberation
@@ -28,11 +29,11 @@ description: >-
 
 # Roundtable - Multi-Model Consensus
 
-Roundtable is an **MCP server**. Call its tools directly — no Bash tool needed.
+Roundtable is backed by an **MCP server**. Call its tools directly — no Bash tool needed. Claude Code uses the server registration from `.mcp.json`; Codex uses its configured MCP server; Pi registers the same six names as native tools and owns the stdio bridge itself.
 
 ## Core Rule
 
-1. Call the appropriate MCP tool (`roundtable-canvass`, `roundtable-deliberate`, `roundtable-converge`, etc.) on the `roundtable` server
+1. Call the appropriate direct tool (`roundtable-canvass`, `roundtable-deliberate`, `roundtable-converge`, etc.)
 2. Parse the JSON response
 3. Synthesize all model responses into unified output
 
@@ -52,9 +53,9 @@ or the per-call `agents` parameter (override).
 |**crosscheck**|`roundtable-crosscheck`|Include `files`. Antigravity in planner role, Codex in codereviewer role, Claude as generalist, Copilot and HTTP providers in default role — one prompt, mixed lenses.|
 |**converge**|`roundtable-converge`|Replay a prior dispatch. Each panelist sees the original prompt and the other panelists' answers (under anonymized `peer-N` labels) and produces (a) revised or held stance, (b) list of peers it agrees with, (c) draft converged recommendation. Different parameter shape — see below.|
 
-## MCP Invocation (Primary)
+## Tool Invocation
 
-Call MCP tools directly. No Bash tool, no binary path, no shell.
+Call the Roundtable tools directly. No Bash tool, binary path, shell, or generic MCP proxy call. On Pi, the package-owned bridge gives the server request 120 seconds beyond the provider deadline for startup, response serialization, and cleanup.
 
 ### Tool Parameters
 
@@ -64,7 +65,7 @@ Call MCP tools directly. No Bash tool, no binary path, no shell.
 |-|-|-|
 |`prompt`|Yes|The question or task|
 |`files`|No|Comma-separated **relative** file paths for context|
-|`timeout`|No|Seconds per CLI (default and max: 900). Lower only if the task is quick — the default is the ceiling.|
+|`timeout`|No|Seconds per CLI (default and max: 900). Lower only if the task is quick. On Pi the outer MCP request allows this deadline plus 120 seconds of bridge overhead.|
 |`codex_model`|No|Override Codex model|
 |`claude_model`|No|Override Claude model (e.g., `sonnet`, `opus`)|
 |`codex_resume`|No|Codex thread ID (from a prior turn's `session_id`) to continue a previous conversation. The `last` sentinel is rejected on the app-server path — pass an explicit thread ID.|
@@ -195,7 +196,7 @@ MCP tool calls return JSON with this structure:
 
 ```json
 {
-  "antigravity": { "response": "...", "status": "ok|error|timeout|terminated|not_found|probe_failed|rate_limited", ... },
+  "antigravity": { "response": "...", "status": "ok|error|timeout|terminated|not_found|probe_failed|rate_limited|auth_required", ... },
   "copilot": { "response": "...", "status": "...", "session_id": "...", ... },
   "codex": { "response": "...", "status": "...", "session_id": "...", ... },
   "claude": { "response": "...", "status": "...", "session_id": "...", ... },
@@ -211,6 +212,7 @@ Possible `status` values:
 - `not_found` — CLI binary not on PATH
 - `probe_failed` — `--version` probe failed
 - `rate_limited` — provider rate-limited the request (Antigravity detects 429/RESOURCE_EXHAUSTED/quota-style text)
+- `auth_required` — the CLI's stored credential has expired, so it needs a fresh sign-in (Codex detects its expired-refresh-token message)
 
 ## Synthesis Template
 
@@ -258,6 +260,7 @@ Call `roundtable-canvass` with `prompt: "What about the token refresh edge case 
 - If one CLI has `status: "error"`, `"timeout"`, `"terminated"`, or `"probe_failed"`: synthesize with the available responses, note which was unavailable and why.
 - If one CLI has `status: "not_found"`: note it's not installed, synthesize with the others.
 - If one CLI has `status: "rate_limited"`: tell the user the provider rate-limited the request and suggest retrying or resuming that session.
+- If one CLI has `status: "auth_required"`: tell the user that CLI's credential expired and they need to sign in to it again — this is not a bug in their code — then synthesize with the others.
 - If all CLIs fail: report errors, do not attempt synthesis.
 - If `parse_error` is set: note the response may be incomplete but still usable.
 - Non-zero exit codes are automatically downgraded to `"error"` even if the parser found content.

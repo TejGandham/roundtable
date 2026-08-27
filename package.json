@@ -1,6 +1,6 @@
 {
   "name": "roundtable",
-  "version": "2.1.3",
+  "version": "2.2.0",
   "description": "Multi-model consensus tools for Pi, backed by the Roundtable MCP server.",
   "private": true,
   "type": "module",

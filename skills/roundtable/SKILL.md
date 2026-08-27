@@ -196,7 +196,7 @@ MCP tool calls return JSON with this structure:
 
 ```json
 {
-  "antigravity": { "response": "...", "status": "ok|error|timeout|terminated|not_found|probe_failed|rate_limited", ... },
+  "antigravity": { "response": "...", "status": "ok|error|timeout|terminated|not_found|probe_failed|rate_limited|auth_required", ... },
   "copilot": { "response": "...", "status": "...", "session_id": "...", ... },
   "codex": { "response": "...", "status": "...", "session_id": "...", ... },
   "claude": { "response": "...", "status": "...", "session_id": "...", ... },
@@ -212,6 +212,7 @@ Possible `status` values:
 - `not_found` — CLI binary not on PATH
 - `probe_failed` — `--version` probe failed
 - `rate_limited` — provider rate-limited the request (Antigravity detects 429/RESOURCE_EXHAUSTED/quota-style text)
+- `auth_required` — the CLI's stored credential has expired, so it needs a fresh sign-in (Codex detects its expired-refresh-token message)
 
 ## Synthesis Template
 
@@ -259,6 +260,7 @@ Call `roundtable-canvass` with `prompt: "What about the token refresh edge case 
 - If one CLI has `status: "error"`, `"timeout"`, `"terminated"`, or `"probe_failed"`: synthesize with the available responses, note which was unavailable and why.
 - If one CLI has `status: "not_found"`: note it's not installed, synthesize with the others.
 - If one CLI has `status: "rate_limited"`: tell the user the provider rate-limited the request and suggest retrying or resuming that session.
+- If one CLI has `status: "auth_required"`: tell the user that CLI's credential expired and they need to sign in to it again — this is not a bug in their code — then synthesize with the others.
 - If all CLIs fail: report errors, do not attempt synthesis.
 - If `parse_error` is set: note the response may be incomplete but still usable.
 - Non-zero exit codes are automatically downgraded to `"error"` even if the parser found content.

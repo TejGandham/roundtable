@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "roundtable",
   "description": "Multi-model consensus MCP server. Dispatches one prompt to the local Antigravity, Copilot, Codex, and Claude CLIs in parallel — and to any configured OpenAI-compatible HTTP providers (Kimi, MiniMax, GLM, DeepSeek, …) — then returns every response as structured JSON for synthesis. Bundles the roundtable MCP server (via .mcp.json) and the roundtable usage skill.",
-  "version": "2.1.3",
+  "version": "2.2.0",
   "author": {
     "name": "Tej Gandham",
     "email": "tej@engen.tech"
