@@ -157,7 +157,7 @@ Role-based dispatch:
 ```
 
 **Notes:**
-- Invalid env var JSON → warning logged, falls back to all 5 CLIs
+- Invalid env var JSON → warning logged, falls back to all 4 CLIs
 - The `resume` field is ignored in defaults — session IDs are per-call only
 - See [INSTALL.md](INSTALL.md) for registration instructions.
 
