@@ -64,7 +64,7 @@ Call the Roundtable tools directly. No Bash tool, binary path, shell, or generic
 |Parameter|Required|Description|
 |-|-|-|
 |`prompt`|Yes|The question or task|
-|`files`|No|Comma-separated **relative** file paths for context|
+|`files`|No|Comma-separated **relative** file paths for context. An entry may end in a line span — see below|
 |`timeout`|No|Seconds per CLI (default and max: 900). Lower only if the task is quick. On Pi the outer MCP request allows this deadline plus 120 seconds of bridge overhead.|
 |`codex_model`|No|Override Codex model|
 |`claude_model`|No|Override Claude model (e.g., `sonnet`, `opus`)|
@@ -73,6 +73,8 @@ Call the Roundtable tools directly. No Bash tool, binary path, shell, or generic
 |`antigravity_resume`|No|Antigravity conversation ID to continue with `agy --conversation`; best-effort because print-mode output may include prior transcript text|
 |`copilot_resume`|No|Copilot session ID to continue a previous conversation|
 |`agents`|No|**JSON-encoded string** describing selective dispatch (see below). Pass a string, not an array.|
+
+A `files` entry may carry a trailing line span, e.g. `path:120-400`, to send only that part of the file. Line numbers are 1-based and both ends are included. Only this form is accepted: two line numbers after a colon, one span per entry, no open-ended spans. A real file whose name ends in a span-shaped suffix is still read as a filename, so existing paths keep working. A span that cannot be honored surfaces as a visible error in the output rather than a silently missing file. HTTP providers receive the excerpt inline, marked with a `lines="N-M"` attribute on its `<file>` block; local CLI panelists are pointed at the file plus the span and read the range themselves.
 
 ### Selective Agent Dispatch (`agents` parameter)
 
