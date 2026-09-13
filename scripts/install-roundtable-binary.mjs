@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "2.4.0";
+const VERSION = "2.4.2";
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const DESTINATION = join(ROOT, ".pi-bin", "roundtable");
 const RELEASE_BASE = `https://github.com/TejGandham/roundtable/releases/download/v${VERSION}`;
@@ -14,26 +14,87 @@ const releases = {
   "darwin-x64": {
     archive: `roundtable-${VERSION}-darwin-amd64.tar.gz`,
     binary: "roundtable-darwin-amd64",
-    sha256: "db6f850d5ac9a3c8472588fa21fc38af4684ca8f4a3285da5a862f4c8bec93cf",
+    sha256: "c6f32b16289ceb66c10f2a42c7be7ab2d221c45b6f42f3a882fd17fc16976777",
   },
   "darwin-arm64": {
     archive: `roundtable-${VERSION}-darwin-arm64.tar.gz`,
     binary: "roundtable-darwin-arm64",
-    sha256: "d536014843cc21c066d189e6dabba39b3e22f0a91c20efdb1d2552e0e379c234",
+    sha256: "a6d1366f495b019a10dcadd0e567fdc6b3fa2144f9aee8d46aac7b1d77dff987",
   },
   "linux-x64": {
     archive: `roundtable-${VERSION}-linux-amd64.tar.gz`,
     binary: "roundtable-linux-amd64",
-    sha256: "59ad79cb3bcb5775100b33b1bc963a363a1e57f92ef8d13632932afb50caaec1",
+    sha256: "ba962a215e4ccab8de7d25702af00ea43af2b66b8e3b30a0d4deaa542b244c39",
   },
   "linux-arm64": {
     archive: `roundtable-${VERSION}-linux-arm64.tar.gz`,
     binary: "roundtable-linux-arm64",
-    sha256: "61241cdafec927c959092686062a3f6658add6c2ab21e1fc57738500af92627f",
+    sha256: "5cae1aa75cf7a89540d9b897455a0ef77c07eb3631c4992b5c513f35ff3de6df",
   },
 };
 
-async function install() {
+/**
+ * @typedef {object} MoveOperations
+ * @property {(source: string, destination: string) => Promise<void>} [rename]
+ * @property {(source: string, destination: string) => Promise<void>} [copyFile]
+ * @property {(target: string) => Promise<void>} [unlink]
+ */
+
+function describeCause(error) {
+  const text = error instanceof Error ? error.message : String(error);
+  return text.trim() || "unknown error";
+}
+
+/**
+ * Move a downloaded file into its destination, across a filesystem boundary if there is one.
+ *
+ * `rename(2)` is defined only within a single filesystem, and a download directory is routinely on
+ * another one: `/tmp` is its own mount on most Linux distributions and `TMPDIR` is a documented
+ * user setting. So `EXDEV` here is an ordinary condition, not a transient fault — retrying a
+ * `rename()` would fail the same way every time. Copy across the boundary instead, then drop the
+ * source.
+ *
+ * @param {string} source
+ * @param {string} destination
+ * @param {MoveOperations} [operations] injection seam for the tests
+ * @returns {Promise<"rename" | "copy">} which path did the move
+ */
+export async function moveIntoPlace(source, destination, operations = {}) {
+  const move = operations.rename ?? rename;
+  const copy = operations.copyFile ?? copyFile;
+  const remove = operations.unlink ?? unlink;
+
+  try {
+    await move(source, destination);
+    return "rename";
+  } catch (error) {
+    if (error?.code !== "EXDEV") {
+      throw new Error(
+        `could not move ${source} to ${destination}: ${describeCause(error)}`,
+        { cause: error },
+      );
+    }
+
+    try {
+      await copy(source, destination);
+    } catch (copyError) {
+      throw new Error(
+        `could not move ${source} to ${destination}: the download directory is on a different `
+        + `filesystem than the destination, and copying across that boundary failed: `
+        + `${describeCause(copyError)}. Set TMPDIR to a directory on the same filesystem as `
+        + `${dirname(destination)} and install again.`,
+        { cause: copyError },
+      );
+    }
+
+    // The source lives in the temp tree that the caller removes wholesale, so a failure to unlink
+    // it now costs nothing and must not fail an otherwise completed move.
+    await remove(source).catch(() => {});
+    return "copy";
+  }
+}
+
+export async function install() {
   if (process.env.ROUNDTABLE_SKIP_BINARY_INSTALL === "1") {
     process.stdout.write("Skipping the Roundtable binary download.\n");
     return;
@@ -87,13 +148,18 @@ async function install() {
     await mkdir(dirname(DESTINATION), { recursive: true });
     const staged = `${DESTINATION}.new`;
     await rm(staged, { force: true });
-    await rename(join(temporary, release.binary), staged);
+    await moveIntoPlace(join(temporary, release.binary), staged);
     await chmod(staged, 0o755);
-    await rename(staged, DESTINATION);
+    await moveIntoPlace(staged, DESTINATION);
     process.stdout.write(`Installed Roundtable ${VERSION} for Pi (${key}).\n`);
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
 }
 
-await install();
+const invokedDirectly = process.argv[1] !== undefined
+  && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  await install();
+}

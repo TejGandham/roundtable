@@ -1,6 +1,6 @@
 {
   "name": "roundtable",
-  "version": "2.4.0",
+  "version": "2.4.2",
   "description": "Multi-model consensus tools for Pi, backed by the Roundtable MCP server.",
   "private": true,
   "type": "module",
@@ -17,6 +17,7 @@
     "extensions/pi/",
     "scripts/install-roundtable-binary.mjs",
     "skills/roundtable/",
+    "skills/roundtable-pi/",
     "README.md"
   ],
   "scripts": {
@@ -46,7 +47,8 @@
       "./extensions/pi/index.ts"
     ],
     "skills": [
-      "./skills/roundtable"
+      "./skills/roundtable",
+      "./skills/roundtable-pi"
     ]
   }
 }

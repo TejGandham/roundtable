@@ -78,6 +78,7 @@ export function textFromRoundtableResult(result: RoundtableResult): string {
 
 export default function roundtablePiExtension(pi: ExtensionAPI): void {
   const bridge = new RoundtableBridge();
+  bridge.checkInstallation();
 
   for (const spec of dispatchTools) {
     pi.registerTool(defineTool({

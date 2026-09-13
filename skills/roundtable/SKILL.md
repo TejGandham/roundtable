@@ -29,7 +29,17 @@ description: >-
 
 # Roundtable - Multi-Model Consensus
 
-Roundtable is backed by an **MCP server**. Call its tools directly — no Bash tool needed. Claude Code uses the server registration from `.mcp.json`; Codex uses its configured MCP server; Pi registers the same six names as native tools and owns the stdio bridge itself.
+Roundtable is backed by an **MCP server**. When the tools are registered, call them directly — no Bash tool needed. Claude Code uses the server registration from `.mcp.json`; Codex uses its configured MCP server; Pi registers the same six names as native tools and owns the stdio bridge itself.
+
+## Availability check
+
+This file is guidance, not registration. Reading it creates no tools.
+
+1. Confirm the six names are in your tool list: `roundtable-canvass`, `roundtable-deliberate`, `roundtable-blueprint`, `roundtable-critique`, `roundtable-crosscheck`, `roundtable-converge`. **Match case-insensitively on the trailing name, never on the whole string.** The name a session shows you is not always the name the server registered: a harness, or an API proxy between the harness and the model, can rewrite every tool name in transit. One Pi route shows all six as `mcp_Roundtable-canvass` … `mcp_Roundtable-converge`, and renames that host's own `read` and `bash` to `mcp_Read` and `mcp_Bash` the same way. A prefix or a changed capitalisation is never a reason to conclude the tools are missing. Call the tool under the name your session actually offers.
+2. If none of them is present under any spelling, **say so and stop**, and point at the install path for this harness — `INSTALL.md` for Claude Code and Codex, and the `roundtable-pi` skill for Pi.
+3. **Never report a panel you did not run.** Do not synthesize consensus from zero responses.
+
+When a review gate depends on the panel — a repository whose config makes a roundtable record a condition of committing or merging — a missing tool makes that gate **blocked**, never satisfied. Name the gate and how to make the tools available; do not let the run continue as though a review happened.
 
 ## Core Rule
 
@@ -37,10 +47,15 @@ Roundtable is backed by an **MCP server**. Call its tools directly — no Bash t
 2. Parse the JSON response
 3. Synthesize all model responses into unified output
 
-**Who's in the panel.** The default panel is the four built-in CLIs (Antigravity, Copilot, Codex, Claude).
-OpenAI-compatible HTTP providers registered via `ROUNDTABLE_PROVIDERS` (Kimi, MiniMax, GLM,
-DeepSeek, and so on) can join when selected via `ROUNDTABLE_DEFAULT_AGENTS` (panel default)
-or the per-call `agents` parameter (override).
+**Who's in the panel.** The built-in default panel is the four CLIs (Antigravity, Copilot, Codex,
+Claude). OpenAI-compatible HTTP providers registered via `ROUNDTABLE_PROVIDERS` (Kimi, MiniMax,
+GLM, DeepSeek, and so on) are never in that built-in default: registering one makes it available,
+not selected. Name it in `ROUNDTABLE_DEFAULT_AGENTS` — the session default, which every call that
+passes no `agents` uses — and it is dispatched in parallel with the rest of **that** panel: the
+session default **replaces** the built-in four rather than adding to them, so a value naming one
+HTTP provider is a panel of one. List the CLIs you still want alongside it. A call's own `agents`
+parameter overrides both, and `roundtable-converge` ignores the session default entirely — its
+panel is the set of agents in the prior dispatch it is replaying.
 
 ## Commands
 
@@ -61,18 +76,18 @@ Call the Roundtable tools directly. No Bash tool, binary path, shell, or generic
 
 | Parameter | Required | Description |
 |-|-|-|
-|Parameter|Required|Description|
-|-|-|-|
 |`prompt`|Yes|The question or task|
 |`files`|No|Comma-separated **relative** file paths for context. An entry may end in a line span — see below|
 |`timeout`|No|Seconds per CLI (default and max: 900). Lower only if the task is quick. On Pi the outer MCP request allows this deadline plus 120 seconds of bridge overhead.|
 |`codex_model`|No|Override Codex model|
 |`claude_model`|No|Override Claude model (e.g., `sonnet`, `opus`)|
+|`copilot_model`|No|Override the Copilot model|
 |`codex_resume`|No|Codex thread ID (from a prior turn's `session_id`) to continue a previous conversation. The `last` sentinel is rejected on the app-server path — pass an explicit thread ID.|
 |`claude_resume`|No|Claude session ID to continue a previous conversation|
 |`antigravity_resume`|No|Antigravity conversation ID to continue with `agy --conversation`; best-effort because print-mode output may include prior transcript text|
 |`copilot_resume`|No|Copilot session ID to continue a previous conversation|
 |`agents`|No|**JSON-encoded string** describing selective dispatch (see below). Pass a string, not an array.|
+|`schema`|No|A JSON Schema object, or `null`, asking every panelist to answer in that shape — structured output instead of prose|
 
 A `files` entry may carry a trailing line span, e.g. `path:120-400`, to send only that part of the file. Line numbers are 1-based and both ends are included. Only this form is accepted: two line numbers after a colon, one span per entry, no open-ended spans. A real file whose name ends in a span-shaped suffix is still read as a filename, so existing paths keep working. A span that cannot be honored surfaces as a visible error in the output rather than a silently missing file. HTTP providers receive the excerpt inline, marked with a `lines="N-M"` attribute on its `<file>` block; local CLI panelists are pointed at the file plus the span and read the range themselves.
 
@@ -126,14 +141,19 @@ Mix models and roles for targeted review:
 
 ### Default Agent Configuration
 
-Set `ROUNDTABLE_DEFAULT_AGENTS` at MCP registration time to configure which agents run by default — so you don't specify them on every call. Uses the same JSON schema as the `agents` parameter above.
+Set `ROUNDTABLE_DEFAULT_AGENTS` at MCP registration time to configure which agents run by default — so you don't specify them on every call. The value is a JSON array of agent-spec objects — the same schema as the `agents` parameter above, and the same one-line form.
 
 **Precedence** (highest to lowest):
 1. Per-call `agents` parameter — **always wins**
-2. `ROUNDTABLE_DEFAULT_AGENTS` env var — session default
+2. `ROUNDTABLE_DEFAULT_AGENTS` env var — session default, which **replaces** the built-in set
 3. Built-in default — all 4 CLIs (antigravity, copilot, codex, claude)
 
 > **You can always override defaults per-call.** Even if your defaults only include codex and claude, you can pass `agents: [{"provider": "antigravity"}]` to get an Antigravity-only review.
+
+**Three things the precedence list does not say:**
+- **It replaces, it does not extend.** `[{"provider":"codex"}]` is a one-agent panel, not codex plus the other three. Every CLI you still want has to be in the array.
+- **A value that does not parse is dropped silently, per call.** Malformed JSON, an empty array, an unknown field, a `cli` key where `provider` belongs — each falls back to the built-in four, and the call succeeds with a panel you did not ask for. The server logs one warning naming the parse error at startup; that log line is the only notice you get, so check it after editing the value.
+- **`roundtable-converge` ignores it.** A convergence round replays a prior dispatch, so its panel is the set of agents in that dispatch's results, whatever the session default says.
 
 **Examples:**
 
@@ -291,7 +311,8 @@ You are usually mid-task when you consult the panel, which means you already lea
 
 | Mistake | Fix |
 |-|-|
-| Using Bash tool to call roundtable | Call MCP tools directly — no Bash needed |
+| Skipping the panel because the tools are missing | Say they are absent and stop — install the package (`pi install git:github.com/TejGandham/roundtable` on Pi). A gate that needed the review is blocked, not satisfied |
+| Driving the server from a shell when the tools are registered | Call the tools directly — the shell path is a last-resort diagnostic, not the normal route |
 | Running only one model | ALWAYS use roundtable (dispatches the full default panel unless overridden) |
 | Dumping raw JSON responses | Summarize key points, find agreement/differences |
 | Skipping synthesis | Synthesis IS the value — always include it |
