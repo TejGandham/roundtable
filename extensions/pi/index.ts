@@ -77,6 +77,11 @@ export function textFromRoundtableResult(result: RoundtableResult): string {
 }
 
 export default function roundtablePiExtension(pi: ExtensionAPI): void {
+  // A pi that roundtable itself spawned carries ROUNDTABLE_ACTIVE=1 (SubprocessRunner sets it);
+  // registering the panel tools there would let a panelist call back into the panel. Stay silent:
+  // in pi's print mode stdout is the answer channel.
+  if (process.env.ROUNDTABLE_ACTIVE === "1") return;
+
   const bridge = new RoundtableBridge();
   bridge.checkInstallation();
 
