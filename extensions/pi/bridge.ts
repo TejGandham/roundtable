@@ -11,7 +11,7 @@ import {
 import { loadRoundtableConfig, roundtableConfigPath, type RoundtableConfig } from "./config.ts";
 
 export const ROUNDTABLE_SERVER_NAME = "roundtable";
-export const ROUNDTABLE_SERVER_VERSION = "2.5.0";
+export const ROUNDTABLE_SERVER_VERSION = "2.5.1";
 export const DEFAULT_AGENT_TIMEOUT_SECONDS = 900;
 export const MCP_OVERHEAD_MILLISECONDS = 120_000;
 export const CONNECT_TIMEOUT_MILLISECONDS = 30_000;

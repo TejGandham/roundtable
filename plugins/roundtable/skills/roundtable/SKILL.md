@@ -101,9 +101,9 @@ Each entry in the encoded array:
 
 | Field | Required | Description |
 |-|-|-|
-| `provider` | Yes | Backend: `"codex"`, `"claude"`, `"antigravity"`, `"copilot"`, or a provider registered via `ROUNDTABLE_PROVIDERS` |
+| `provider` | Yes | Backend: `"codex"`, `"claude"`, `"antigravity"`, `"copilot"`, `"pi"`, or a provider registered via `ROUNDTABLE_PROVIDERS` |
 | `name` | No | Result key in output (defaults to `provider` value; must be unique) |
-| `model` | No | Model override for this agent |
+| `model` | No | Model override for this agent. Required for `"pi"`: a provider id declared in `ROUNDTABLE_PROVIDERS`, in the form `<provider-id>[/<model-id>][:<thinking>]` |
 | `role` | No | Role override: `"default"`, `"planner"`, `"codereviewer"` |
 | `resume` | No | Session ID to continue a previous conversation |
 
@@ -132,11 +132,18 @@ Mix models and roles for targeted review:
 ]
 ```
 
+Seat the pi coding agent against a declared provider (`fireworks-kimi` is a `ROUNDTABLE_PROVIDERS` id):
+```json
+{"name":"kimi","provider":"pi","model":"fireworks-kimi"}
+```
+
 **Notes:**
 - Per-agent `model` wins over the per-tool `codex_model` / `claude_model` params. If an agent entry omits `model`, the matching per-tool param (if any) is used as a fallback.
 - Antigravity does not have a dedicated model flag; a per-agent `model` is reported in output but is not passed to `agy`.
 - Antigravity resume is best-effort: current `agy --conversation --print` output may include prior transcript text before the fresh answer, and Roundtable preserves that text.
 - Agent names must be unique; `"meta"` is reserved.
+- pi is opt-in only, never in the built-in default panel; it needs pi >= 0.87.1 on `PATH`. Its `model` is `<provider-id>[/<model-id>][:<thinking>]`: the id alone uses that provider's `default_model`; thinking is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. An empty or undeclared id is refused before pi starts.
+- pi runs offline, session-less, with read-only tools (`read`, `grep`, `find`, `ls`). A `resume` on a pi agent is refused; send the full context in the prompt.
 - The tool's default role applies unless overridden per-agent.
 
 ### Default Agent Configuration
@@ -203,6 +210,7 @@ Returns the same `DispatchResult` shape as the other tools. Each panelist's `res
 - Each panelist sees its peers under redacted `peer-1`, `peer-2`, ... labels — never the peer's real name. The panelist NEVER sees its own prior response in its converge prompt.
 - Legacy priors produced before the `provider` field was added fall back to using the recipient name as the backend lookup key — works for default-fanout recipient names (antigravity/copilot/codex/claude) but custom-named priors will produce `NotFoundResult` for unregistered names.
 - Backends not registered → that recipient gets a `NotFoundResult` row in the output, dispatch continues for the other recipients.
+- A pi panelist is refused: converge replays every recipient with an empty `model`, and pi needs its declared provider id there. The other recipients still run.
 
 **Synthesis pattern:** when reporting a converge result, contrast each panelist's prior stance with their revised stance. Highlight (b) agreement clusters — they often hint at where the panel actually converged versus where it just hedged.
 

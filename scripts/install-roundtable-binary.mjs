@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "2.5.0";
+const VERSION = "2.5.1";
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const DESTINATION = join(ROOT, ".pi-bin", "roundtable");
 const RELEASE_BASE = `https://github.com/TejGandham/roundtable/releases/download/v${VERSION}`;
@@ -14,22 +14,22 @@ const releases = {
   "darwin-x64": {
     archive: `roundtable-${VERSION}-darwin-amd64.tar.gz`,
     binary: "roundtable-darwin-amd64",
-    sha256: "349787eca4f76ffc68c168eec06928920110cffe2dc17016e894d5b922715a97",
+    sha256: "808355d3253b1a64bfcfb046538a0a41ff54e5cab11d875be8aef53f04de9ce5",
   },
   "darwin-arm64": {
     archive: `roundtable-${VERSION}-darwin-arm64.tar.gz`,
     binary: "roundtable-darwin-arm64",
-    sha256: "7b903c9a6133edca052bd72772a7e47812191254792431ba5edf39957fcfb692",
+    sha256: "c17deb6baa40fa8dad77149a19e40f6ed0413c7fa82eba6fe9db6dd139963e52",
   },
   "linux-x64": {
     archive: `roundtable-${VERSION}-linux-amd64.tar.gz`,
     binary: "roundtable-linux-amd64",
-    sha256: "451c8cfef5c31405159e1411dec31665cfbd8c59f955c912e3e469963fd142c4",
+    sha256: "1cfd5dd5a271d618e5d463ef4c332e9b9b0598261a46f51374a8150144e0587d",
   },
   "linux-arm64": {
     archive: `roundtable-${VERSION}-linux-arm64.tar.gz`,
     binary: "roundtable-linux-arm64",
-    sha256: "1bbfc180fec191de419b46cc0ed731f904b4950298e455f30d6f4afc508b25b5",
+    sha256: "83cdce7012c19992e6cb0fb786d3013f9edf2691e2f7dccd1d4e45d24f88a8f4",
   },
 };
 
