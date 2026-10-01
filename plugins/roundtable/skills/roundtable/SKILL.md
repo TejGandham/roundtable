@@ -239,8 +239,8 @@ Possible `status` values:
 - `error` — backend returned an error payload or non-zero exit
 - `timeout` — backend exceeded the per-CLI deadline
 - `terminated` — backend killed by signal
-- `not_found` — CLI binary not on PATH
-- `probe_failed` — `--version` probe failed
+- `not_found` — the agent's provider id has no registered backend
+- `probe_failed` — the CLI binary isn't on PATH, or its `--version` probe failed
 - `rate_limited` — provider rate-limited the request (Antigravity detects 429/RESOURCE_EXHAUSTED/quota-style text)
 - `auth_required` — the CLI's stored credential has expired, so it needs a fresh sign-in (Codex detects its expired-refresh-token message)
 
