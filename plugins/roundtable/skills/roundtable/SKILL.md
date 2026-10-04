@@ -1,30 +1,17 @@
 ---
 name: roundtable
 description: >-
-  Multi-model consensus tools backed by the Roundtable MCP server. Call roundtable-canvass,
-  roundtable-deliberate, roundtable-blueprint, roundtable-critique, roundtable-crosscheck, or
-  roundtable-converge directly — no Bash tool needed. The Pi package exposes native tools through
-  its package-owned stdio bridge. Dispatches to Antigravity, Copilot, Codex, and Claude CLIs in parallel by default,
-  and to any configured OpenAI-compatible HTTP providers (Kimi, MiniMax, GLM, DeepSeek, etc.) that are
-  registered via ROUNDTABLE_PROVIDERS. Returns every response as structured JSON for synthesis.
-  Tools: roundtable-canvass (parallel panel query), roundtable-deliberate (structured deliberation
-  with alternatives + confidence), roundtable-blueprint (implementation plan: phases, deps, risks,
-  milestones), roundtable-critique (adversarial code/design review), roundtable-crosscheck (mixed
-  roles across the panel — planner + codereviewer + generalist on one prompt),
-  roundtable-converge (replay a prior dispatch — each panelist sees the other panelists' answers
-  under redacted peer-N aliases and produces an (a) hold-or-revise stance, (b) agreement list,
-  (c) draft converged recommendation).
-  Use this skill whenever the user wants a second opinion, consensus, validation, or external
-  perspective on ANY technical decision — architecture reviews, design critiques, code quality
-  checks, approach comparisons, sanity checks, tradeoff analysis, or stress-testing ideas.
-  Triggers on: "roundtable", "second opinion", "what do others think", "consensus", "deep analysis",
-  "think through", "explore tradeoffs", "compare approaches", "review my design", "sanity check",
-  "validate this", "get feedback", "stress test", "critique", "poke holes", "devil's advocate",
-  "review architecture", "analyze codebase", "what's wrong here", "implementation plan", "how to build",
-  "converge", "second round", "synthesize the panel", "after seeing the other answers".
-  Also use when the user asks you to run something through multiple models or wants independent
-  verification of a technical approach. Do NOT use for simple questions, pure code generation,
-  or when user wants only Claude's opinion.
+  Multi-model consensus tools backed by the Roundtable MCP server. Sends one prompt in parallel
+  to the Antigravity, Copilot, Codex, and Claude CLIs and to configured OpenAI-compatible HTTP
+  providers, and returns every answer as structured JSON. Tools: roundtable-canvass (panel
+  query), roundtable-deliberate (alternatives with confidence), roundtable-blueprint
+  (implementation plan), roundtable-critique (adversarial review), roundtable-crosscheck (mixed
+  roles), roundtable-converge (panelists see the others' redacted answers and converge). Use when
+  the user wants a second opinion, consensus, or validation of a technical decision. Triggers:
+  "roundtable", "second opinion", "consensus", "sanity check", "critique", "poke holes", "stress
+  test", "compare approaches", "review my design", "implementation plan", "converge", or running
+  something through multiple models. Do NOT use for simple questions, pure code generation, or
+  when the user wants only Claude's opinion.
 ---
 
 # Roundtable - Multi-Model Consensus
